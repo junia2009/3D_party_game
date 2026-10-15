@@ -114,33 +114,47 @@ camera.add(sign.pivot);
 const signRest = new THREE.Vector3();
 let signDrop = -1; // 落ちてきてからの時間(マイナスはまだ落ちていない)
 let viewH = 1; // 看板の距離での画面の高さ
+let signBottom = 0; // 看板の下ふち(画面の上からの px)。ここから下が島の段
+// 上の切りかけ(ノッチ・ステータスバー)の高さ。CSS の env() は JS から直接読めないので、測る
+const safeProbe = Object.assign(document.body.appendChild(document.createElement('div')), {
+  style: 'position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top, 0px);visibility:hidden;pointer-events:none',
+});
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.fov = camera.aspect < 1 ? 58 : 42;
-  // 看板: 縦長は幅の 9 割、横長は幅の 4 割まで。上ふちが画面の上から 5% のところに来るように
+  // 看板は画面の「上の段」。縦長は幅の 9 割(高さは画面の 24% まで)、横長は幅の 4 割まで。
+  // 上ふちは、ノッチやステータスバーのすぐ下に来るように
+  const portrait = camera.aspect < 1;
   const dist = 6;
   const h = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   const w = h * camera.aspect;
   viewH = h;
-  const sc = Math.min((w * (camera.aspect < 1 ? 0.9 : 0.42)) / sign.width, (h * 0.3) / (sign.height - 0.9));
+  const board = sign.height - 0.9;
+  const sc = Math.min((w * (portrait ? 0.9 : 0.42)) / sign.width, (h * (portrait ? 0.24 : 0.3)) / board);
   sign.pivot.scale.setScalar(sc);
-  signRest.set(0, h / 2 - h * 0.05 + 0.9 * sc, -dist);
+  const topPx = safeProbe.offsetHeight + (portrait ? 10 : innerHeight * 0.05);
+  signRest.set(0, h / 2 - (h * topPx) / innerHeight + 0.9 * sc, -dist);
+  signBottom = topPx + ((board * sc) / h) * innerHeight;
 }
 addEventListener('resize', resize);
 applyQuality();
 
 // ── 画面の切りかえ ──────────────────────────────────
 // view: 島をどれだけずらすか(画面の割合)。sign: 看板を出すか
+// foot: 縦長のとき、島を「看板の下」と「この要素の上」のあいだに収める(下の段)
 const SCREENS = {
-  title: { el: null, view: [0, 0], sign: true },
-  menu: { el: $('menu'), view: [0.2, 0.17], sign: true },
+  title: { el: null, view: [0, 0], sign: true, foot: 'tap', bias: 0.4 },
+  menu: { el: $('menu'), view: [0.2, 0.17], sign: true, foot: 'menu', bias: 0.56 },
   games: { el: $('games'), view: [0.24, 0.17], sign: false },
   settings: { el: $('settings'), view: [0.24, 0.17], sign: false },
 };
 let screen = 'loading';
-const view = { x: 0, y: 0, sign: 1 };
+const view = { x: 0, y: 0, sign: 1, r: 1 };
+// 島がふつうの大きさで収まる段の高さ(画面の割合)。
+// 島の見た目の中心を段のどのあたりに置くかは、画面ごとの bias(タイトルは島全体、メニューは下の岩を板にかくす)
+const ISLAND_FILL = 0.3;
 
 function go(next) {
   for (const [key, s] of Object.entries(SCREENS)) {
@@ -249,13 +263,24 @@ function frame() {
   // 島のずらし方を、画面に合わせてなめらかに変える
   const target = SCREENS[screen] || SCREENS.title;
   const k = 1 - Math.exp(-dt * 5);
+  let ty = target.view[1], tr = 1;
+  if (portrait && target.foot) {
+    // 島の段: 看板の下ふちから、下の段(メニュー・「タップしてはじめる」)の上ふちまで
+    const foot = $(target.foot).getBoundingClientRect().top;
+    if (foot > 0) {
+      const gap = foot - signBottom;
+      ty = (innerHeight / 2 - (signBottom + gap * target.bias)) / innerHeight;
+      tr = THREE.MathUtils.clamp((ISLAND_FILL * innerHeight) / gap, 1, 1.35); // 段がせまいときは引いて小さく
+    }
+  }
   view.x += ((portrait ? 0 : target.view[0]) - view.x) * k;
-  view.y += ((portrait ? target.view[1] : 0) - view.y) * k;
+  view.y += ((portrait ? ty : 0) - view.y) * k;
+  view.r += (tr - view.r) * k;
   view.sign += ((portrait && !target.sign ? 0 : 1) - view.sign) * k;
   camera.setViewOffset(innerWidth, innerHeight, view.x * innerWidth, view.y * innerHeight, innerWidth, innerHeight);
   // カメラは島のまわりをゆっくり回る
   const a = t * 0.06 + 0.5;
-  const r = portrait ? 25 : 20;
+  const r = (portrait ? 25 : 20) * view.r;
   camera.position.set(Math.sin(a) * r, portrait ? 6.5 : 5.2, Math.cos(a) * r);
   camera.lookAt(0, portrait ? 2.6 : 1.4, 0);
   camera.updateProjectionMatrix();

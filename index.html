@@ -55,13 +55,13 @@
   /* ── 木の板(ボタン・見出し) ── */
   .plank {
     position: relative; display: flex; align-items: center; gap: 12px; width: 100%;
-    min-height: 64px; padding: 8px 18px 10px; border: 0; cursor: pointer; text-align: left;
+    min-height: var(--plank-h, 64px); padding: 6px 18px 8px; border: 0; cursor: pointer; text-align: left;
     background: var(--wood) center / 100% 100% no-repeat;
     filter: drop-shadow(0 5px 0 rgba(58, 34, 14, .35));
     transition: transform .08s;
   }
   .plank:active { transform: translateY(4px); filter: drop-shadow(0 1px 0 rgba(58, 34, 14, .35)); }
-  .plank .ico { flex: none; width: 42px; height: 42px; display: grid; place-items: center; }
+  .plank .ico { flex: none; width: calc(var(--plank-h, 64px) * .62); height: calc(var(--plank-h, 64px) * .62); display: grid; place-items: center; }
   .plank .ico svg { width: 100%; height: 100%; }
   .plank b {
     display: block; font: 400 clamp(19px, 5.4vw, 24px)/1.15 var(--font-display); color: var(--cream);
@@ -99,7 +99,15 @@
     transition: opacity .35s, transform .35s;
   }
   .screen.enter { opacity: 0; transform: translateY(24px); }
-  #menu { top: 52vh; max-width: 440px; margin: 0 auto; }
+  /* メニューは画面の「下の段」。下(ホームバー・ブラウザのツールバー)から積み上げ、
+     見えている高さ(dvh)に合わせて板の厚みを変える。上の段は看板、まんなかは島 */
+  #menu {
+    --plank-h: clamp(46px, 7.4vh, 64px); --plank-h: clamp(46px, 7.4dvh, 64px);
+    align-content: end; gap: clamp(7px, 1.4dvh, 12px); max-width: 440px; margin: 0 auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(10px, 2dvh, 18px));
+  }
+  /* 背の低い画面では、ひとことの説明を消して板をうすくする */
+  @media (max-height: 600px) { #menu .plank small { display: none; } }
   #menu .plank { animation: pop .45s cubic-bezier(.3, 1.6, .5, 1) backwards; }
   #menu .plank:nth-child(2) { animation-delay: .05s; } #menu .plank:nth-child(3) { animation-delay: .1s; }
   #menu .plank:nth-child(4) { animation-delay: .15s; } #menu .plank:nth-child(5) { animation-delay: .2s; }
@@ -161,7 +169,7 @@
 
   /* 横長: メニューは右側に縦に並べる(左は看板と島) */
   @media (min-aspect-ratio: 1/1) {
-    #menu { top: auto; left: auto; right: max(32px, env(safe-area-inset-right, 0px)); bottom: 50%; transform: translateY(50%); width: min(400px, 36vw); }
+    #menu { --plank-h: clamp(44px, 10.5dvh, 64px); left: auto; right: max(32px, env(safe-area-inset-right, 0px)); bottom: 50%; transform: translateY(50%); width: min(400px, 36vw); }
     #menu.enter { transform: translate(24px, 50%); }
     .sub { left: auto; right: max(24px, env(safe-area-inset-right, 0px)); width: min(520px, 44vw); max-width: none; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
     .tap { bottom: 7vh; }
