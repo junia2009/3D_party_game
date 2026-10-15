@@ -130,7 +130,7 @@ function barkTexture() {
   return barkTex;
 }
 
-function barkMaterial(color, repeatX = 2, repeatY = 2) {
+export function barkMaterial(color, repeatX = 2, repeatY = 2) {
   const m = toonMaterial(color);
   m.map = barkTexture().clone();
   m.map.needsUpdate = true;
@@ -139,7 +139,7 @@ function barkMaterial(color, repeatX = 2, repeatY = 2) {
 }
 
 // 曲がった枝や根(先細りの管)
-function taperedTube(points, r0, r1, radial = 10) {
+export function taperedTube(points, r0, r1, radial = 10) {
   const curve = new THREE.CatmullRomCurve3(points);
   const segs = Math.max(8, points.length * 6);
   const g = new THREE.TubeGeometry(curve, segs, 1, radial, false);

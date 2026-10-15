@@ -17,7 +17,9 @@ const unlitVC = () => new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColor
 
 // 頂点色に焼きこんでよい素材か。'toon' / 'unlit' / null(素材のまま残す)
 function bakeKind(m) {
-  if (m.map || m.transparent || m.name.startsWith('player')) return null;
+  // 模様・半透明・あとで塗りかえる色・両面表示のものは、素材のまま残す
+  // (両面表示を頂点色の素材にまとめると、裏から見たときに消える)
+  if (m.map || m.transparent || m.name.startsWith('player') || m.side !== THREE.FrontSide) return null;
   if (m.isMeshToonMaterial || m.isMeshStandardMaterial || m.isMeshLambertMaterial) return 'toon';
   if (m.isMeshBasicMaterial) return 'unlit';
   return null;
@@ -70,7 +72,9 @@ export function mergeStatic(root, isAnchor = () => false) {
     return a;
   };
   const meshes = [];
-  root.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !o.isSkinnedMesh && o.visible) meshes.push(o); });
+  // 面ごとに素材がちがうもの(表彰台の箱など)はまとめない
+  // userData.noMerge が付いたもの(揺らす旗など)もまとめない
+  root.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !o.isSkinnedMesh && o.visible && !Array.isArray(o.material) && !o.userData.noMerge) meshes.push(o); });
   // メッシュの子(輪郭線など)は、先にいちばん近い anchor へ付けかえる(見た目の位置は変えない)
   for (const mesh of meshes) for (const child of [...mesh.children]) anchorOf(mesh).attach(child);
 

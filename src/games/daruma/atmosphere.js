@@ -115,7 +115,9 @@ function rayTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-export function createAtmosphere(scene, renderer, camera) {
+// opts.course: だるまさんのコースまわりにだけ置くもの(光の筋・光るキノコ・ホタルの場所)を出すか
+export function createAtmosphere(scene, renderer, camera, opts = {}) {
+  const course = opts.course !== false;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -304,12 +306,12 @@ export function createAtmosphere(scene, renderer, camera) {
     }
     rayMat.color.setHex(p.rayColor);
     rayMat.opacity = p.rays;
-    rays.visible = p.rays > 0;
+    rays.visible = course && p.rays > 0;
     // 光の粒: 夜はホタル、朝と昼は光の中のほこり、夕方はなし
     flies.visible = key !== 'evening';
     flyMat.color.setHex(key === 'night' ? 0xd8ff7a : 0xfff6d8);
     flyMat.size = key === 'night' ? 0.4 : 0.12;
-    shrooms.visible = key === 'night';
+    shrooms.visible = course && key === 'night';
     for (const e of eyeGlows) e.visible = key === 'night';
     birdMat.color.setHex(p.birds === 'crow' ? 0x1c1c22 : p.birds === 'butterfly' ? 0xffd04a : 0x5a4a3a);
     birdMesh.visible = p.birds !== 'none';

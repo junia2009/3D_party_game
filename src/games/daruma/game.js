@@ -14,15 +14,18 @@ import { PERCH, buildStage, laneX } from './stage.js';
 import { createAudience } from './audience.js';
 import { createAtmosphere, windify } from './atmosphere.js';
 import { CRITTERS } from '../../npcs.js';
+import { loadSettings } from '../../settings.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const SLOTS = 5;
 const params = new URLSearchParams(location.search);
+// タイトルの「せってい」で選んだ 音・画質
+const settings = loadSettings();
 
 // ── 3D の土台 ──────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ canvas: $('cv'), antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(settings.quality === 'light' ? 1 : Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 700);
 const atmosphere = createAtmosphere(scene, renderer, camera);
@@ -103,7 +106,7 @@ function rustleSound() {
 }
 
 function unlockAudio() {
-  if (audio) return;
+  if (audio || !settings.sound) return; // 「おと けす」なら鳴らさない
   try {
     audio = new (window.AudioContext || window.webkitAudioContext)();
   } catch {
@@ -489,7 +492,12 @@ resize();
 // ── 重さに合わせて画質を下げる ──────────────────────────
 // 2秒ごとに1フレームの平均時間を見て、遅ければ 解像度 → 影 の順に下げる。
 // ?fps を付けると、左下に1秒あたりのフレーム数を出す(実機で重さを確かめる用)。
+// 「かるい」ははじめから一番下、「きれい」は下げない。
 const quality = { level: 0, sum: 0, n: 0, timer: 0 };
+if (settings.quality === 'light') {
+  quality.level = 2;
+  renderer.shadowMap.enabled = false;
+}
 const fpsEl = params.has('fps') ? Object.assign(document.body.appendChild(document.createElement('div')), {
   style: 'position:fixed;left:8px;bottom:8px;z-index:9;background:rgba(0,0,0,.6);color:#fff;font:12px monospace;padding:3px 6px;border-radius:6px;pointer-events:none',
 }) : null;
@@ -501,7 +509,7 @@ function watchQuality(rawDt) {
   const avg = quality.sum / quality.n;
   if (fpsEl) fpsEl.textContent = `${(1 / avg).toFixed(0)} fps / 画質 ${['高', '中', '低'][quality.level]} / ${renderer.info.render.calls} 回`;
   quality.sum = quality.n = quality.timer = 0;
-  if (avg < 1 / 40 || quality.level >= 2) return; // 40fps 以上出ていれば下げない
+  if (avg < 1 / 40 || quality.level >= 2 || settings.quality === 'high') return; // 40fps 以上出ていれば下げない
   quality.level++;
   if (quality.level === 1) {
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));

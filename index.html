@@ -2,67 +2,252 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ワイワイアニマルズ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>ドングリンピック</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap">
 <style>
-  /* 遊べるものを並べるだけの入口。ゲームと同じ空の色と字 */
+  /* 画面いっぱいの3D(空に浮かぶ島)の上に、木の板のメニューを重ねる。
+     縦長: 上に看板、まん中に島、下にメニュー。横長: 左に看板と島、右にメニュー */
   :root {
-    --ink: #1f2a33;
-    --paper: #ffffff;
-    --muted: #5d6b73;
-    --accent: #ff5a4e;
-    --sky-top: #9fd9ff;
-    --sky-bottom: #fff3d1;
+    --ink: #4a2a12;          /* 板の字のふち・こげ茶 */
+    --cream: #fff6e0;        /* 板の字 */
+    --paper: #fffaf0;
+    --muted: #7a5a3c;
+    --leaf: #4f9a3c;
+    --red: #d9443a;
+    --sky-top: #6fb2ea;
+    --sky-bottom: #cfe8f4;
+    --wood: none;            /* JS が木の板の絵を入れる */
+    --wood-wide: none;
     --font-display: 'Dela Gothic One', 'Hiragino Sans', 'Yu Gothic', sans-serif;
     --font-body: 'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', 'Hiragino Sans', sans-serif;
     color-scheme: light;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
   body {
-    background: linear-gradient(var(--sky-top), var(--sky-bottom)) fixed;
-    color: var(--ink); font-family: var(--font-body);
+    background: linear-gradient(var(--sky-top), var(--sky-bottom));
+    font-family: var(--font-body); color: var(--ink);
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation;
   }
-  main {
-    max-width: 520px; margin: 0 auto;
-    padding: calc(env(safe-area-inset-top, 0px) + 40px) max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px));
-    display: grid; gap: 18px;
+  #cv { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  [hidden] { display: none !important; }
+  button { font: inherit; color: inherit; }
+  button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+  /* ── 読み込み: どんぐりが転がる ── */
+  .loading {
+    position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; align-content: center; gap: 14px;
+    background: linear-gradient(var(--sky-top), var(--sky-bottom));
+    transition: opacity .5s;
   }
-  h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(36px, 11vw, 52px); line-height: 1.05; }
-  h1 span { color: var(--accent); }
-  .lead { margin: 0; color: var(--muted); font-weight: 800; }
-  .games { display: grid; gap: 12px; }
-  a.card {
-    display: grid; gap: 4px; padding: 18px 20px; border-radius: 22px; background: var(--paper);
-    color: var(--ink); text-decoration: none; box-shadow: 0 5px 0 rgba(31,42,51,.2);
+  .loading.done { opacity: 0; pointer-events: none; }
+  .loading .track { position: relative; width: 180px; height: 70px; }
+  .loading .ground { position: absolute; left: 0; right: 0; bottom: 6px; height: 6px; border-radius: 3px; background: rgba(74,42,18,.25); }
+  .loading .roll { position: absolute; bottom: 10px; width: 50px; height: 56px; animation: roll 1.6s ease-in-out infinite alternate; }
+  .loading .roll svg { width: 100%; height: 100%; animation: spin 1.6s ease-in-out infinite alternate; transform-origin: 50% 58%; }
+  @keyframes roll { from { left: 0; } to { left: calc(100% - 50px); } }
+  @keyframes spin { from { transform: rotate(-30deg); } to { transform: rotate(330deg); } }
+  .loading p { margin: 0; font: 800 15px var(--font-body); color: var(--muted); letter-spacing: .1em; }
+
+  /* ── 木の板(ボタン・見出し) ── */
+  .plank {
+    position: relative; display: flex; align-items: center; gap: 12px; width: 100%;
+    min-height: 64px; padding: 8px 18px 10px; border: 0; cursor: pointer; text-align: left;
+    background: var(--wood) center / 100% 100% no-repeat;
+    filter: drop-shadow(0 5px 0 rgba(58, 34, 14, .35));
+    transition: transform .08s;
   }
-  a.card:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(31,42,51,.2); }
-  a.card:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-  a.card b { font-family: var(--font-display); font-weight: 400; font-size: 24px; }
-  a.card small { color: var(--muted); font-size: 14px; line-height: 1.6; }
-  a.card.main { background: var(--accent); color: var(--paper); box-shadow: 0 5px 0 #b8362d; }
-  a.card.main small { color: rgba(255,255,255,.88); }
-  .note { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .plank:active { transform: translateY(4px); filter: drop-shadow(0 1px 0 rgba(58, 34, 14, .35)); }
+  .plank .ico { flex: none; width: 42px; height: 42px; display: grid; place-items: center; }
+  .plank .ico svg { width: 100%; height: 100%; }
+  .plank b {
+    display: block; font: 400 clamp(19px, 5.4vw, 24px)/1.15 var(--font-display); color: var(--cream);
+    -webkit-text-stroke: 6px var(--ink); paint-order: stroke fill; letter-spacing: .02em;
+  }
+  .plank small { display: block; font: 800 12px var(--font-body); color: #6b4424; margin-top: 2px; }
+  .plank.soon { filter: grayscale(.55) brightness(.92) drop-shadow(0 5px 0 rgba(58, 34, 14, .25)); }
+  .plank.shake { animation: shake .35s; }
+  @keyframes shake { 20%, 60% { transform: translateX(-6px) rotate(-1deg); } 40%, 80% { transform: translateX(6px) rotate(1deg); } }
+  /* じゅんびちゅうの札(ひもでぶら下がる) */
+  .tag {
+    position: absolute; right: 14px; top: -6px; padding: 18px 9px 6px; background: #fff3cf;
+    border: 2px solid #8a6238; border-radius: 4px 4px 8px 8px; font: 800 11px var(--font-body); color: #7a4a1c;
+    transform: rotate(6deg); transform-origin: 50% 0; box-shadow: 0 2px 0 rgba(0,0,0,.15);
+    animation: sway 2.4s ease-in-out infinite alternate;
+  }
+  .tag::before { content: ''; position: absolute; left: 50%; top: 5px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: #8a6238; }
+  @keyframes sway { from { transform: rotate(3deg); } to { transform: rotate(9deg); } }
+
+  /* ── タイトル: タップしてはじめる ── */
+  .tap {
+    position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 9vh); z-index: 5;
+    text-align: center; font: 400 clamp(22px, 6.6vw, 30px) var(--font-display); color: var(--cream);
+    -webkit-text-stroke: 7px var(--ink); paint-order: stroke fill; letter-spacing: .06em;
+    animation: pulse 1.6s ease-in-out infinite; pointer-events: none;
+  }
+  @keyframes pulse { 50% { transform: scale(1.07); opacity: .8; } }
+  .ver { position: fixed; right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); z-index: 5; font: 700 11px var(--font-body); color: rgba(74,42,18,.55); }
+
+  /* ── 画面(メニュー・競技えらび・せってい) ── */
+  .screen {
+    position: fixed; z-index: 6; display: grid; gap: 12px; align-content: start;
+    left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    transition: opacity .35s, transform .35s;
+  }
+  .screen.enter { opacity: 0; transform: translateY(24px); }
+  #menu { top: 52vh; max-width: 440px; margin: 0 auto; }
+  #menu .plank { animation: pop .45s cubic-bezier(.3, 1.6, .5, 1) backwards; }
+  #menu .plank:nth-child(2) { animation-delay: .05s; } #menu .plank:nth-child(3) { animation-delay: .1s; }
+  #menu .plank:nth-child(4) { animation-delay: .15s; } #menu .plank:nth-child(5) { animation-delay: .2s; }
+  @keyframes pop { from { transform: translateY(30px) scale(.9); opacity: 0; } }
+  .sub { top: calc(env(safe-area-inset-top, 0px) + 16px); max-width: 520px; margin: 0 auto; overflow-y: auto; }
+  .head { display: flex; align-items: center; gap: 10px; }
+  .back {
+    flex: none; width: auto; min-height: 48px; padding: 6px 16px 8px; background: var(--wood) center / 100% 100% no-repeat;
+    border: 0; cursor: pointer; filter: drop-shadow(0 4px 0 rgba(58,34,14,.35));
+    font: 400 17px var(--font-display); color: var(--cream); -webkit-text-stroke: 5px var(--ink); paint-order: stroke fill;
+  }
+  .back:active { transform: translateY(3px); }
+  .head h2 {
+    margin: 0; flex: 1; font: 400 clamp(22px, 6.4vw, 30px) var(--font-display); color: var(--cream);
+    -webkit-text-stroke: 7px var(--ink); paint-order: stroke fill; text-align: center;
+  }
+  /* 競技のカード */
+  .card {
+    position: relative; display: grid; gap: 8px; padding: 12px; border-radius: 20px;
+    background: var(--paper); box-shadow: 0 6px 0 rgba(58,34,14,.3); border: 3px solid #8a6238;
+  }
+  .card .thumb { position: relative; border-radius: 12px; overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; background: #cfe8f4; }
+  .card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ribbon {
+    position: absolute; left: -6px; top: 10px; padding: 4px 14px 5px 12px; background: var(--red); color: #fff;
+    font: 800 13px var(--font-body); letter-spacing: .08em; border-radius: 0 6px 6px 0; box-shadow: 0 2px 0 rgba(0,0,0,.2);
+  }
+  .card h3 { margin: 0; font: 400 22px var(--font-display); color: var(--ink); }
+  .card p { margin: 0; font-size: 14px; line-height: 1.6; color: #5a3c22; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; }
+  .meta span { font: 800 12px var(--font-body); background: #f2e4c8; color: #6b4424; border-radius: 999px; padding: 3px 10px; }
+  .play {
+    display: block; text-align: center; text-decoration: none; padding: 12px; border-radius: 14px;
+    background: var(--red); color: #fff; font: 400 20px var(--font-display); box-shadow: 0 5px 0 #8f2a24;
+  }
+  .play:active { transform: translateY(4px); box-shadow: 0 1px 0 #8f2a24; }
+  .card.locked .thumb { display: grid; place-items: center; background: repeating-linear-gradient(45deg, #e6d6b8 0 14px, #eadcc2 14px 28px); }
+  .card.locked .thumb b { font: 400 54px var(--font-display); color: rgba(74,42,18,.35); }
+  .cards { display: grid; gap: 14px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* せってい */
+  .opt { display: grid; gap: 8px; padding: 14px; border-radius: 18px; background: var(--paper); border: 3px solid #8a6238; box-shadow: 0 6px 0 rgba(58,34,14,.3); }
+  .opt h3 { margin: 0; font: 400 18px var(--font-display); }
+  .opt p { margin: 0; font-size: 13px; color: #6b4424; line-height: 1.6; }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 6px; }
+  .seg button {
+    border: 2px solid #c9a46c; background: #fff3d9; border-radius: 12px; padding: 10px 4px; cursor: pointer;
+    font: 800 15px var(--font-body); color: #6b4424;
+  }
+  .seg button[aria-pressed="true"] { background: var(--leaf); border-color: #2f6b25; color: #fff; box-shadow: inset 0 -3px 0 rgba(0,0,0,.2); }
+  /* ひとこと */
+  .toast {
+    position: fixed; left: 50%; top: 40%; z-index: 20; transform: translate(-50%, -50%) scale(.6); opacity: 0;
+    padding: 12px 20px; border-radius: 16px; background: var(--paper); border: 3px solid #8a6238;
+    font: 800 16px var(--font-body); color: var(--ink); box-shadow: 0 6px 0 rgba(58,34,14,.3); pointer-events: none;
+    transition: transform .2s cubic-bezier(.3,1.6,.5,1), opacity .2s; white-space: nowrap;
+  }
+  .toast.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+
+  /* 横長: メニューは右側に縦に並べる(左は看板と島) */
+  @media (min-aspect-ratio: 1/1) {
+    #menu { top: auto; left: auto; right: max(32px, env(safe-area-inset-right, 0px)); bottom: 50%; transform: translateY(50%); width: min(400px, 36vw); }
+    #menu.enter { transform: translate(24px, 50%); }
+    .sub { left: auto; right: max(24px, env(safe-area-inset-right, 0px)); width: min(520px, 44vw); max-width: none; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
+    .tap { bottom: 7vh; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tap, .tag, .loading .roll, .loading .roll svg { animation: none; }
+  }
 </style>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three.module.js",
+  "three/addons/": "./vendor/addons/"
+} }
+</script>
 </head>
 <body>
-<main>
-  <h1>ワイワイ<br><span>アニマルズ</span></h1>
-  <p class="lead">つくりかけのパーティゲーム</p>
-  <div class="games">
-    <a class="card main" href="./daruma.html">
-      <b>だるまさんがころんだ</b>
-      <small>ホーホー先生がふりむく前に、どんぐりの森をかけぬけろ。ひとり + CPU4人で遊べます。</small>
-    </a>
-    <a class="card" href="./viewer.html">
-      <b>キャラ図鑑</b>
-      <small>6人のキャラを回して見られます。アニメーション・表情・色の切りかえつき。</small>
-    </a>
+<canvas id="cv"></canvas>
+
+<div class="loading" id="loading">
+  <div class="track">
+    <div class="ground"></div>
+    <div class="roll"><svg viewBox="0 0 40 46" aria-hidden="true"><ellipse cx="20" cy="27" rx="14" ry="16" fill="#c27a35" stroke="#4a2a14" stroke-width="3"/><ellipse cx="14" cy="22" rx="3" ry="6" fill="#fff" opacity=".45"/><path d="M4 18a16 11 0 0 1 32 0q-16 6-32 0z" fill="#7a4f2c" stroke="#4a2a14" stroke-width="3"/><path d="M20 6v-4" stroke="#4a2a14" stroke-width="3" stroke-linecap="round"/></svg></div>
   </div>
-  <p class="note">スマホは縦持ちがおすすめです。重さを確かめるときは、ゲームのアドレスの最後に <code>?fps</code> を付けると、1秒あたりのフレーム数が出ます。</p>
-</main>
+  <p id="loadingText">よみこみ中…</p>
+</div>
+
+<div class="tap" id="tap" hidden>タップしてはじめる</div>
+<div class="ver" id="ver" hidden>つくりかけ版</div>
+
+<nav class="screen" id="menu" hidden aria-label="メインメニュー">
+  <button class="plank soon" type="button" data-soon="すごろく">
+    <span class="ico"><svg viewBox="0 0 40 40"><rect x="5" y="5" width="30" height="30" rx="8" fill="#fffaf0" stroke="#4a2a12" stroke-width="3"/><circle cx="13" cy="13" r="3.2" fill="#d9443a"/><circle cx="20" cy="20" r="3.2" fill="#4a2a12"/><circle cx="27" cy="27" r="3.2" fill="#4a2a12"/></svg></span>
+    <span><b>すごろく</b><small>どんぐりを集める 大会</small></span>
+    <span class="tag">じゅんびちゅう</span>
+  </button>
+  <button class="plank" type="button" data-go="games">
+    <span class="ico"><svg viewBox="0 0 40 46"><ellipse cx="20" cy="27" rx="14" ry="16" fill="#c27a35" stroke="#4a2a14" stroke-width="3"/><ellipse cx="14" cy="22" rx="3" ry="6" fill="#fff" opacity=".45"/><path d="M4 18a16 11 0 0 1 32 0q-16 6-32 0z" fill="#7a4f2c" stroke="#4a2a14" stroke-width="3"/><path d="M20 6v-4" stroke="#4a2a14" stroke-width="3" stroke-linecap="round"/></svg></span>
+    <span><b>ミニゲーム</b><small>競技をえらんで あそぶ</small></span>
+  </button>
+  <button class="plank soon" type="button" data-soon="オンライン">
+    <span class="ico"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="15" fill="#7cc7e6" stroke="#4a2a12" stroke-width="3"/><path d="M8 15c5 3 8-2 12 1s3 7 8 6M10 27c4-1 6 3 10 1" fill="none" stroke="#4f9a3c" stroke-width="4" stroke-linecap="round"/></svg></span>
+    <span><b>オンライン</b><small>はなれた友だちと あそぶ</small></span>
+    <span class="tag">じゅんびちゅう</span>
+  </button>
+  <button class="plank" type="button" data-go="zukan">
+    <span class="ico"><svg viewBox="0 0 40 40"><path d="M6 9q7-3 14 1v24q-7-4-14-1z" fill="#fffaf0" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><path d="M34 9q-7-3-14 1v24q7-4 14-1z" fill="#ffe7b0" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><circle cx="27" cy="18" r="3" fill="#d9443a"/></svg></span>
+    <span><b>キャラ図鑑</b><small>6人の なかまを 見る</small></span>
+  </button>
+  <button class="plank" type="button" data-go="settings">
+    <span class="ico"><svg viewBox="0 0 40 40"><path d="M20 5l3 4 5-1 1 5 4 3-2 4 2 4-4 3-1 5-5-1-3 4-3-4-5 1-1-5-4-3 2-4-2-4 4-3 1-5 5 1z" fill="#c9cfd6" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><circle cx="20" cy="20" r="5" fill="#fffaf0" stroke="#4a2a12" stroke-width="3"/></svg></span>
+    <span><b>せってい</b><small>おと・がしつ</small></span>
+  </button>
+</nav>
+
+<section class="screen sub" id="games" hidden aria-label="競技えらび">
+  <div class="head"><button class="back" type="button" data-back>‹ もどる</button><h2>競技をえらぶ</h2></div>
+  <div class="cards">
+    <article class="card">
+      <div class="thumb"><img src="./assets/thumbs/daruma.jpg" alt="だるまさんがころんだ の画面" width="640" height="360"><span class="ribbon">第1競技</span></div>
+      <h3>だるまさんがころんだ</h3>
+      <p>ホーホー先生がふりむく前に、どんぐりの森をかけぬけろ!長押しで走って、はなすと止まる。</p>
+      <div class="meta"><span>1〜5人(あいている席は CPU)</span><span>30〜60びょう</span></div>
+      <a class="play" href="./daruma.html">あそぶ</a>
+    </article>
+    <div class="row2">
+      <article class="card locked"><div class="thumb"><b>?</b><span class="ribbon">第2競技</span></div><p>じゅんびちゅう</p></article>
+      <article class="card locked"><div class="thumb"><b>?</b><span class="ribbon">第3競技</span></div><p>じゅんびちゅう</p></article>
+    </div>
+  </div>
+</section>
+
+<section class="screen sub" id="settings" hidden aria-label="せってい">
+  <div class="head"><button class="back" type="button" data-back>‹ もどる</button><h2>せってい</h2></div>
+  <div class="opt">
+    <h3>おと</h3>
+    <div class="seg" id="optSound"><button type="button" data-v="on">ならす</button><button type="button" data-v="off">けす</button></div>
+  </div>
+  <div class="opt">
+    <h3>がしつ</h3>
+    <div class="seg" id="optQuality"><button type="button" data-v="auto">じどう</button><button type="button" data-v="high">きれい</button><button type="button" data-v="light">かるい</button></div>
+    <p>「じどう」は、重いと感じたら自動で軽くします。カクカクするときは「かるい」にしてください。</p>
+  </div>
+</section>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script type="module" src="./src/title/title.js"></script>
 </body>
 </html>
