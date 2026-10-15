@@ -57,24 +57,97 @@ function buildGround(g) {
   g.add(Object.assign(new THREE.Mesh(geo, m), { name: 'terrain' }));
 }
 
-// 広場の縁: 白っぽい小石の輪
+// 広場の縁: こけの乗った丸い石の輪。ところどころにキノコの群れ、石のあいだに小さな花。
+// 遊ぶときの境目なので、輪としてはっきり見えるように石は切らさずに並べる。
+// 部品ごとに InstancedMesh でまとめて描く(数が多くても描く回数は増えない)
 function buildRing(g) {
   const rand = makeRand(31);
-  const n = 90;
-  const geo = new THREE.DodecahedronGeometry(1, 0);
-  const mesh = new THREE.InstancedMesh(geo, toonMaterial(0xffffff), n);
   const dummy = new THREE.Object3D();
   const color = new THREE.Color();
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + rand() * 0.03, r = ARENA_R + 0.18 + (rand() - 0.5) * 0.12;
-    dummy.position.set(Math.cos(a) * r, 0.03, Math.sin(a) * r);
-    dummy.scale.set(0.13 + rand() * 0.07, 0.07 + rand() * 0.05, 0.11 + rand() * 0.06);
-    dummy.rotation.set(rand(), rand() * 6, rand());
+  const R = ARENA_R + 0.22;
+  const put = (mesh, i, x, y, z, sx, sy, sz, ry = rand() * Math.PI * 2, rx = 0, rz = 0) => {
+    dummy.position.set(x, y, z);
+    dummy.scale.set(sx, sy, sz);
+    dummy.rotation.set(rx, ry, rz);
     dummy.updateMatrix();
     mesh.setMatrixAt(i, dummy.matrix);
-    mesh.setColorAt(i, color.setHSL(0.1, 0.12, 0.78 + rand() * 0.14));
+  };
+
+  // 石と、その上のこけ
+  const nStones = 64;
+  const stoneGeo = new THREE.IcosahedronGeometry(1, 1);
+  const stones = new THREE.InstancedMesh(stoneGeo, toonMaterial(0xffffff), nStones);
+  const moss = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), toonMaterial(0xffffff), nStones);
+  let nMoss = 0;
+  for (let i = 0; i < nStones; i++) {
+    const a = (i / nStones) * Math.PI * 2 + (rand() - 0.5) * 0.04, r = R + (rand() - 0.5) * 0.14;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const w = 0.17 + rand() * 0.09, h = 0.1 + rand() * 0.07;
+    put(stones, i, x, h * 0.45, z, w, h, w * (0.8 + rand() * 0.3), rand() * 6, (rand() - 0.5) * 0.3, (rand() - 0.5) * 0.3);
+    stones.setColorAt(i, color.setHSL(0.08 + rand() * 0.04, 0.1 + rand() * 0.06, 0.48 + rand() * 0.12));
+    if (rand() < 0.7) {
+      // 石のてっぺん(高さ h*1.45)に、こけを薄くかぶせる
+      put(moss, nMoss, x + (rand() - 0.5) * 0.03, h * 1.12, z + (rand() - 0.5) * 0.03, w * (0.72 + rand() * 0.2), h * 0.42, w * (0.68 + rand() * 0.2));
+      moss.setColorAt(nMoss++, color.setHSL(0.25 + rand() * 0.05, 0.5, 0.3 + rand() * 0.08));
+    }
   }
-  g.add(mesh);
+  moss.count = nMoss;
+
+  // キノコの群れ: 赤に白い水玉 / 茶色 / クリーム色。2〜3本ずつ、輪の外がわに寄せて
+  const groups = 14;
+  const stemGeo = new THREE.CylinderGeometry(0.5, 0.65, 1, 10);
+  const capGeo = new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const dotGeo = new THREE.SphereGeometry(1, 8, 6);
+  const maxM = groups * 3;
+  const stems = new THREE.InstancedMesh(stemGeo, toonMaterial(0xf3ead7), maxM);
+  const caps = new THREE.InstancedMesh(capGeo, toonMaterial(0xffffff), maxM);
+  const dots = new THREE.InstancedMesh(dotGeo, toonMaterial(0xfffaf0), maxM * 4);
+  const capColors = [0xd9473a, 0xd9473a, 0xb07a44, 0xe8c48a];
+  let nm = 0, nd = 0;
+  for (let k = 0; k < groups; k++) {
+    const a0 = (k / groups) * Math.PI * 2 + rand() * 0.3;
+    const kind = Math.floor(rand() * capColors.length);
+    const n = 2 + Math.floor(rand() * 2);
+    for (let j = 0; j < n; j++) {
+      const a = a0 + (j - n / 2) * 0.035, r = R + 0.24 + rand() * 0.18;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      const sz = (j === 0 ? 0.13 : 0.08) + rand() * 0.04;
+      const tilt = (rand() - 0.5) * 0.3;
+      put(stems, nm, x, sz * 0.75, z, sz * 0.35, sz * 1.5, sz * 0.35, 0, tilt, tilt);
+      put(caps, nm, x, sz * 1.4, z, sz, sz * 0.75, sz, rand() * 6, tilt, tilt);
+      caps.setColorAt(nm, color.setHex(capColors[kind]));
+      nm++;
+      if (kind < 2) {
+        // 赤いかさには白い水玉
+        for (let d = 0; d < 4; d++) {
+          const da = rand() * Math.PI * 2, dr = sz * (0.3 + rand() * 0.45);
+          put(dots, nd++, x + Math.cos(da) * dr, sz * 1.4 + Math.sqrt(Math.max(0, 1 - (dr / sz) ** 2)) * sz * 0.78, z + Math.sin(da) * dr, sz * 0.17, sz * 0.08, sz * 0.17);
+        }
+      }
+    }
+  }
+  stems.count = caps.count = nm;
+  dots.count = nd;
+
+  // 小さな花: 5まいの花びら + まん中。石のあいだと、輪のすぐ外に
+  const petal = new THREE.CircleGeometry(1, 5);
+  petal.rotateX(-Math.PI / 2);
+  const nFlowers = 90;
+  const flowers = new THREE.InstancedMesh(petal, new THREE.MeshToonMaterial({ color: 0xffffff, side: THREE.DoubleSide }), nFlowers);
+  const centers = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), toonMaterial(0xf2c14e), nFlowers);
+  const petalColors = [0xffffff, 0xfff1a8, 0xffc4d6, 0xd9c8ff];
+  for (let i = 0; i < nFlowers; i++) {
+    const a = rand() * Math.PI * 2, r = R + (rand() < 0.5 ? (rand() - 0.5) * 0.2 : 0.2 + rand() * 0.7);
+    const x = Math.cos(a) * r, z = Math.sin(a) * r, s = 0.045 + rand() * 0.03, y = 0.06 + rand() * 0.08;
+    put(flowers, i, x, y, z, s, 1, s, rand() * 6, (rand() - 0.5) * 0.4, (rand() - 0.5) * 0.4);
+    flowers.setColorAt(i, color.setHex(petalColors[Math.floor(rand() * petalColors.length)]));
+    put(centers, i, x, y + 0.008, z, s * 0.35, s * 0.25, s * 0.35);
+  }
+  for (const m of [stones, moss, stems, caps, dots, flowers, centers]) {
+    m.castShadow = m !== flowers && m !== dots && m !== centers;
+    m.receiveShadow = true;
+    g.add(m);
+  }
 }
 
 // 観客の切り株
