@@ -179,6 +179,7 @@ async function startGame() {
     lastCount: 0,
   };
   held = false;
+  paused = false;
   stage.setGame(game.state);
   atmosphere.apply(params.get('time') || game.state.timeOfDay);
   atmosphere.setupShadows(runners.map((r) => r.model.root), runners.map((r) => r.model.root));
@@ -190,15 +191,32 @@ async function startGame() {
 
 function setMode(m) {
   mode = m;
+  setPaused(false);
   $('select').hidden = m !== 'select';
   $('result').hidden = m !== 'result';
   $('hud').hidden = m !== 'playing';
   if (m === 'select') renderSelect();
 }
 
+// ── 一時停止 ────────────────────────────────────────
+// ブラウザの戻るボタンは無いものとして作る(PWA にしたとき無いので)。
+// プレイ中にやめたいときは、右上のボタンからメニューを開く。
+// アプリを裏に回したとき・画面を切ったときも、自動で止める。
+let paused = false;
+function setPaused(on) {
+  paused = on && mode === 'playing';
+  if (paused) press(false);
+  $('pause').hidden = !paused;
+}
+$('pauseBtn').addEventListener('click', () => setPaused(true));
+$('resume').addEventListener('click', () => setPaused(false));
+$('restart').addEventListener('click', () => { setPaused(false); startGame(); });
+$('pauseReselect').addEventListener('click', () => setMode('select'));
+document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
+
 // ── 入力 ────────────────────────────────────────────
 function press(on) {
-  if (mode !== 'playing') return;
+  if (mode !== 'playing' || (on && paused)) return;
   held = on;
   $('run').classList.toggle('down', on);
 }
@@ -211,13 +229,18 @@ runBtn.addEventListener('pointerdown', (e) => {
 for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) runBtn.addEventListener(ev, () => press(false));
 // ボタンの外を押しても走れる(押したまま指がずれても止まらないように)
 window.addEventListener('pointerdown', (e) => {
-  if (mode !== 'playing' || e.target === runBtn) return;
+  // 一時停止ボタンやメニューを押したときは走らない
+  if (mode !== 'playing' || paused || e.target === runBtn || e.target.closest('button, a')) return;
   unlockAudio();
   press(true);
 });
 window.addEventListener('pointerup', (e) => { if (e.target !== runBtn) press(false); });
 window.addEventListener('blur', () => press(false));
 window.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' || e.code === 'KeyP') {
+    setPaused(!paused);
+    return;
+  }
   if (e.code === 'Space' || e.code === 'ArrowUp') {
     e.preventDefault();
     unlockAudio();
@@ -495,7 +518,7 @@ function frame() {
   const rawDt = clock.getDelta();
   const dt = Math.min(rawDt, 0.1);
   if (mode === 'playing') watchQuality(rawDt);
-  if (game && mode === 'playing') {
+  if (game && mode === 'playing' && !paused) {
     const s = game.state;
     game.acc += dt;
     while (game.acc >= STEP && s.phase !== 'finished') {
@@ -512,16 +535,16 @@ function frame() {
     }
     renderHud();
   }
-  if (game) {
+  if (game && !paused) {
     updateRunners(dt);
     stage.update(dt, game.state);
   }
-  audience.update(dt, game && mode === 'playing' ? game.state : null);
+  if (!paused) audience.update(dt, game && mode === 'playing' ? game.state : null);
   atmosphere.update(dt);
   // 先生の首: 0 = うしろ、1 = こっち。回り始めと終わりをなめらかに
   const look = !game || mode === 'select' ? 0 : game.state.phase === 'finished' ? 1 : lookAmount(game.state);
   owlHead.rotation.y = Math.PI * (look * look * (3 - 2 * look));
-  owl.update(dt);
+  if (!paused) owl.update(dt);
   updateCamera(dt);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -535,6 +558,7 @@ window.daruma = {
   pick: (key) => { picked = key; renderSelect(); },
   start: () => startGame(),
   hold: (on) => press(on),
+  get paused() { return paused; },
   camera,
   renderer,
   scene,

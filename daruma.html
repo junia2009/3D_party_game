@@ -43,7 +43,7 @@
   .chant {
     flex: 1; min-width: 0; background: var(--paper); border-radius: 18px; padding: 8px 10px;
     display: flex; justify-content: center; gap: 1px; box-shadow: 0 3px 0 rgba(31,42,51,.18);
-    font-family: var(--font-display); font-size: clamp(20px, 6.4vw, 34px); line-height: 1.15;
+    font-family: var(--font-display); font-size: clamp(17px, 5.1vw, 34px); line-height: 1.15;
   }
   .chant span { color: #cfd8dc; transition: color .08s, transform .12s; }
   .chant span.on { color: var(--lit); transform: translateY(-2px); }
@@ -94,6 +94,14 @@
     100% { opacity: 0; transform: translateY(-14px); }
   }
 
+  .pausebtn {
+    pointer-events: auto; flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0;
+    background: var(--paper); color: var(--ink); display: grid; place-items: center; cursor: pointer;
+    box-shadow: 0 3px 0 rgba(31,42,51,.18);
+  }
+  .pausebtn svg { width: 20px; height: 20px; fill: currentColor; }
+  .pausebtn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(31,42,51,.18); }
+  .pausebtn:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
   .runbtn {
     pointer-events: auto; position: absolute; left: 50%; transform: translateX(-50%);
     bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
@@ -181,6 +189,7 @@
       <div class="timer" id="timer">60<small>びょう</small></div>
       <div class="acorns" id="acorns" title="拾ったどんぐり"><svg viewBox="0 0 20 22" aria-hidden="true"><ellipse cx="10" cy="13" rx="6.5" ry="7.5" fill="#b5702f"/><path d="M2.5 9.5a7.5 5 0 0 1 15 0z" fill="#6e4a2a"/><rect x="9" y="2" width="2" height="4" rx="1" fill="#5a3c22"/></svg>0</div>
     </div>
+    <button class="pausebtn" id="pauseBtn" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
   </div>
   <div class="track" id="track"></div>
   <div class="splash" id="splash"></div>
@@ -199,6 +208,18 @@
     <p class="label">キャラをえらぶ</p>
     <div class="grid" id="chars"></div>
     <button class="primary" id="start" type="button">スタート</button>
+    <a class="home" href="./index.html">‹ タイトルへもどる</a>
+  </div>
+</section>
+
+<section class="screen" id="pause" hidden>
+  <div class="card">
+    <h2>いちじていし</h2>
+    <button class="primary" id="resume" type="button">つづける</button>
+    <div class="row">
+      <button class="secondary" id="restart" type="button">さいしょから</button>
+      <button class="secondary" id="pauseReselect" type="button">えらびなおす</button>
+    </div>
     <a class="home" href="./index.html">‹ タイトルへもどる</a>
   </div>
 </section>
