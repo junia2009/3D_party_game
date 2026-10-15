@@ -21,6 +21,7 @@ const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const SLOTS = 5;
 const DROP_H = 7.5; // どんぐりが見えはじめる高さ
+const FALL_SHOW = 1.2; // 落ちきる何秒前から、どんぐりが見えるか(影はそれより前から出ている)
 const params = new URLSearchParams(location.search);
 
 export async function createCatch({ renderer, settings, getAudio, onExit }) {
@@ -663,11 +664,11 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       const it = byId.get(id);
       if (!it) continue;
       if (it.ground === null) {
-        // 落ちてくる: 影が先に出て、だんだん濃く大きく
+        // 落ちてくる: 影が先に出て、だんだん濃く大きく。どんぐり自体は終わりの FALL_SHOW 秒だけ見える
         const f = Math.max(0, it.left) / RULES.fallTime; // 1 → 0
-        const visible = f < 1;
-        v.mesh.visible = visible;
-        v.mesh.position.set(it.x, 0.9 + (DROP_H - 0.9) * Math.min(1, f) ** 1.6, it.z);
+        const h = Math.max(0, it.left) / FALL_SHOW; // 1 をこえているあいだは、まだ枝の中
+        v.mesh.visible = h < 1;
+        v.mesh.position.set(it.x, 0.9 + (DROP_H - 0.9) * Math.min(1, h) ** 1.6, it.z);
         v.mesh.rotation.set(v.spin, v.spin * 0.6, 0);
         if (v.kind === 'worm') v.mesh.rotation.set(Math.PI / 2 + Math.sin(v.spin * 3) * 0.4, v.spin, 0);
         const near = 1 - Math.min(1, f);

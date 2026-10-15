@@ -160,3 +160,24 @@ test('つよき・ふつう・しんちょう、どの性格にも勝ち目が�
   }
   for (const k of kinds) assert.ok(wins[k] >= 10, `性格ごとの勝ち数 ${JSON.stringify(wins)}`);
 });
+
+test('人間くらいの反応(気づくのに 0.6〜0.9 秒)でも、CPU と互角に戦える', () => {
+  // 人のかわり: 影に気づくのが遅く、考えなおすのも遅い。席 0 に置いて、CPU の性格はいろいろ
+  PERSONALITIES.human = { label: 'ひと', notice: [0.6, 0.9], guess: 0.6, reachMax: 4.2, react: [0.45, 0.6], fear: 0.8, greed: 1.5, bully: 0.05 };
+  try {
+    let rankSum = 0, wins = 0;
+    const N = 100;
+    for (let seed = 1; seed <= N; seed++) {
+      const order = PLAYERS.map((_, i) => (i === 0 ? 'human' : kinds[(i + seed) % kinds.length]));
+      const { s } = run(seed, { personalities: order });
+      const r = ranking(s);
+      rankSum += r.indexOf(0) + 1;
+      if (r[0] === 0) wins++;
+    }
+    // 5人なので、互角なら平均 3 位・勝ち 20%
+    assert.ok(rankSum / N <= 3.4, `人の平均順位 ${rankSum / N}`);
+    assert.ok(wins / N >= 0.12, `人の勝ち ${wins}/${N}`);
+  } finally {
+    delete PERSONALITIES.human;
+  }
+});

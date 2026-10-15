@@ -15,9 +15,9 @@ import { ARENA_R, ITEMS, RULES, isHazard } from './rules.js';
 export const PERSONALITIES = {
   // notice: 影に気づくまで(秒)/ guess: 落ちる場所の見まちがい(m)/ reachMax: 追いかける遠さ(m)
   // react: 考えなおす間隔(秒)/ fear: じゃまものをよける確率 / greed: 金どんぐりへの食いつき / bully: 体当たりの気の強さ
-  cautious: { label: 'しんちょう', notice: [0.35, 0.55], guess: 0.55, reachMax: 3.4, react: [0.32, 0.48], fear: 0.9, greed: 1.0, bully: 0 },
-  normal: { label: 'ふつう', notice: [0.28, 0.48], guess: 0.6, reachMax: 3.8, react: [0.28, 0.42], fear: 0.65, greed: 1.4, bully: 0.05 },
-  bold: { label: 'つよき', notice: [0.22, 0.42], guess: 0.75, reachMax: 4.4, react: [0.22, 0.36], fear: 0.35, greed: 2.0, bully: 0.22 },
+  cautious: { label: 'しんちょう', notice: [0.55, 0.8], guess: 0.6, reachMax: 3.4, react: [0.45, 0.6], fear: 0.9, greed: 1.0, bully: 0 },
+  normal: { label: 'ふつう', notice: [0.45, 0.7], guess: 0.65, reachMax: 3.8, react: [0.4, 0.55], fear: 0.65, greed: 1.4, bully: 0.05 },
+  bold: { label: 'つよき', notice: [0.38, 0.62], guess: 0.8, reachMax: 4.2, react: [0.35, 0.5], fear: 0.35, greed: 2.0, bully: 0.22 },
 };
 
 export function createCpu(personality, seed, slot) {
