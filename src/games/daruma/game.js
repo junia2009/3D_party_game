@@ -11,6 +11,8 @@ import { nextRandom, seedFrom } from '../../rng.js';
 import { MORA, RULES, STEP, TRACK, chantCount, createGame, inMud, lookAmount, ranking, step } from './rules.js';
 import { PERSONALITIES, cpuHold, createCpu } from './cpu.js';
 import { PERCH, buildStage, laneX } from './stage.js';
+import { createAudience } from './audience.js';
+import { CRITTERS } from '../../npcs.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -112,7 +114,8 @@ function unlockAudio() {
 }
 
 // ── 読み込み ────────────────────────────────────────
-await preload([...CHARACTERS.map((c) => c.key), 'hoho']);
+await preload([...CHARACTERS.map((c) => c.key), 'hoho', ...CRITTERS.map((c) => c.key)]);
+const audience = await createAudience(scene);
 const owl = await createModel('hoho');
 owl.root.position.copy(PERCH); // 大木の低い枝の上
 owl.root.rotation.y = Math.PI; // 体はうしろ(大木の幹)を向く
@@ -176,6 +179,7 @@ async function startGame() {
   };
   held = false;
   stage.setGame(game.state);
+  audience.reset();
   buildTrackDots();
   setMode('playing');
   splash('よーい…');
@@ -275,6 +279,7 @@ function onEvents(events) {
   const s = game.state;
   for (const e of events) {
     stage.onEvent(e, s);
+    audience.onEvent(e, s, laneX);
     switch (e.type) {
       case 'chant':
         owl.setFace('normal');
@@ -479,6 +484,7 @@ function frame() {
     updateRunners(dt);
     stage.update(dt, game.state);
   }
+  audience.update(dt, game && mode === 'playing' ? game.state : null);
   // 先生の首: 0 = うしろ、1 = こっち。回り始めと終わりをなめらかに
   const look = !game || mode === 'select' ? 0 : game.state.phase === 'finished' ? 1 : lookAmount(game.state);
   owlHead.rotation.y = Math.PI * (look * look * (3 - 2 * look));

@@ -16,7 +16,7 @@
 
 プロフィールと見分け方は `src/characters.js` に書いてある。
 
-見張り番などの NPC は `src/npcs.js`(`models/hoho.glb` = ホーホー先生)。
+見張り番などの NPC は `src/npcs.js`(`models/hoho.glb` = ホーホー先生、`risu` `harinezumi` `komadori` `mogura` = だるまさんの観客)。
 
 全体の決めごとは [docs/GAME.md](docs/GAME.md)。
 

@@ -62,7 +62,7 @@ const TONGUE = 0xff8a95;
 
 // ── 表情 ─────────────────────────────────────────────
 
-function eyeParts(expr, side, es) {
+export function eyeParts(expr, side, es) {
   const g = new THREE.Group();
   if (expr === 'normal') {
     g.add(ink(0.055 * es, 0.075 * es, 0.02));
@@ -94,7 +94,7 @@ function eyeParts(expr, side, es) {
   return g;
 }
 
-function mouthParts(expr, mw) {
+export function mouthParts(expr, mw) {
   const g = new THREE.Group();
   if (expr === 'normal') {
     const m = new THREE.Mesh(GEO.smile, flat(INK));

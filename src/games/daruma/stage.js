@@ -164,20 +164,84 @@ function buildOak(g) {
 }
 
 // ── 観客席(切り株と根っこ) ───────────────────────────
+// kind: 観客の種類。seat: 'stump'(切り株の上)/ 'hole'(地面の穴から顔を出す)
 export const SEATS = [
-  { x: -4.6, z: -2.5 }, { x: 4.7, z: -4.0 }, { x: -4.9, z: -8.5 }, { x: 4.9, z: -10.0 },
-  { x: -4.4, z: -14.5 }, { x: 4.6, z: -15.5 }, { x: 4.4, z: -20.5 },
+  { x: -4.6, z: -2.5, kind: 'risu', seat: 'stump' },
+  { x: 4.7, z: -4.0, kind: 'komadori', seat: 'stump' },
+  { x: -3.95, z: -6.2, kind: 'mogura', seat: 'hole' },
+  { x: -4.9, z: -8.5, kind: 'harinezumi', seat: 'stump' },
+  { x: 4.9, z: -10.0, kind: 'risu', seat: 'stump' },
+  { x: -4.4, z: -14.5, kind: 'komadori', seat: 'stump' },
+  { x: 4.6, z: -15.5, kind: 'harinezumi', seat: 'stump' },
+  { x: 3.95, z: -18.0, kind: 'mogura', seat: 'hole' },
+  { x: 4.5, z: -21.0, kind: 'risu', seat: 'stump' },
 ];
+export const STUMP_TOP = 0.5;
+
+// 切り株: 年輪の見える上面、樹皮、根元の小さな根
+function stumpTopTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#e2c08e';
+  g.fillRect(0, 0, 128, 128);
+  for (let r = 6; r < 64; r += 5 + Math.random() * 3) {
+    g.strokeStyle = `rgba(150, 105, 60, ${0.35 + Math.random() * 0.25})`;
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.ellipse(64, 64, r, r * (0.92 + Math.random() * 0.08), Math.random(), 0, Math.PI * 2);
+    g.stroke();
+  }
+  g.strokeStyle = '#8a5f38';
+  g.lineWidth = 6;
+  g.beginPath();
+  g.arc(64, 64, 61, 0, Math.PI * 2);
+  g.stroke();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 function buildSeats(g) {
-  const kinds = [0xd77a4a, 0x9a7f6a, 0xe1b84a, 0x6f5a52]; // 観客の仮の色(リス・ハリネズミ・コマドリ・モグラ)
-  SEATS.forEach((seat, i) => {
-    const stump = new THREE.Mesh(CYL, mat(0x9b7250));
-    stump.scale.set(0.45, 0.5, 0.45);
-    stump.position.set(seat.x, 0.25, seat.z);
-    g.add(stump);
-    const a = blobMesh(kinds[i % 4], 0.22, 0.3, 0.22);
-    a.position.set(seat.x, 0.8, seat.z);
-    g.add(a);
+  const bark = mat(0x8a6244);
+  const top = toonMaterial(0xffffff);
+  top.map = stumpTopTexture();
+  const dirt = mat(0x9c7a52);
+  const hole = new THREE.MeshBasicMaterial({ color: 0x2a1c12 });
+  SEATS.forEach((seat) => {
+    if (seat.seat === 'stump') {
+      const r = 0.42;
+      const stump = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.18, STUMP_TOP, 16), bark);
+      stump.position.set(seat.x, STUMP_TOP / 2, seat.z);
+      const cap = new THREE.Mesh(new THREE.CircleGeometry(r * 0.98, 24), top);
+      cap.rotation.x = -Math.PI / 2;
+      cap.position.set(seat.x, STUMP_TOP + 0.002, seat.z);
+      g.add(stump, cap);
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2 + seat.x;
+        const root = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), bark);
+        root.scale.set(0.24, 0.12, 0.12);
+        root.position.set(seat.x + Math.cos(a) * r * 1.05, 0.04, seat.z + Math.sin(a) * r * 1.05);
+        root.rotation.y = -a;
+        g.add(root);
+      }
+    } else {
+      // モグラの穴: 掘った土の盛り上がりと、暗い穴
+      const mound = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.13, 8, 20), dirt);
+      mound.rotation.x = Math.PI / 2;
+      mound.scale.z = 0.7;
+      mound.position.set(seat.x, 0.03, seat.z);
+      const pit = new THREE.Mesh(new THREE.CircleGeometry(0.3, 20), hole);
+      pit.rotation.x = -Math.PI / 2;
+      pit.position.set(seat.x, 0.02, seat.z);
+      g.add(mound, pit);
+      for (let k = 0; k < 6; k++) {
+        const clod = new THREE.Mesh(new THREE.DodecahedronGeometry(0.05, 0), dirt);
+        const a = k * 1.1;
+        clod.position.set(seat.x + Math.cos(a) * 0.55, 0.03, seat.z + Math.sin(a) * 0.5);
+        g.add(clod);
+      }
+    }
   });
 }
 
