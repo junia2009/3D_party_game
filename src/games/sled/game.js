@@ -121,8 +121,23 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     return sh;
   })();
   const sledGeo = new THREE.ExtrudeGeometry(leafShape, { depth: 0.06, bevelEnabled: true, bevelSize: 0.03, bevelThickness: 0.03, bevelSegments: 2 });
-  sledGeo.rotateX(-Math.PI / 2); // 葉の先(+y)を前(-z)へ
+  sledGeo.rotateX(-Math.PI / 2);
+  sledGeo.rotateY(Math.PI); // 葉の先を前(キャラの正面 +z)へ
   sledGeo.scale(0.75, 1, 0.75);
+  // 葉の先を、そりのように上へ反らせる。うしろのはしも少しだけ
+  {
+    const p = sledGeo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const z = p.getZ(i);
+      const up = z > 0.3 ? (z - 0.3) ** 2 * 1.6 : z < -0.45 ? (-0.45 - z) ** 2 * 0.8 : 0;
+      p.setY(i, p.getY(i) + up);
+    }
+    sledGeo.computeVertexNormals();
+  }
+  // 葉の柄(うしろへ伸びて、くるんと上がる)
+  const stemGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 0.08, -0.6), new THREE.Vector3(0, 0.07, -0.82), new THREE.Vector3(0, 0.12, -0.98), new THREE.Vector3(0, 0.24, -1.04),
+  ]), 12, 0.028, 6);
   const sledColors = [0xe2402f, 0xf08a24, 0xf2b632, 0xc4532a, 0xd96a2a];
 
   // ── どんぐり(自分のぶんだけ見せる。拾うと消える) ─────────────
@@ -197,14 +212,22 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       const holder = new THREE.Group();
       const body = new THREE.Group(); // かたむける(曲がる・伏せる)
       holder.add(body);
-      const sled = new THREE.Mesh(sledGeo, toonMaterial(sledColors[slot % sledColors.length]));
+      const sledMat = toonMaterial(sledColors[slot % sledColors.length]);
+      const sled = new THREE.Group();
+      sled.add(new THREE.Mesh(sledGeo, sledMat), new THREE.Mesh(stemGeo, sledMat));
       sled.position.y = 0.05;
       body.add(sled);
-      model.root.position.y = 0.12;
-      body.add(model.root);
+      const seat = new THREE.Group(); // 体の傾き(曲がる・伏せる)はここ。そりは別に傾ける
+      seat.position.z = -0.12; // 足を前へ投げ出すので、おしりを少しうしろへ
+      body.add(seat);
+      seat.add(model.root);
       const def = CHARACTERS.find((c) => c.key === p.character);
       scene.add(holder);
-      return { model, holder, body, sled, size: def.size || 1, lean: 0, tuck: 0 };
+      const node = (n) => model.node(n);
+      return {
+        model, holder, body, sled, seat, size: def.size || 1, lean: 0, tuck: 0, air: 0, sit: 1, time: Math.random() * 10,
+        arms: [node('arm_L'), node('arm_R')], legs: [node('leg_L'), node('leg_R')], head: node('head'),
+      };
     }));
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
@@ -405,6 +428,38 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
   }
 
   // ── 見た目を state に合わせる ─────────────────────────
+  // そりに座るかっこう。アニメーション(idle)の上から、腕と脚を上書きする(sit で混ぜる)。
+  // 脚は前へ投げ出す。腕はふだん、そりのへりをつかむように前・横へ。
+  // 曲がるとき: 外がわの腕を上げてバランス、内がわの腕は下へ / ふせるとき: 腕をうしろへ引いて小さくなる /
+  // 空中: ばんざい / ふちをこすっているとき: 腕をばたばた
+  function seatedPose(v, r) {
+    const k = v.sit, t = v.time;
+    const mix = (node, x, y, z) => {
+      if (!node) return;
+      node.rotation.x += (x - node.rotation.x) * k;
+      node.rotation.y += (y - node.rotation.y) * k;
+      node.rotation.z += (z - node.rotation.z) * k;
+    };
+    v.legs.forEach((leg, j) => {
+      const side = j === 0 ? 1 : -1;
+      const kick = v.air * Math.sin(t * 14 + j * Math.PI) * 0.25; // 空中では足をぱたぱた
+      mix(leg, -1.4 + v.tuck * 0.15 + kick, 0, side * (0.14 + v.air * 0.2));
+    });
+    v.arms.forEach((arm, j) => {
+      const side = j === 0 ? 1 : -1; // L はキャラの左(+x)
+      // lean > 0 は右へ曲がる。右(キャラの右 = -x)が内がわ
+      const outer = Math.max(0, side * v.lean); // この腕が外がわのとき 0〜1
+      const inner = Math.max(0, -side * v.lean);
+      let x = -0.75 - inner * 0.2 + v.tuck * 1.35;
+      let z = side * (0.35 + outer * 1.0 - inner * 0.2 - v.tuck * 0.2);
+      if (r.scrape) z += side * Math.sin(t * 22 + j) * 0.6;
+      x += (0.25 - x) * v.air; // 腕を上げたときは + で前へ(- だとうしろへ倒れて頭にかくれる)
+      z += (side * 2.2 + Math.sin(t * 12 + j * 2) * 0.3 - z) * v.air; // まっすぐ上だと大きな頭にかくれるので、ななめ上に V の字
+      mix(arm, x, 0, z);
+    });
+    if (v.head) mix(v.head, v.tuck * 0.25 - v.air * 0.15, 0, -v.lean * 0.15);
+  }
+
   const tmp = new THREE.Vector3();
   function updateRunners(dt) {
     const s = game.state;
@@ -418,17 +473,27 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       const steer = Math.max(-1, Math.min(1, r.vx / RULES.steer));
       v.lean += (steer - v.lean) * (1 - Math.exp(-dt * 8));
       v.tuck += ((r.tuck ? 1 : 0) - v.tuck) * (1 - Math.exp(-dt * 10));
-      v.body.rotation.set(-head.slope * 0.8 + (r.air > 0 ? -0.25 : 0), -v.lean * 0.35, -v.lean * 0.35);
-      v.model.root.scale.set(1, 1 - v.tuck * 0.18, 1);
-      v.model.root.rotation.x = v.tuck * 0.45;
+      v.air += ((r.air > 0 ? 1 : 0) - v.air) * (1 - Math.exp(-dt * 12));
+      // ゴールしたら、そりの上で立ちあがる
+      v.sit += ((r.finish === null ? 1 : 0) - v.sit) * (1 - Math.exp(-dt * 4));
+      v.time += dt;
+      // そりごと坂にそわせる。空中では先を上げる。体は曲がる向きへ倒す
+      v.body.rotation.set(head.slope - v.air * 0.3, 0, 0); // + で先が下がる
+      v.sled.rotation.z = v.lean * 0.12;
+      v.seat.rotation.set(v.tuck * 0.65 * v.sit, -v.lean * 0.3 * v.sit, v.lean * 0.55 * v.sit);
+      // 道のでこぼこで、こきざみにゆれる(速いほど)
+      const rattle = r.air > 0 || r.finish !== null ? 0 : Math.min(1, r.v / 12) * 0.012;
+      v.model.root.position.y = 0.12 - 0.17 * v.sit * v.size + Math.sin(v.time * 37) * rattle;
+      v.model.root.position.z = 0;
       let clip = 'idle', face = 'normal';
       if (r.finish !== null) { clip = s.winner === i || ranking(s)[0] === i ? 'cheer' : 'wave'; face = 'happy'; }
-      else if (r.air > 0) { clip = 'cheer'; face = 'happy'; }
+      else if (r.air > 0) face = 'happy';
       else if (r.boost > 0) face = 'happy';
       else if (r.scrape) face = 'surprised';
       v.model.play(clip);
       v.model.setFace(face);
       v.model.update(dt);
+      if (v.sit > 0.01) seatedPose(v, r);
       // ふちにこすっていると、落ち葉が舞う
       if (r.scrape && Math.random() < dt * 20) spray(tmp.copy(v.holder.position).setY(v.holder.position.y + 0.2), 2, 1.5);
       if (v.marker) v.marker.position.set(0, 2.1 * v.size + 0.08 * Math.sin(performance.now() / 180), 0);

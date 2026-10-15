@@ -144,10 +144,37 @@ function buildTrack(g) {
   g.add(mesh);
 }
 
-// まわりの山の斜面。
-// 高さは、近くの道の高さを距離で重みをつけて混ぜて決める(いちばん近い道だけに合わせると、
-// 道が折り返して高さのちがう道が近くを通るところで、地面が段になって壁に見えた)。
-// 道のすぐまわりは、道より低くしておく(土手のすそが地面にもぐる)。
+// 山肌の高さ。近い順に 8 つの道の点の高さを、距離で重みをつけて混ぜる。
+// 道のすぐまわりは、道より少し低く(土手のすそがもぐる。低すぎると道のわきが溝に見える)
+const groundPts = samples.filter((_, i) => i % 4 === 0);
+const near = new Array(8);
+function ground(x, z) {
+  near.fill(null);
+  for (const p of groundPts) {
+    const d = (p.x - x) ** 2 + (p.z - z) ** 2;
+    for (let k = 0; k < near.length; k++) {
+      if (!near[k] || d < near[k].d) {
+        near.splice(k, 0, { d, y: p.y, s: p.s });
+        near.length = 8;
+        break;
+      }
+    }
+  }
+  let wsum = 0, ysum = 0;
+  for (const n of near) {
+    const w = 1 / (n.d + 4);
+    wsum += w;
+    ysum += n.y * w;
+  }
+  const d0 = Math.sqrt(near[0].d);
+  const hw = halfWidthAt(near[0].s);
+  let y = ysum / wsum + Math.max(0, d0 - 12) * 0.07 + Math.sin(x * 0.09) * Math.sin(z * 0.08) * Math.min(3, Math.max(0, d0 - 10) * 0.1);
+  y = Math.min(y, near[0].y - 0.35 + Math.max(0, d0 - hw - 1.8) * 0.45);
+  return { y, d0 };
+}
+
+// まわりの山の斜面(高さは ground)。
+// いちばん近い道だけに合わせると、高さのちがう道が近くを通るところで地面が段になって壁に見えるので、混ぜている
 function buildTerrain(g) {
   const minX = Math.min(...samples.map((p) => p.x)) - 70, maxX = Math.max(...samples.map((p) => p.x)) + 70;
   const minZ = Math.min(...samples.map((p) => p.z)) - 70, maxZ = Math.max(...samples.map((p) => p.z)) + 70;
@@ -158,33 +185,9 @@ function buildTerrain(g) {
   const pos = geo.attributes.position;
   const col = [];
   const c = new THREE.Color();
-  const pts = samples.filter((_, i) => i % 4 === 0);
-  const near = new Array(8);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
-    // 近い順に 8 つ
-    near.fill(null);
-    for (const p of pts) {
-      const d = (p.x - x) ** 2 + (p.z - z) ** 2;
-      for (let k = 0; k < near.length; k++) {
-        if (!near[k] || d < near[k].d) {
-          near.splice(k, 0, { d, y: p.y, s: p.s });
-          near.length = 8;
-          break;
-        }
-      }
-    }
-    let wsum = 0, ysum = 0;
-    for (const n of near) {
-      const w = 1 / (n.d + 4);
-      wsum += w;
-      ysum += n.y * w;
-    }
-    const d0 = Math.sqrt(near[0].d);
-    const hw = halfWidthAt(near[0].s);
-    let y = ysum / wsum + Math.max(0, d0 - 12) * 0.07 + Math.sin(x * 0.09) * Math.sin(z * 0.08) * Math.min(3, Math.max(0, d0 - 10) * 0.1);
-    // 道のすぐまわりは、道より少し低く(土手のすそがもぐる。低すぎると道のわきが溝に見える)
-    y = Math.min(y, near[0].y - 0.35 + Math.max(0, d0 - hw - 1.8) * 0.45);
+    const { y, d0 } = ground(x, z);
     pos.setY(i, y);
     // 色: 落ち葉の絵を、場所ごとに少し暗く・赤く・茶色く。道より落ち着いた色にして、道を目立たせる
     const patch = Math.sin(x * 0.21 + Math.sin(z * 0.13) * 2) * Math.sin(z * 0.17 + x * 0.05);
@@ -268,11 +271,13 @@ function buildTrees(g) {
     for (const side of [-1, 1]) {
       if (rand() < 0.25) continue;
       const hw = halfWidthAt(s);
-      const off = hw + 3.2 + Math.pow(rand(), 1.5) * 22;
+      // 道のすぐわきの木は、追いかけるカメラが葉の中に入らないように、少し離して低めに
+      const off = hw + 4.5 + Math.pow(rand(), 1.5) * 22;
       const p = coursePoint(s, side * off);
+      p.y = ground(p.x, p.z).y - 0.2; // 根もとを山肌に合わせる(少しうめる)
       // 道のほかの部分(カーブの向こうがわ)に近すぎるところは置かない
       if (samples.some((q) => Math.abs(q.s - s) > 15 && (q.x - p.x) ** 2 + (q.z - p.z) ** 2 < (halfWidthAt(q.s) + 3) ** 2)) continue;
-      spots.push({ p, h: 4 + rand() * 4 });
+      spots.push({ p, h: (4 + rand() * 4) * (off < hw + 8 ? 0.75 : 1) });
     }
   }
   const palettes = [[0x9a2a1a, 0xe8452c], [0xb4501a, 0xf39a2a], [0xb88a12, 0xf6cf3e], [0xa8381e, 0xf26b3a], [0x4f7a2a, 0x9cc85a]];
