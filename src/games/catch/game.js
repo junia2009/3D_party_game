@@ -214,6 +214,83 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     }
   }
 
+  // ── きらきら・紙ふぶき(演出なので Math.random でよい) ─────────────
+  const sparkleTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.translate(32, 32);
+    g.fillStyle = '#fff';
+    g.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const r = i % 2 ? 9 : 30, a = (i / 8) * Math.PI * 2;
+      g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    g.closePath();
+    g.shadowColor = '#fff';
+    g.shadowBlur = 8;
+    g.fill();
+    return new THREE.CanvasTexture(c);
+  })();
+  const fx = []; // { obj, t, life, vel, spin, kind }
+  function sparkle(pos, color = 0xffffff, n = 5, size = 0.35) {
+    for (let i = 0; i < n; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkleTex, color, transparent: true, depthWrite: false }));
+      sp.position.copy(pos);
+      sp.scale.setScalar(size);
+      scene.add(sp);
+      const a = Math.random() * Math.PI * 2;
+      fx.push({ obj: sp, t: 0, life: 0.45 + Math.random() * 0.2, vel: new THREE.Vector3(Math.cos(a) * 1.6, 1.4 + Math.random() * 1.2, Math.sin(a) * 1.6), size, kind: 'sparkle' });
+    }
+  }
+  const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
+  function confetti(x, z) {
+    const colors = [...PLAYER_COLORS.map((c) => c.hex), 0xffd24a, 0xffffff];
+    for (let i = 0; i < 90; i++) {
+      const m = new THREE.Mesh(confettiGeo, new THREE.MeshBasicMaterial({ color: colors[i % colors.length], side: THREE.DoubleSide, transparent: true }));
+      m.position.set(x + (Math.random() - 0.5) * 3, 3.5 + Math.random() * 2.5, z + (Math.random() - 0.5) * 3);
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 3 + Math.random() * 1.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, -(0.7 + Math.random() * 0.6), (Math.random() - 0.5) * 0.6), spin: new THREE.Vector3(Math.random() * 8, Math.random() * 8, Math.random() * 8), kind: 'confetti' });
+    }
+  }
+  // 頭に当たって、はねて飛んでいくもの(まつぼっくり)
+  function bounceOff(obj, from) {
+    obj.position.copy(from);
+    scene.add(obj);
+    const a = Math.random() * Math.PI * 2;
+    fx.push({ obj, t: 0, life: 0.9, vel: new THREE.Vector3(Math.cos(a) * 2, 3.2, Math.sin(a) * 2), spin: new THREE.Vector3(9, 4, 7), kind: 'bounce' });
+  }
+  function updateFx(dt) {
+    for (let i = fx.length - 1; i >= 0; i--) {
+      const f = fx[i];
+      f.t += dt;
+      const k = f.t / f.life;
+      if (f.kind === 'sparkle') {
+        f.vel.y -= dt * 4;
+        f.obj.position.addScaledVector(f.vel, dt);
+        f.obj.material.opacity = 1 - k;
+        f.obj.scale.setScalar(f.size * (1 - k * 0.6));
+      } else if (f.kind === 'confetti') {
+        f.obj.position.addScaledVector(f.vel, dt);
+        f.obj.position.x += Math.sin(f.t * 5 + i) * dt * 0.5;
+        f.obj.rotation.x += f.spin.x * dt;
+        f.obj.rotation.y += f.spin.y * dt;
+        f.obj.material.opacity = Math.min(1, (1 - k) * 3);
+        if (f.obj.position.y < 0.02) { f.obj.position.y = 0.02; f.vel.set(0, 0, 0); f.spin.set(0, 0, 0); }
+      } else {
+        f.vel.y -= dt * 9;
+        f.obj.position.addScaledVector(f.vel, dt);
+        f.obj.rotation.x += f.spin.x * dt;
+        f.obj.rotation.z += f.spin.z * dt;
+      }
+      if (k >= 1) {
+        scene.remove(f.obj);
+        f.obj.material?.dispose?.();
+        fx.splice(i, 1);
+      }
+    }
+  }
+
   // ── かご ───────────────────────────────────────────
   const weave = (() => {
     const c = document.createElement('canvas');
@@ -300,7 +377,8 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       holder.position.set(r.x, 0, r.z);
       model.root.rotation.y = Math.atan2(-r.x, -r.z); // まん中を向く
       scene.add(holder);
-      return { model, holder, basket, shadow: sh, size, face: model.root.rotation.y, bob: 0 };
+      // しぐさ: catch(かごが弾む)/ happy(にっこり)/ spin(ぶつけられて回る)/ worm(かごの上の毛虫)
+      return { model, holder, basket, shadow: sh, size, face: model.root.rotation.y, bob: 0, arms: [model.node('arm_L'), model.node('arm_R')], catchT: 0, happyT: 0, spinT: 0, worm: null };
     }));
     // 自分の足もとに、自分の色の輪
     const foot = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.58, 36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex, transparent: true, opacity: 0.9, depthWrite: false }));
@@ -312,7 +390,8 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     runners[0].holder.add(marker);
     runners[0].marker = marker;
 
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null };
+    for (const f of fx.splice(0)) scene.remove(f.obj);
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, cheered: false };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     input.touch = null;
@@ -542,6 +621,10 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
             v.shadow.visible = v.ring.visible = false;
           }
           const gold = e.kind === 'gold';
+          // かごが弾んで、にっこり。きらっと光る
+          r.catchT = 0.3;
+          r.happyT = gold ? 1.2 : 0.6;
+          sparkle(r.holder.position.clone().setY(1.75 * r.size), gold ? 0xffd24a : 0xfff3c0, gold ? 9 : 4, gold ? 0.5 : 0.3);
           if (e.slot === 0) {
             tone(gold ? 1318 : 1046, 0.08, 'sine', 0.1);
             tone(gold ? 1760 : 1568, 0.14, 'sine', 0.1, 0.07);
@@ -558,8 +641,24 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
           const v = items.get(e.id);
           const r = game.runners[e.slot];
           if (v) {
-            v.fly = { t: 0, len: 0.15, from: v.mesh.position.clone(), to: null, into: r, remove: true };
             v.shadow.visible = v.ring.visible = false;
+            if (e.kind === 'worm') {
+              // 毛虫は、かごのふちに乗って、目が回っているあいだ うねうね
+              itemGroup.remove(v.mesh);
+              v.mesh.position.set(0.18, 0.14, 0);
+              v.mesh.rotation.set(0, 0, 0);
+              r.basket.group.add(v.mesh);
+              if (r.worm) r.basket.group.remove(r.worm);
+              r.worm = v.mesh;
+              itemGroup.remove(v.shadow, v.ring);
+              items.delete(e.id);
+            } else {
+              // まつぼっくりは、頭に当たって はねて飛んでいく
+              itemGroup.remove(v.mesh, v.shadow, v.ring);
+              items.delete(e.id);
+              bounceOff(v.mesh, r.holder.position.clone().setY(1.9 * r.size));
+              sparkle(r.holder.position.clone().setY(2 * r.size), 0xffe066, 5, 0.32);
+            }
           }
           sweep(e.kind === 'cone' ? 320 : 600, e.kind === 'cone' ? 90 : 200, 0.3, 'square', 0.07);
           if (e.slot === 0) splash(e.kind === 'worm' ? 'けむし!' : 'ゴツン!', 'red');
@@ -567,6 +666,10 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
         }
         case 'bump': {
           sweep(240, 110, 0.15, 'square', 0.06);
+          // ぶつけられた子は、びっくりしてくるっと回る。ぶつけた子はにやり
+          game.runners[e.hit].spinT = 0.5;
+          game.runners[e.by].happyT = 0.6;
+          sparkle(new THREE.Vector3(e.x, 1.1, e.z), 0xffffff, 6, 0.4);
           if (e.hit === 0 && e.spilled) splash('こぼれた!', 'red');
           else if (e.by === 0 && e.spilled) splash('ドーン!');
           cheer(e.x, e.z, 5);
@@ -587,11 +690,16 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
           break;
         case 'timeup':
           splash('そこまで!');
+          $('howtoC').classList.remove('show');
           owl.play('flap', { fade: 0.1 });
           break;
-        case 'finished':
-          game.endTimer = 2.6;
+        case 'finished': {
+          game.endTimer = 3.2;
+          const w = game.state.runners[e.winner];
+          confetti(w.x, w.z);
+          tone(784, 0.15, 'triangle', 0.1); tone(988, 0.15, 'triangle', 0.1, 0.15); tone(1175, 0.4, 'triangle', 0.1, 0.3);
           break;
+        }
       }
     }
     void s;
@@ -617,42 +725,87 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   }
 
   // ── 見た目を state に合わせる ─────────────────────────
+  const lerpAngle = (a, b, k) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
   function updateRunners(dt) {
     const s = game.state;
     const done = s.phase === 'finished';
+    const winner = done ? s.runners[s.winner] : null;
     s.runners.forEach((r, i) => {
       const v = game.runners[i];
       v.holder.position.set(r.x, 0, r.z);
       const speed = Math.hypot(r.vx, r.vz);
-      // 走る向きへ体を回す
+      v.catchT = Math.max(0, v.catchT - dt);
+      v.happyT = Math.max(0, v.happyT - dt);
+      v.spinT = Math.max(0, v.spinT - dt);
+      // 向き: 走る向き。止まっているときは、近くに落ちてくるものの影を見上げる
+      let look = null;
       if (speed > 0.4) v.face = Math.atan2(r.vx, r.vz);
-      let d = v.face - v.model.root.rotation.y;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
-      v.model.root.rotation.y += d * (1 - Math.exp(-dt * 12));
-      let clip = 'idle', face = 'normal', timeScale = 1;
+      else if (s.phase === 'play' && r.stun <= 0) {
+        let bd = 3;
+        for (const it of s.items) {
+          if (it.ground !== null) continue;
+          const d = Math.hypot(it.x - r.x, it.z - r.z);
+          if (d < bd && d > 0.3) { bd = d; look = it; }
+        }
+        if (look) v.face = Math.atan2(look.x - r.x, look.z - r.z);
+      }
+      let clip = 'idle', face = 'normal', timeScale = 1, hold = 1;
       if (r.stun > 0) {
         clip = 'dizzy';
         face = 'frustrated';
+        hold = 0;
       } else if (done) {
-        const win = s.winner === i;
-        clip = win ? 'cheer' : 'idle';
-        face = win ? 'happy' : 'frustrated';
-        if (win) v.face = Math.atan2(camera.position.x - r.x, camera.position.z - r.z);
+        hold = 0;
+        if (s.winner === i) {
+          clip = 'cheer';
+          face = 'happy';
+          v.face = Math.atan2(camera.position.x - r.x, camera.position.z - r.z);
+        } else {
+          // ほかの子は勝った子のほうを向いて、手をふる(はじめの少しだけ くやしがる)
+          v.face = Math.atan2(winner.x - r.x, winner.z - r.z);
+          clip = game.endTimer !== null && game.endTimer > 2.4 ? 'idle' : 'wave';
+          face = clip === 'idle' ? 'frustrated' : 'happy';
+        }
       } else if (speed > 0.3) {
         clip = 'run';
         timeScale = 0.6 + 0.6 * (speed / RULES.maxSpeed);
       }
+      if (v.spinT > 0) face = 'surprised';
+      else if (v.happyT > 0 && r.stun <= 0) face = 'happy';
+      else if (look && isHazard(look.kind) && Math.hypot(look.x - r.x, look.z - r.z) < 1.4) face = 'surprised';
+      // ぶつけられたら、その場でくるっと1回転(下の rotation.y に足す)
+      v.model.root.rotation.y = lerpAngle(v.model.root.rotation.y, v.face, 1 - Math.exp(-dt * 12)) + (v.spinT > 0 ? dt * Math.PI * 4 : 0);
       v.model.play(clip, { timeScale });
       v.model.setFace(face);
       v.model.update(dt);
-      // かごは頭の上で、走るとゆれる
+      // 両手でかごを頭の上に持つ(アニメーションの腕の上から、持ち上げた形にかさねる)
+      v.hold = (v.hold ?? 1) + (hold - (v.hold ?? 1)) * (1 - Math.exp(-dt * 10));
+      v.arms.forEach((a, k) => {
+        if (!a) return;
+        const side = k === 0 ? 1 : -1;
+        const up = 2.45 + (v.catchT > 0 ? 0.25 * Math.sin((1 - v.catchT / 0.3) * Math.PI) : 0);
+        a.rotation.z += (up * side - a.rotation.z) * v.hold;
+        a.rotation.x += (-0.35 - a.rotation.x) * v.hold;
+      });
+      // かごは頭の上で、走るとゆれる。受けとると、ぽんと弾む
       v.bob += dt * (speed > 0.3 ? 14 : 3);
       const lift = v.model.node('rig').position.y;
-      v.basket.group.position.set(Math.sin(v.bob) * 0.02, 1.62 * v.size + lift, 0);
+      const pop = v.catchT > 0 ? Math.sin((1 - v.catchT / 0.3) * Math.PI) : 0;
+      v.basket.group.position.set(Math.sin(v.bob) * 0.02, 1.62 * v.size + lift + pop * 0.16, 0);
       v.basket.group.rotation.z = Math.sin(v.bob) * (speed > 0.3 ? 0.08 : 0.02);
+      v.basket.group.scale.set(1 + pop * 0.12, 1 - pop * 0.15, 1 + pop * 0.12);
       v.basket.pile.count = Math.min(12, r.acorns);
+      // かごの上の毛虫: 目が回っているあいだ うねうね。治ったら はなれる
+      if (v.worm) {
+        v.worm.rotation.y += dt * 2;
+        v.worm.position.set(Math.cos(v.worm.rotation.y) * 0.2, 0.14 + Math.abs(Math.sin(time * 9)) * 0.03, -Math.sin(v.worm.rotation.y) * 0.2);
+        if (r.stun <= 0) {
+          v.basket.group.remove(v.worm);
+          v.worm = null;
+        }
+      }
       v.shadow.scale.setScalar(0.95 * v.size * (1 - Math.min(0.5, lift * 0.9)));
-      if (v.marker) v.marker.position.set(0, 2.2 * v.size + 0.08 * Math.sin(performance.now() / 180), 0);
+      if (v.marker) v.marker.position.set(0, 2.25 * v.size + 0.08 * Math.sin(performance.now() / 180), 0);
     });
   }
 
@@ -810,6 +963,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     if (game && !paused) {
       updateRunners(dt);
       updateItems(dt);
+      updateFx(dt);
     }
     if (!paused) {
       for (const a of audience) {
@@ -843,6 +997,14 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     start: (key = picked) => { picked = key; return startGame(); },
     steer: (t) => { input.target = t; },
     get stick() { return input.stick && { ...input.stick }; },
+    // 指定した場所に落とす(演出の確認用)
+    drop: (kind, x, z, left = 1) => {
+      const it = { id: game.state.nextId++, kind, x, z, left, ground: null, lock: 0 };
+      game.state.items.push(it);
+      onEvents([{ type: 'drop', id: it.id, kind, x, z, left }]);
+    },
+    // CPU を止める(撮影用)
+    holdCpus: () => game.cpus.forEach((c) => { if (c) { c.think = 1e9; c.target = null; } }),
     // 描かずに、みんな CPU で sec 秒すすめる(途中の場面を撮る用)
     advance: (sec) => {
       const me = createCpu('normal', 1, 0);
