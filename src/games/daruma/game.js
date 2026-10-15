@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { nextRandom, seedFrom } from '../../rng.js';
-import { MORA, RULES, STEP, TRACK, chantCount, createGame, lookAmount, ranking, step } from './rules.js';
+import { MORA, RULES, STEP, TRACK, chantCount, createGame, inMud, lookAmount, ranking, step } from './rules.js';
 import { PERSONALITIES, cpuHold, createCpu } from './cpu.js';
 import { PERCH, buildStage, laneX } from './stage.js';
 
@@ -80,6 +80,28 @@ function sweep(from, to, len, type = 'square', gain = 0.06) {
   o.start(t);
   o.stop(t + len);
 }
+// ガサガサ(落ち葉): 雑音を短く何回か
+function rustleSound() {
+  if (!audio) return;
+  const len = 0.5;
+  const buf = audio.createBuffer(1, audio.sampleRate * len, audio.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) {
+    const t = i / audio.sampleRate;
+    const burst = Math.max(0, Math.sin(t * 38)) ** 3; // 細かく途切れる
+    d[i] = (Math.random() * 2 - 1) * burst * (1 - t / len);
+  }
+  const src = audio.createBufferSource();
+  src.buffer = buf;
+  const f = audio.createBiquadFilter();
+  f.type = 'highpass';
+  f.frequency.value = 1800;
+  const g = audio.createGain();
+  g.gain.value = 0.35;
+  src.connect(f).connect(g).connect(audio.destination);
+  src.start();
+}
+
 function unlockAudio() {
   if (audio) return;
   try {
@@ -240,6 +262,7 @@ function renderHud() {
   }
   const left = Math.max(0, RULES.timeLimit - Math.max(0, s.t - RULES.readyTime));
   $('timer').firstChild.nodeValue = String(Math.ceil(left));
+  $('acorns').lastChild.nodeValue = String(s.runners[0].acorns);
   const dots = $('track').children;
   s.runners.forEach((r, i) => {
     dots[i].style.bottom = `calc(10px + (100% - 20px) * ${(game.runners[i].x / TRACK).toFixed(4)})`;
@@ -272,6 +295,20 @@ function onEvents(events) {
         break;
       case 'watch':
         owl.setFace('glare');
+        break;
+      case 'rustle':
+        rustleSound();
+        if (e.slot === 0) splash('ガサガサッ!');
+        break;
+      case 'pickup':
+        beep(1046, 0.08, 'sine', 0.1); setTimeout(() => beep(1568, 0.12, 'sine', 0.1), 70);
+        break;
+      case 'drop':
+        beep(180, 0.08, 'sine', 0.12);
+        break;
+      case 'bonk':
+        sweep(260, 90, 0.18, 'square', 0.08);
+        if (e.slot === 0) splash('ゴツン!');
         break;
       case 'caught':
         owl.play('flap', { fade: 0.1 });
@@ -314,7 +351,7 @@ function showResult() {
     if (slot === 0) li.className = 'me';
     const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
     const def = CHARACTERS.find((c) => c.key === p.character);
-    const dist = r.finishTime !== null ? 'ゴール' : `のこり ${(TRACK - r.x).toFixed(1)}m`;
+    const dist = (r.finishTime !== null ? 'ゴール' : `のこり ${(TRACK - r.x).toFixed(1)}m`) + `<small>どんぐり ${r.acorns}</small>`;
     li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
       `<span>${def.name}<small>${who}</small></span><span class="dist">${dist}</span>`;
     return li;
@@ -347,6 +384,8 @@ function updateRunners(dt) {
     const diff = r.x - v.x;
     v.x = Math.abs(diff) > 0.3 ? v.x + diff * (1 - Math.exp(-dt * 7)) : r.x;
     v.holder.position.set(laneX(i), 0, -v.x);
+    // ぬかるみを走ると泥がはねる
+    if (r.v > 0.3 && inMud(s.lanes[i], r.x) && Math.random() < dt * 14 * (r.v / RULES.maxSpeed)) stage.splash(laneX(i), -r.x, 2);
     let clip = 'idle', face = 'normal', timeScale = 1;
     if (r.stun > 0) {
       clip = 'dizzy';
@@ -461,6 +500,12 @@ window.daruma = {
   renderer,
   scene,
   freeCamera: (on) => { freeCamera = on; },
+  // 指定した場所にどんぐりを落とす(演出の確認用)
+  dropAt: (lane, x) => {
+    const d = { lane, x, left: RULES.dropWarn };
+    game.state.drops.push(d);
+    onEvents([{ type: 'dropWarn', ...d }]);
+  },
 };
 
 setMode(params.has('autostart') ? 'playing' : 'select');

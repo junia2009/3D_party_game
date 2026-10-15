@@ -54,9 +54,16 @@
     border-radius: 16px; padding: 8px 0; font: 800 20px var(--font-body); font-variant-numeric: tabular-nums;
   }
   .timer small { display: block; font-size: 10px; font-weight: 700; opacity: .7; margin-top: -2px; }
+  .side { flex: none; display: grid; gap: 6px; justify-items: stretch; }
+  .acorns {
+    display: flex; align-items: center; justify-content: center; gap: 3px; background: var(--paper);
+    border-radius: 12px; padding: 3px 6px; font: 800 15px var(--font-body); font-variant-numeric: tabular-nums;
+    box-shadow: 0 2px 0 rgba(31,42,51,.18);
+  }
+  .acorns svg { width: 16px; height: 18px; }
 
   .track {
-    position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 96px; bottom: 170px; width: 24px;
+    position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: 132px; bottom: 170px; width: 24px;
     background: rgba(255,255,255,.55); border-radius: 12px;
   }
   .track::before, .track::after {
@@ -147,7 +154,7 @@
   .ranks .no { font-family: var(--font-display); font-weight: 400; font-size: 20px; }
   .ranks .dot { width: 18px; height: 18px; border-radius: 50%; }
   .ranks small { display: block; font-weight: 500; font-size: 11px; color: var(--muted); }
-  .ranks .dist { font-variant-numeric: tabular-nums; font-size: 14px; }
+  .ranks .dist { font-variant-numeric: tabular-nums; font-size: 14px; text-align: right; }
   .loading { position: fixed; inset: 0; display: grid; place-items: center; font-weight: 800; color: var(--muted); }
 </style>
 <script type="importmap">
@@ -164,7 +171,10 @@
 <div class="hud" id="hud" hidden>
   <div class="top">
     <div class="chant" id="chant" aria-live="polite"></div>
-    <div class="timer" id="timer">60<small>びょう</small></div>
+    <div class="side">
+      <div class="timer" id="timer">60<small>びょう</small></div>
+      <div class="acorns" id="acorns" title="拾ったどんぐり"><svg viewBox="0 0 20 22" aria-hidden="true"><ellipse cx="10" cy="13" rx="6.5" ry="7.5" fill="#b5702f"/><path d="M2.5 9.5a7.5 5 0 0 1 15 0z" fill="#6e4a2a"/><rect x="9" y="2" width="2" height="4" rx="1" fill="#5a3c22"/></svg>0</div>
+    </div>
   </div>
   <div class="track" id="track"></div>
   <div class="splash" id="splash"></div>

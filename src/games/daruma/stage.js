@@ -20,6 +20,7 @@ import { LANES, TRACK } from './rules.js';
 import { buildPath as buildDirtPath, dirtPatch, grassTexture, laneStones, leafLitter, scatterFoliage } from './ground.js';
 import { buildForestTrees, buildOak as buildOakTree } from './trees.js';
 import { mergeStatic } from '../../runtime/merge.js';
+import { createGimmicks } from './gimmicks.js';
 
 export const laneX = (slot) => (slot - (LANES - 1) / 2) * 1.15;
 export const PATH_WIDTH = LANES * 1.15 + 0.9;
@@ -265,43 +266,6 @@ function buildMountains(g, rand) {
   }
 }
 
-// ── しかけ ─────────────────────────────────────────
-function buildGimmicks(g, state) {
-  const parts = { leaves: [], acorns: new Map() };
-  state.lanes.forEach((lane, slot) => {
-    const x = laneX(slot);
-    const mud = new THREE.Mesh(new THREE.CircleGeometry(1, 28), mat(0x6b4a2f));
-    mud.rotation.x = -Math.PI / 2;
-    mud.scale.set(0.52, (lane.mud.to - lane.mud.from) / 2, 1);
-    mud.position.set(x, 0.015, -(lane.mud.from + lane.mud.to) / 2);
-    g.add(mud);
-    const pile = blobMesh(0xd9822b, 0.5, 0.16, (lane.leaves.to - lane.leaves.from) / 2);
-    pile.position.set(x, 0.02, -(lane.leaves.from + lane.leaves.to) / 2);
-    g.add(pile);
-    parts.leaves[slot] = pile;
-    for (const a of lane.acorns) addAcorn(g, parts, slot, a);
-  });
-  return parts;
-}
-const ACORN_BODY = new THREE.SphereGeometry(0.09, 12, 10);
-const ACORN_CAP = new THREE.SphereGeometry(0.095, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-function acornMesh() {
-  const a = new THREE.Group();
-  const body = new THREE.Mesh(ACORN_BODY, mat(0xb06a2c));
-  body.scale.y = 1.25;
-  const cap = new THREE.Mesh(ACORN_CAP, mat(0x6e4a2a));
-  cap.position.y = 0.05;
-  a.add(body, cap);
-  return a;
-}
-function addAcorn(g, parts, slot, a) {
-  const m = acornMesh();
-  m.position.set(laneX(slot), 0.11, -a.x);
-  m.rotation.z = 0.4;
-  g.add(m);
-  parts.acorns.set(a, m);
-}
-
 // ── 組み立て ───────────────────────────────────────
 export function buildStage(scene) {
   let seed = 7;
@@ -319,54 +283,16 @@ export function buildStage(scene) {
   mergeStatic(g); // 動かないものはまとめて描く
   scene.add(g);
 
-  let gimmicks = null;
-  let gimmickGroup = null;
-  const drops = new Map(); // 落ちてくるどんぐり → { shadow, acorn }
-  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false });
-
+  const gimmicks = createGimmicks(scene, laneX);
+  let time = 0;
   return {
     group: g,
-    // ゲームが始まるたびに、しかけを置き直す
-    setGame(s) {
-      if (gimmickGroup) scene.remove(gimmickGroup);
-      gimmickGroup = new THREE.Group();
-      scene.add(gimmickGroup);
-      gimmicks = buildGimmicks(gimmickGroup, s);
-      drops.clear();
-    },
-    onEvent(e, s) {
-      if (!gimmicks) return;
-      if (e.type === 'rustle') {
-        gimmicks.leaves[e.slot].scale.y = 0.05; // ラフ: 散ったら平らに
-      } else if (e.type === 'pickup') {
-        for (const [a, m] of gimmicks.acorns) if (a.taken && m.parent) m.removeFromParent();
-      } else if (e.type === 'dropWarn') {
-        const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.35, 20), shadowMat);
-        shadow.rotation.x = -Math.PI / 2;
-        shadow.position.set(laneX(e.lane), 0.03, -e.x);
-        shadow.scale.setScalar(0.2);
-        const acorn = acornMesh();
-        acorn.scale.setScalar(1.6);
-        gimmickGroup.add(shadow, acorn);
-        drops.set(s.drops[s.drops.length - 1], { shadow, acorn, x: e.x, lane: e.lane });
-      } else if (e.type === 'drop') {
-        for (const [d, v] of drops) {
-          if (d.left > 0) continue;
-          v.shadow.removeFromParent();
-          v.acorn.removeFromParent();
-          drops.delete(d);
-        }
-        const lane = s.lanes[e.lane];
-        const fell = lane.acorns.find((a) => a.fell && a.x === e.x && !gimmicks.acorns.has(a));
-        if (fell) addAcorn(gimmickGroup, gimmicks, e.lane, fell);
-      }
-    },
+    setGame: (s) => gimmicks.setGame(s), // ゲームが始まるたびに、しかけを置き直す
+    onEvent: (e, s) => gimmicks.onEvent(e, s),
+    splash: (x, z, k) => gimmicks.splash(x, z, k),
     update(dt, s) {
-      for (const [d, v] of drops) {
-        const k = 1 - Math.max(0, d.left) / 0.8;
-        v.shadow.scale.setScalar(0.3 + 0.7 * k);
-        v.acorn.position.set(laneX(v.lane), 0.15 + (1 - k * k) * 7, -v.x);
-      }
+      time += dt;
+      gimmicks.update(dt, s, time);
     },
   };
 }

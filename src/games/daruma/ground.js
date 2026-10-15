@@ -116,7 +116,7 @@ export function buildPath(g, { width, from, to, laneXs }) {
   const rand = makeRand(11);
   const length = from - to;
   const { tex, widthM, edge } = pathTexture(width, length, laneXs, rand);
-  const m = new THREE.MeshToonMaterial({ map: tex, transparent: true, alphaTest: 0.5, gradientMap: toonGradient });
+  const m = new THREE.MeshToonMaterial({ map: tex, alphaTest: 0.5, gradientMap: toonGradient });
   const path = new THREE.Mesh(new THREE.PlaneGeometry(widthM, length), m);
   path.rotation.x = -Math.PI / 2;
   path.position.set(0, 0.012, (from + to) / 2);
@@ -354,7 +354,7 @@ export function dirtPatch(g, { x, z, rx, rz, seed = 3 }) {
   ctx.restore();
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const m = new THREE.MeshToonMaterial({ map: tex, transparent: true, alphaTest: 0.5, gradientMap: toonGradient });
+  const m = new THREE.MeshToonMaterial({ map: tex, alphaTest: 0.5, gradientMap: toonGradient });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(rx * 2, rz * 2), m);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.set(x, 0.009, z);
