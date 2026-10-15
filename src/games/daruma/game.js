@@ -12,6 +12,7 @@ import { MORA, RULES, STEP, TRACK, chantCount, createGame, inMud, lookAmount, ra
 import { PERSONALITIES, cpuHold, createCpu } from './cpu.js';
 import { PERCH, buildStage, laneX } from './stage.js';
 import { createAudience } from './audience.js';
+import { createAtmosphere, windify } from './atmosphere.js';
 import { CRITTERS } from '../../npcs.js';
 
 const $ = (id) => document.getElementById(id);
@@ -23,14 +24,11 @@ const params = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({ canvas: $('cv'), antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xd4e8e0, 60, 330);
 const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 700);
-scene.add(new THREE.HemisphereLight(0xffffff, 0xa9c7a0, 1.7));
-const sun = new THREE.DirectionalLight(0xffffff, 2.0);
-sun.position.set(4, 8, 5);
-scene.add(sun);
+const atmosphere = createAtmosphere(scene, renderer, camera);
 
 const stage = buildStage(scene);
+windify(stage.group);
 
 // 足元の丸い影
 const shadowTex = (() => {
@@ -123,6 +121,9 @@ owl.play('idle');
 owl.setFace('normal');
 scene.add(owl.root);
 const owlHead = owl.node('head');
+atmosphere.attachOwlEyes(owlHead);
+atmosphere.setupShadows([stage.group, owl.root], [stage.group]);
+atmosphere.setupShadows([], audience.roots); // 観客は小さいので影は落とさない(受けるだけ)
 $('loading').remove();
 
 // ── ゲームの進行 ────────────────────────────────────
@@ -179,6 +180,8 @@ async function startGame() {
   };
   held = false;
   stage.setGame(game.state);
+  atmosphere.apply(params.get('time') || game.state.timeOfDay);
+  atmosphere.setupShadows(runners.map((r) => r.model.root), runners.map((r) => r.model.root));
   audience.reset();
   buildTrackDots();
   setMode('playing');
@@ -485,6 +488,7 @@ function frame() {
     stage.update(dt, game.state);
   }
   audience.update(dt, game && mode === 'playing' ? game.state : null);
+  atmosphere.update(dt);
   // 先生の首: 0 = うしろ、1 = こっち。回り始めと終わりをなめらかに
   const look = !game || mode === 'select' ? 0 : game.state.phase === 'finished' ? 1 : lookAmount(game.state);
   owlHead.rotation.y = Math.PI * (look * look * (3 - 2 * look));
@@ -506,6 +510,7 @@ window.daruma = {
   renderer,
   scene,
   freeCamera: (on) => { freeCamera = on; },
+  setTime: (key) => atmosphere.apply(key),
   // 指定した場所にどんぐりを落とす(演出の確認用)
   dropAt: (lane, x) => {
     const d = { lane, x, left: RULES.dropWarn };

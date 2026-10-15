@@ -109,3 +109,71 @@ export function mergeStatic(root, isAnchor = () => false) {
   root.updateMatrixWorld(true);
   return { before, after };
 }
+
+// ── 動くキャラ用: 体全部を1つにまとめ、部品の動きは「骨」で付ける ─────────
+// 頭・腕・脚・表情などの動く部品(anchors)を骨に見立てる。各頂点は、いちばん近い
+// anchor に 100% くっつく。アニメーションは今までどおり anchor を動かすだけで、
+// 描くのは素材ごとに1回ずつになる(1体 20回 → 4〜5回)。
+//
+// 表情の切り替えは、使わない表情の anchor を大きさ 0 にして消す(visible では消えない)。
+export function mergeSkinned(root, isAnchor) {
+  const bones = [root];
+  root.traverse((o) => { if (o !== root && isAnchor(o)) bones.push(o); });
+  const zero = [];
+  root.traverse((o) => {
+    if (o.scale.x === 0 || o.scale.y === 0 || o.scale.z === 0) {
+      zero.push([o, o.scale.clone()]);
+      o.scale.set(1, 1, 1);
+    }
+  });
+  root.updateMatrixWorld(true);
+  const boneOf = (o) => {
+    let a = o.parent;
+    while (!bones.includes(a)) a = a.parent;
+    return bones.indexOf(a);
+  };
+  const meshes = [];
+  root.traverse((o) => { if (o.isMesh && !o.isSkinnedMesh) meshes.push(o); });
+  const rootInv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const groups = new Map(); // 素材の種類 → [{ geo, bone }]
+  const rel = new THREE.Matrix4();
+  for (const mesh of meshes) {
+    const kind = bakeKind(mesh.material);
+    const key = kind || mesh.material;
+    if (!groups.has(key)) groups.set(key, []);
+    // 頂点は root から見た位置(= 骨をつけた時点の姿勢)に置く
+    const geo = prepare(mesh, rel.multiplyMatrices(rootInv, mesh.matrixWorld), !!kind, !kind);
+    const bone = boneOf(mesh);
+    const n = geo.attributes.position.count;
+    const idx = new Uint16Array(n * 4), w = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      idx[i * 4] = bone;
+      w[i * 4] = 1;
+    }
+    geo.setAttribute('skinIndex', new THREE.BufferAttribute(idx, 4));
+    geo.setAttribute('skinWeight', new THREE.BufferAttribute(w, 4));
+    groups.get(key).push(geo);
+  }
+  for (const mesh of meshes) mesh.removeFromParent();
+  const skeleton = new THREE.Skeleton(bones.map((b) => b));
+  // 骨の逆行列は、いま(大きさを戻した姿勢)の位置で作る
+  skeleton.boneInverses = bones.map((b) => new THREE.Matrix4().multiplyMatrices(rootInv, b.matrixWorld).invert());
+  const out = [];
+  for (const [key, geos] of groups) {
+    const mat = key === 'toon' ? toonVC() : key === 'unlit' ? unlitVC() : key;
+    const geo = mergeGeometries(geos.map((g) => {
+      // mergeGeometries は属性がそろっている必要がある
+      for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'color', 'uv', 'skinIndex', 'skinWeight'].includes(name)) g.deleteAttribute(name);
+      return g;
+    }));
+    const sk = new THREE.SkinnedMesh(geo, mat);
+    sk.name = 'body';
+    sk.frustumCulled = false; // 骨で形が変わるので、最初の形で見えないと判定されないように
+    root.add(sk);
+    sk.bind(skeleton, new THREE.Matrix4());
+    out.push(sk);
+  }
+  for (const [o, sc] of zero) o.scale.copy(sc);
+  root.updateMatrixWorld(true);
+  return out;
+}

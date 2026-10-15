@@ -248,6 +248,9 @@ export function buildOak(g, oak, perch) {
 
   // 葉の茂み。ゴール前 6m(どんぐりが落ちてくるところ)の上まで張り出す
   const leafMat = vertexColorMaterial();
+  const crownGroup = new THREE.Group();
+  crownGroup.name = 'oakCrowns'; // 風で揺らすので、ほかの部品とは別にまとめる
+  tree.add(crownGroup);
   const crowns = [
     [oak.x, 11.5, oak.z, 4.6], [oak.x - 3.6, 10, oak.z - 1.8, 3.4], [oak.x + 4, 10.8, oak.z + 1.8, 3.6],
     [-1.4, 9.6, perch.z + 2.4, 3.3], [1.6, 9.1, perch.z + 0.2, 2.9], [-0.4, 8.9, perch.z + 5.6, 2.9],
@@ -258,7 +261,7 @@ export function buildOak(g, oak, perch) {
     c.scale.set(r, r * 0.78, r);
     c.position.set(x, y, z);
     c.rotation.y = rand() * Math.PI * 2;
-    tree.add(c);
+    crownGroup.add(c);
   }
 
   // 茂みの下にぶら下がるどんぐり
@@ -327,7 +330,7 @@ export function buildForestTrees(g, spots) {
   const near = (s) => Math.hypot(s.x, (s.z + 10) * 0.8) < 32;
   const crownVariants = [2, 2, 2, 1, 1, 1].map((detail) => foliageClump(rand, { detail, balls: detail === 2 ? 4 + Math.floor(rand() * 3) : 3 + Math.floor(rand() * 2) }));
   const kindOf = (s, i) => (i % 3) + (near(s) ? 0 : 3);
-  const crownMeshes = crownVariants.map((geo, k) => new THREE.InstancedMesh(geo, vertexColorMaterial(), broad.filter((s, i) => kindOf(s, i) === k).length));
+  const crownMeshes = crownVariants.map((geo, k) => Object.assign(new THREE.InstancedMesh(geo, vertexColorMaterial(), broad.filter((s, i) => kindOf(s, i) === k).length), { name: 'crowns' }));
   const counts = [0, 0, 0, 0, 0, 0];
   broad.forEach((s, i) => {
     dummy.position.set(s.x, s.y - 0.2, s.z);

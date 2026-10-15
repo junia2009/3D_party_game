@@ -91,7 +91,7 @@ function buildTerrain(g) {
   m.vertexColors = true;
   m.map = grassTexture();
   m.map.repeat.set(size / 6, size / 6); // 6m ごとにくり返す
-  g.add(new THREE.Mesh(geo, m));
+  g.add(Object.assign(new THREE.Mesh(geo, m), { name: 'terrain' }));
 }
 
 // ── 小道 ───────────────────────────────────────────
@@ -344,7 +344,7 @@ export function buildStage(scene) {
   buildForest(g, rand);
   buildRiver(g);
   buildMountains(g, rand);
-  mergeStatic(g); // 動かないものはまとめて描く
+  mergeStatic(g, (o) => o.name === 'oakCrowns'); // 動かないものはまとめて描く(大木の葉は風で揺らすので別に)
   scene.add(g);
 
   const gimmicks = createGimmicks(scene, laneX);

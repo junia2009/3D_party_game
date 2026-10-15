@@ -8,7 +8,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { mergeStatic } from './merge.js';
+import { mergeSkinned } from './merge.js';
 import { lineColor } from '../model-kit.js';
 
 const BASE = new URL('../../models/', import.meta.url);
@@ -58,7 +58,7 @@ export async function createModel(key) {
   // 切り替える部品(表情・星)はまとめずに残す
   const animated = new Set();
   for (const clip of gltf.animations) for (const t of clip.tracks) animated.add(t.name.split('.')[0]);
-  mergeStatic(root, (o) => animated.has(o.name) || o.name.startsWith('face_') || o.name === 'stars');
+  mergeSkinned(root, (o) => animated.has(o.name) || o.name.startsWith('face_') || o.name === 'stars');
   return new Model(root, gltf.animations);
 }
 
@@ -95,13 +95,10 @@ export class Model {
     this.current = name;
   }
 
-  // 使わない表情は見えなくする(大きさ 0 にしただけでは、描く手間はかかったまま)
+  // 使わない表情は大きさ 0 にして消す(体はまとめて1つに描いているので、visible では消せない)
   setFace(key) {
     if (this.face === key || !this.faces[key]) return;
-    for (const [k, node] of Object.entries(this.faces)) {
-      node.scale.setScalar(1);
-      node.visible = k === key;
-    }
+    for (const [k, node] of Object.entries(this.faces)) node.scale.setScalar(k === key ? 1 : 0);
     this.face = key;
   }
 

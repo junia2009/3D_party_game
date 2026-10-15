@@ -39,6 +39,7 @@ export async function createAudience(scene) {
   }
 
   return {
+    roots: members.map((m) => m.model.root),
     onEvent(e, s, laneX) {
       switch (e.type) {
         case 'caught':
