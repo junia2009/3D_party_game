@@ -152,31 +152,113 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     return m;
   });
 
-  // ── 舞いあがる落ち葉・きらきら(演出なので Math.random でよい) ─────────
-  const sprayGeo = new THREE.PlaneGeometry(0.16, 0.12);
-  const sprayMats = [0xe2402f, 0xf08a24, 0xf6b93b].map((c) => new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide }));
-  const fx = [];
+  // ── 舞いあがる落ち葉(演出なので Math.random でよい) ─────────
+  // 落ち葉の粒は、まとめて1回で描く(そりのうしろから出つづけるので数が多い)。
+  // 落ち葉はふわりと落ちる: 重さは軽く、空気でとまり、くるくる回って左右にゆれる
+  const LEAF_MAX = 420;
+  const leafGeo = new THREE.ShapeGeometry(leafShape);
+  leafGeo.scale(0.19, 0.19, 0.19);
+  const leafPool = new THREE.InstancedMesh(leafGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), LEAF_MAX);
+  leafPool.frustumCulled = false;
+  leafPool.count = 0;
+  scene.add(leafPool);
+  const leafColors = [0xe2402f, 0xf08a24, 0xf6b93b, 0xc4532a, 0xe8a03a].map((c) => new THREE.Color(c));
+  const leaves = []; // { pos, vel, rot, spin, t, life, size, sway }
+  for (let i = 0; i < LEAF_MAX; i++) leafPool.setColorAt(i, leafColors[i % leafColors.length]);
+  function emitLeaf(pos, vel, size = 1, life = 0.9 + Math.random() * 0.6) {
+    if (leaves.length >= LEAF_MAX) leaves.shift(); // いっぱいなら古いものから
+    leaves.push({
+      pos: pos.clone(), vel: vel.clone(), t: 0, life, size: size * (0.7 + Math.random() * 0.6),
+      rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 14),
+      sway: Math.random() * 6, color: Math.floor(Math.random() * leafColors.length),
+    });
+  }
+  // はじける(ジャンプ・着地・どんぐり)
+  const tmpV = new THREE.Vector3();
   function spray(pos, n, up = 2) {
     for (let i = 0; i < n; i++) {
-      const m = new THREE.Mesh(sprayGeo, sprayMats[i % 3]);
-      m.position.copy(pos);
-      scene.add(m);
-      fx.push({ obj: m, t: 0, life: 0.7 + Math.random() * 0.4, vel: new THREE.Vector3((Math.random() - 0.5) * 3, up * (0.6 + Math.random()), (Math.random() - 0.5) * 3), spin: Math.random() * 10 });
+      tmpV.set((Math.random() - 0.5) * 3, up * (0.6 + Math.random()), (Math.random() - 0.5) * 3);
+      emitLeaf(pos, tmpV, 1.2);
     }
   }
+  const leafDummy = new THREE.Object3D();
   function updateFx(dt) {
-    for (let i = fx.length - 1; i >= 0; i--) {
-      const f = fx[i];
+    for (let i = leaves.length - 1; i >= 0; i--) {
+      const f = leaves[i];
       f.t += dt;
-      f.vel.y -= 6 * dt;
-      f.obj.position.addScaledVector(f.vel, dt);
-      f.obj.rotation.x += f.spin * dt;
-      f.obj.rotation.y += f.spin * 0.7 * dt;
-      f.obj.scale.setScalar(Math.max(0.01, 1 - f.t / f.life));
-      if (f.t >= f.life) {
-        scene.remove(f.obj);
-        fx.splice(i, 1);
+      if (f.t >= f.life) { leaves.splice(i, 1); continue; }
+      f.vel.y -= 4.5 * dt;
+      f.vel.multiplyScalar(Math.exp(-dt * 2.2)); // 空気でとまる
+      f.pos.addScaledVector(f.vel, dt);
+      f.pos.x += Math.sin(f.t * 5 + f.sway) * dt * 0.6; // ひらひら
+      f.rot.x += f.spin.x * dt;
+      f.rot.y += f.spin.y * dt;
+      f.rot.z += f.spin.z * dt;
+    }
+    leaves.forEach((f, i) => {
+      leafDummy.position.copy(f.pos);
+      leafDummy.rotation.copy(f.rot);
+      leafDummy.scale.setScalar(f.size * Math.min(1, (f.life - f.t) * 3)); // 消えぎわに小さく
+      leafDummy.updateMatrix();
+      leafPool.setMatrixAt(i, leafDummy.matrix);
+      leafPool.setColorAt(i, leafColors[f.color]);
+    });
+    leafPool.count = leaves.length;
+    leafPool.instanceMatrix.needsUpdate = true;
+    if (leafPool.instanceColor) leafPool.instanceColor.needsUpdate = true;
+  }
+
+  // そりのうしろから、速さに応じて落ち葉が舞いつづける。曲がると外がわへはね上げる。
+  // 自分のそりは多め、ほかの子は少なめ(数をおさえる)
+  const trailPos = new THREE.Vector3(), trailVel = new THREE.Vector3(), side = new THREE.Vector3(), fwd = new THREE.Vector3();
+  function trail(v, r, mine, dt) {
+    if (r.air > 0 || r.finish !== null || r.v < 2) return;
+    const k = Math.min(1, r.v / 13);
+    v.trailAcc = (v.trailAcc || 0) + dt * (mine ? 60 : 14) * k * (1 + Math.abs(v.lean) * 1.5 + (r.tuck ? 0.4 : 0));
+    fwd.set(0, 0, 1).applyQuaternion(v.holder.quaternion);
+    side.set(1, 0, 0).applyQuaternion(v.holder.quaternion); // キャラの左
+    while (v.trailAcc >= 1) {
+      v.trailAcc -= 1;
+      const lr = Math.random() < 0.5 ? 1 : -1;
+      trailPos.copy(v.holder.position).addScaledVector(fwd, -0.55).addScaledVector(side, lr * 0.3);
+      trailPos.y += 0.1;
+      // うしろ・上へ。曲がっているときは外がわ(lean > 0 の右曲がりなら左 = +side)へ
+      trailVel.copy(fwd).multiplyScalar(-(0.5 + Math.random()) * k * 2)
+        .addScaledVector(side, (Math.random() - 0.5) * 1.6 + v.lean * 3.2 * k)
+        .setY(1.6 + Math.random() * 2.8 * k);
+      emitLeaf(trailPos, trailVel, mine ? 1 : 0.9, 0.6 + Math.random() * 0.5);
+    }
+  }
+
+  // 風の線: 速いとき、道のわきを白い線が流れていく(世界に置いた線を、そりが追いぬいていく)
+  const WIND = 18;
+  const windGeo = new THREE.PlaneGeometry(0.03, 1);
+  windGeo.rotateX(-Math.PI / 2);
+  const windMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  const winds = Array.from({ length: WIND }, () => {
+    const m = new THREE.Mesh(windGeo, windMat);
+    m.visible = false;
+    scene.add(m);
+    return { m, s: -1e9, x: 0, h: 0 };
+  });
+  function updateWind(dt) {
+    const me = game.state.runners[0];
+    const k = mode === 'playing' && me.air <= 0 && me.finish === null ? Math.max(0, Math.min(1, (me.v - 8) / 5)) + (me.boost > 0 ? 0.6 : 0) : 0;
+    windMat.opacity += (Math.min(0.55, k * 0.4) - windMat.opacity) * Math.min(1, dt * 6);
+    const head = courseHeading(me.s);
+    for (const w of winds) {
+      // うしろへ行ったら、前へ置きなおす(道のまん中は避けて、左右と上)
+      if (w.s < me.s - 3) {
+        w.s = me.s + 6 + Math.random() * 22;
+        const a = Math.random() < 0.5 ? -1 : 1;
+        w.x = me.x + a * (1.6 + Math.random() * 3);
+        w.h = 0.4 + Math.random() * 2.6;
       }
+      coursePoint(w.s, w.x, w.h, w.m.position);
+      w.m.rotation.set(0, head.yaw, 0);
+      w.m.scale.set(1, 1, 1.2 + Math.min(1, k) * 2.4);
+      w.m.visible = windMat.opacity > 0.02;
     }
   }
 
@@ -200,7 +282,8 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       ...cpuChars.map((key, i) => ({ id: `cpu${i}`, name: CHARACTERS.find((c) => c.key === key).name, character: key, cpu: kinds[Math.floor(nextRandom(pick) * kinds.length)] })),
     ];
     if (game) for (const r of game.runners) scene.remove(r.holder);
-    for (const f of fx.splice(0)) scene.remove(f.obj);
+    leaves.length = 0;
+    for (const w of winds) w.s = -1e9;
     acornMeshes.forEach((m) => { m.visible = true; });
 
     const state = createGame(players, seed);
@@ -496,6 +579,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       if (v.sit > 0.01) seatedPose(v, r);
       // ふちにこすっていると、落ち葉が舞う
       if (r.scrape && Math.random() < dt * 20) spray(tmp.copy(v.holder.position).setY(v.holder.position.y + 0.2), 2, 1.5);
+      trail(v, r, i === 0, dt);
       if (v.marker) v.marker.position.set(0, 2.1 * v.size + 0.08 * Math.sin(performance.now() / 180), 0);
     });
     // どんぐりはくるくる回る
@@ -527,7 +611,10 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       pos = coursePoint(me.s - back, me.x * 0.6, up);
       look = coursePoint(me.s + (portrait ? 7 : 8), me.x * 0.4, 0.6);
     }
-    camera.fov = portrait ? 66 : 52;
+    // 速いほど、視野を少し広げる(スピード感)
+    const fast = game && mode === 'playing' && me.finish === null ? Math.max(0, Math.min(1, (me.v - 9) / 6)) + (me.boost > 0 ? 0.4 : 0) : 0;
+    camera.userData.fast = (camera.userData.fast || 0) + (fast - (camera.userData.fast || 0)) * Math.min(1, dt * 3);
+    camera.fov = (portrait ? 66 : 52) + camera.userData.fast * 7;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
     if (intro < 1) {
@@ -570,9 +657,9 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
   }
 
   // ── 1フレーム(タイトルの輪から呼ばれる) ─────────────────
-  function frame(rawDt) {
+  function frame(rawDt, draw = true) {
     const dt = Math.min(rawDt, 0.1);
-    if (mode === 'playing' && intro >= 1) watchQuality(rawDt);
+    if (draw && mode === 'playing' && intro >= 1) watchQuality(rawDt);
     if (intro < 1 && !paused) intro = Math.min(1, intro + dt / INTRO_TIME);
     if (game && mode === 'playing' && !paused && intro >= 1) {
       const s = game.state;
@@ -603,6 +690,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     if (game && !paused) {
       updateRunners(dt);
       updateFx(dt);
+      updateWind(dt);
     }
     if (!paused) {
       for (const a of audience) {
@@ -616,7 +704,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     }
     atmosphere.update(dt);
     updateCamera(dt);
-    renderer.render(scene, camera);
+    if (draw) renderer.render(scene, camera);
   }
 
   // E2E 用の口
@@ -629,6 +717,8 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     camera, renderer, scene,
     freeCamera: (on) => { freeCamera = on; },
     setTime: (key) => atmosphere.apply(key),
+    // 描かずに、画面の動き(落ち葉・カメラ)ごと sec 秒すすめる。自分は押しているキーのまま
+    tick: (sec) => { for (let i = 0; i < sec * 60; i++) frame(1 / 60, false); },
     // 描かずに、みんな CPU で sec 秒すすめる(途中の場面を撮る用)
     advance: (sec) => {
       const me = createCpu('normal', 1, 0);
