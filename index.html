@@ -334,6 +334,13 @@
   .pop.gold { color: #ffd24a; font-size: 32px; }
   @keyframes popup { 0% { opacity: 0; translate: 0 6px; scale: .5; } 20% { opacity: 1; scale: 1.15; } 100% { opacity: 0; translate: 0 -46px; scale: 1; } }
   .splash.gold { color: #ffd24a; }
+  /* どんぐりの雨: 画面のふちが金色に脈打つ */
+  .rainfx {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .6s;
+    background: radial-gradient(ellipse at center, rgba(255, 210, 74, 0) 62%, rgba(255, 190, 40, .2) 85%, rgba(240, 150, 20, .38) 100%);
+  }
+  .rainfx.on { opacity: 1; animation: rainglow 1s ease-in-out infinite; }
+  @keyframes rainglow { 50% { filter: brightness(1.25); opacity: .75; } }
   .howto {
     position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 26px); margin: 0; text-align: center;
     font: 400 18px var(--font-display); color: #fff; -webkit-text-stroke: 5px var(--hud-ink); paint-order: stroke fill;
@@ -670,6 +677,7 @@
 </div>
 
 <div class="hud" id="hudC" hidden>
+  <div class="rainfx" id="rainC" aria-hidden="true"></div>
   <div class="top">
     <div class="scores" id="scoresC" aria-label="どんぐりの数"></div>
     <div class="side"><div class="timer" id="timerC">45<small>びょう</small></div></div>

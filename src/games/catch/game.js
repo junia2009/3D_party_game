@@ -205,13 +205,14 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   })();
   const leafMats = [0x6fb24e, 0x8fcf5f, 0xd9a34a].map((c) => new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide, transparent: true }));
   const leaves = [];
+  function addLeaf(x, y, z, life = 3) {
+    const m = new THREE.Mesh(leafGeo, leafMats[Math.floor(Math.random() * leafMats.length)]);
+    m.position.set(x, y, z);
+    scene.add(m);
+    leaves.push({ m, vy: -(1.2 + Math.random()), ph: Math.random() * 6, life, max: life });
+  }
   function shakeLeaves(x, z) {
-    for (let i = 0; i < 9; i++) {
-      const m = new THREE.Mesh(leafGeo, leafMats[i % 3]);
-      m.position.set(x + (Math.random() - 0.5) * 2, DROP_H + Math.random() * 1.5, z + (Math.random() - 0.5) * 2);
-      scene.add(m);
-      leaves.push({ m, vy: -(1.2 + Math.random()), ph: Math.random() * 6, life: 3 });
-    }
+    for (let i = 0; i < 9; i++) addLeaf(x + (Math.random() - 0.5) * 2, DROP_H + Math.random() * 1.5, z + (Math.random() - 0.5) * 2);
   }
 
   // ── きらきら・紙ふぶき(演出なので Math.random でよい) ─────────────
@@ -260,6 +261,72 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     const a = Math.random() * Math.PI * 2;
     fx.push({ obj, t: 0, life: 0.9, vel: new THREE.Vector3(Math.cos(a) * 2, 3.2, Math.sin(a) * 2), spin: new THREE.Vector3(9, 4, 7), kind: 'bounce' });
   }
+  // ── どんぐりの雨: 終わりの 10 秒 ─────────────────────
+  // 葉っぱと金のつぶが画面いっぱいに舞い、茂みも木漏れ日もずっとざわざわ。画面のふちが金色に脈打つ。
+  // 金のつぶは本物のどんぐりと見まちがえないように、小さな光だけにする
+  const rainFx = { on: false, leafAcc: 0, glintAcc: 0, lastSec: null, shake: 0 };
+  function startRain() {
+    rainFx.on = true;
+    rainFx.shake = 0.45;
+    rainFx.lastSec = null;
+    $('rainC').classList.add('on');
+    // ザザーッ: 雑音を高いほうへ流して、ふくらませる
+    if (audio) {
+      const len = 1.4, t0 = audio.currentTime;
+      const buf = audio.createBuffer(1, audio.sampleRate * len, audio.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = audio.createBufferSource();
+      src.buffer = buf;
+      const f = audio.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.setValueAtTime(500, t0);
+      f.frequency.exponentialRampToValueAtTime(3500, t0 + len);
+      const g = audio.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.3);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
+      src.connect(f).connect(g).connect(audio.destination);
+      src.start();
+    }
+  }
+  function stopRain() {
+    rainFx.on = false;
+    $('rainC').classList.remove('on');
+  }
+  const glintGeo = new THREE.SphereGeometry(0.035, 6, 4);
+  const glintMat = new THREE.MeshBasicMaterial({ color: 0xffe27a });
+  function updateRain(dt) {
+    rainFx.shake = Math.max(0, rainFx.shake - dt);
+    if (!rainFx.on || paused) return;
+    const s = game.state;
+    stage.shakeAll(0.45);
+    // 葉っぱと金のつぶを、見えているところ(カメラが見ている先のまわり)に降らせる
+    const c = camera.userData.look || new THREE.Vector3();
+    rainFx.leafAcc += dt * 28;
+    while (rainFx.leafAcc >= 1) {
+      rainFx.leafAcc--;
+      addLeaf(c.x + (Math.random() - 0.5) * 9, 5 + Math.random() * 4, c.z + (Math.random() - 0.5) * 9, 2.6);
+    }
+    rainFx.glintAcc += dt * 16;
+    while (rainFx.glintAcc >= 1) {
+      rainFx.glintAcc--;
+      const m = new THREE.Mesh(glintGeo, glintMat);
+      m.position.set(c.x + (Math.random() - 0.5) * 8, 6 + Math.random() * 3, c.z + (Math.random() - 0.5) * 8);
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 1.6, vel: new THREE.Vector3(0, -(3.5 + Math.random() * 2), 0), spin: new THREE.Vector3(), kind: 'glint' });
+    }
+    // 秒読み: 1秒ごとに コッ。最後の 3 秒は高く
+    const sec = Math.ceil(timeLeft(s));
+    if (sec !== rainFx.lastSec && s.phase === 'play') {
+      rainFx.lastSec = sec;
+      if (sec <= 3) tone(1175, 0.09, 'square', 0.05);
+      else tone(880, 0.06, 'square', 0.04);
+    }
+    // 観客はずっと大よろこび
+    for (const a of audience) if (a.until < 0.3) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 1; }
+  }
+
   function updateFx(dt) {
     for (let i = fx.length - 1; i >= 0; i--) {
       const f = fx[i];
@@ -270,6 +337,9 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
         f.obj.position.addScaledVector(f.vel, dt);
         f.obj.material.opacity = 1 - k;
         f.obj.scale.setScalar(f.size * (1 - k * 0.6));
+      } else if (f.kind === 'glint') {
+        f.obj.position.addScaledVector(f.vel, dt);
+        if (f.obj.position.y < 0.05) f.t = f.life; // 地面についたら消える
       } else if (f.kind === 'confetti') {
         f.obj.position.addScaledVector(f.vel, dt);
         f.obj.position.x += Math.sin(f.t * 5 + i) * dt * 0.5;
@@ -285,7 +355,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       }
       if (k >= 1) {
         scene.remove(f.obj);
-        f.obj.material?.dispose?.();
+        if (f.kind === 'sparkle' || f.kind === 'confetti') f.obj.material.dispose(); // 1つずつ作った素材だけ捨てる(金のつぶは共有)
         fx.splice(i, 1);
       }
     }
@@ -391,6 +461,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     runners[0].marker = marker;
 
     for (const f of fx.splice(0)) scene.remove(f.obj);
+    stopRain();
     game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, cheered: false };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
@@ -687,9 +758,11 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
           owl.play('flap', { fade: 0.1 });
           for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 2; }
           rustle(0.35);
+          startRain();
           break;
         case 'timeup':
           splash('そこまで!');
+          stopRain();
           $('howtoC').classList.remove('show');
           owl.play('flap', { fade: 0.1 });
           break;
@@ -863,7 +936,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       l.m.position.y += l.vy * dt;
       l.m.position.x += Math.sin(l.ph + l.life * 3) * dt * 0.8;
       l.m.rotation.set(l.life * 3 + l.ph, l.life * 2, l.ph);
-      l.m.material.opacity = Math.min(1, l.life);
+      l.m.scale.setScalar(Math.min(1, l.life * 2)); // 消える前に小さく(素材は共有なので透明度はいじらない)
       if (l.life <= 0 || l.m.position.y < 0.05) {
         scene.remove(l.m);
         leaves.splice(i, 1);
@@ -907,6 +980,9 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     camera.position.lerp(pos, k);
     camera.userData.look = camera.userData.look ? camera.userData.look.lerp(look, k) : look.clone();
     camera.lookAt(camera.userData.look);
+    // 雨のはじまりに、ずしんと少しゆれる(見る先はゆらさない)
+    const shake = rainFx.shake * rainFx.shake;
+    if (shake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0));
   }
 
   // ── 画質(だるまと同じ考え方) ─────────────────────────
@@ -963,6 +1039,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     if (game && !paused) {
       updateRunners(dt);
       updateItems(dt);
+      updateRain(dt);
       updateFx(dt);
     }
     if (!paused) {

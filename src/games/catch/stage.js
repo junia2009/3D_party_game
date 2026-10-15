@@ -286,6 +286,10 @@ export function buildStage(scene) {
       }
       if (best) best.userData.shake = 1;
     },
+    // 全部の茂みを、少なくとも level までゆらす(どんぐりの雨のあいだ)
+    shakeAll(level) {
+      for (const c of canopy) c.userData.shake = Math.max(c.userData.shake, level * (0.7 + 0.3 * Math.sin(time * 3 + c.userData.ph)));
+    },
     update(dt) {
       time += dt;
       for (const c of canopy) {
