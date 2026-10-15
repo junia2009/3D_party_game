@@ -463,9 +463,38 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
+// ── 重さに合わせて画質を下げる ──────────────────────────
+// 2秒ごとに1フレームの平均時間を見て、遅ければ 解像度 → 影 の順に下げる。
+// ?fps を付けると、左下に1秒あたりのフレーム数を出す(実機で重さを確かめる用)。
+const quality = { level: 0, sum: 0, n: 0, timer: 0 };
+const fpsEl = params.has('fps') ? Object.assign(document.body.appendChild(document.createElement('div')), {
+  style: 'position:fixed;left:8px;bottom:8px;z-index:9;background:rgba(0,0,0,.6);color:#fff;font:12px monospace;padding:3px 6px;border-radius:6px;pointer-events:none',
+}) : null;
+function watchQuality(rawDt) {
+  quality.sum += rawDt;
+  quality.n++;
+  quality.timer += rawDt;
+  if (quality.timer < 2) return;
+  const avg = quality.sum / quality.n;
+  if (fpsEl) fpsEl.textContent = `${(1 / avg).toFixed(0)} fps / 画質 ${['高', '中', '低'][quality.level]} / ${renderer.info.render.calls} 回`;
+  quality.sum = quality.n = quality.timer = 0;
+  if (avg < 1 / 40 || quality.level >= 2) return; // 40fps 以上出ていれば下げない
+  quality.level++;
+  if (quality.level === 1) {
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
+    resize();
+  } else {
+    // 影を切る(影のための2回目の描画がなくなる)
+    renderer.shadowMap.enabled = false;
+    scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
+  }
+}
+
 const clock = new THREE.Clock();
 function frame() {
-  const dt = Math.min(clock.getDelta(), 0.1);
+  const rawDt = clock.getDelta();
+  const dt = Math.min(rawDt, 0.1);
+  if (mode === 'playing') watchQuality(rawDt);
   if (game && mode === 'playing') {
     const s = game.state;
     game.acc += dt;

@@ -26,9 +26,12 @@
 npm run serve   # http://localhost:8000/
 ```
 
+公開版: `main` に push すると GitHub Actions(`.github/workflows/pages.yml`)がテストを通してから GitHub Pages に出す。
+
 | ページ | 中身 |
 | --- | --- |
-| `daruma.html` | ミニゲーム「だるまさんがころんだ」(ひとり + CPU4人)。`?seed=数字` で展開を固定できる |
+| `index.html` | 入口 |
+| `daruma.html` | ミニゲーム「だるまさんがころんだ」(ひとり + CPU4人)。`?seed=数字` で展開を固定、`?time=morning/day/evening/night` で時間帯を固定、`?fps` で重さを表示 |
 | `viewer.html` | キャラ図鑑。アニメーション・表情・プレイヤーの色を切り替えて見られる |
 
 ## テスト
