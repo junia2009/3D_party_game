@@ -10,98 +10,25 @@ import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { nextRandom, seedFrom } from '../../rng.js';
 import { MORA, RULES, STEP, TRACK, chantCount, createGame, lookAmount, ranking, step } from './rules.js';
 import { PERSONALITIES, cpuHold, createCpu } from './cpu.js';
+import { PERCH, buildStage, laneX } from './stage.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const SLOTS = 5;
-const laneX = (slot) => (slot - (SLOTS - 1) / 2) * 1.15;
 const params = new URLSearchParams(location.search);
 
 // ── 3D の土台 ──────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ canvas: $('cv'), antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xe9f4e6, 30, 70);
-const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
+scene.fog = new THREE.Fog(0xd4e8e0, 60, 330);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 700);
 scene.add(new THREE.HemisphereLight(0xffffff, 0xa9c7a0, 1.7));
 const sun = new THREE.DirectionalLight(0xffffff, 2.0);
 sun.position.set(4, 8, 5);
 scene.add(sun);
 
-function box(w, h, d, color) {
-  return new THREE.Mesh(new THREE.BoxGeometry(w, h, d), toonMaterial(color));
-}
-
-function buildField() {
-  const field = new THREE.Group();
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(90, 140), toonMaterial(0x93d384));
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.z = -20;
-  field.add(ground);
-  // レーン(1本おきに色を変える)
-  for (let i = 0; i < SLOTS; i++) {
-    const lane = new THREE.Mesh(new THREE.PlaneGeometry(1.08, TRACK + 3), toonMaterial(i % 2 ? 0xc4e8a6 : 0xb3df95));
-    lane.rotation.x = -Math.PI / 2;
-    lane.position.set(laneX(i), 0.004, -TRACK / 2 + 0.5);
-    field.add(lane);
-  }
-  const width = SLOTS * 1.15 + 0.3;
-  const start = box(width, 0.02, 0.14, 0xffffff);
-  start.position.set(0, 0.01, 0);
-  field.add(start);
-  const goal = box(width, 0.02, 0.2, 0xffffff);
-  goal.position.set(0, 0.01, -TRACK);
-  field.add(goal);
-  // 5m ごとの目印
-  for (let m = 5; m < TRACK; m += 5) {
-    for (const s of [-1, 1]) {
-      const peg = box(0.12, 0.3, 0.12, 0xffffff);
-      peg.position.set(s * (width / 2 + 0.25), 0.15, -m);
-      field.add(peg);
-    }
-  }
-  // ゴールテープ
-  for (const s of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.3, 10), toonMaterial(0xffffff));
-    post.position.set(s * (width / 2 + 0.25), 0.65, -TRACK);
-    field.add(post);
-  }
-  const tape = box(width + 0.5, 0.08, 0.03, 0xff5a4e);
-  tape.position.set(0, 1.05, -TRACK);
-  field.add(tape);
-  // 木と雲(飾り。乱数は演出なので Math.random でよい)
-  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.22, 1, 8);
-  const leafGeo = new THREE.SphereGeometry(1, 14, 10);
-  for (let i = 0; i < 46; i++) {
-    const side = i % 2 ? 1 : -1;
-    const x = side * (5 + Math.random() * 14);
-    const z = 2 - Math.random() * 52; // カメラの手前には生やさない
-    const k = 0.7 + Math.random() * 0.8;
-    const tree = new THREE.Group();
-    const trunk = new THREE.Mesh(trunkGeo, toonMaterial(0x8a6247));
-    trunk.position.y = 0.5;
-    const leaf = new THREE.Mesh(leafGeo, toonMaterial([0x5fb55a, 0x4ea957, 0x79c463][i % 3]));
-    leaf.position.y = 1.5;
-    leaf.scale.set(0.9, 1.05, 0.9);
-    tree.add(trunk, leaf);
-    tree.position.set(x, 0, z);
-    tree.scale.setScalar(k);
-    field.add(tree);
-  }
-  for (let i = 0; i < 7; i++) {
-    const cloud = new THREE.Group();
-    for (let j = 0; j < 3; j++) {
-      const puff = new THREE.Mesh(leafGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      puff.scale.set(1.4 - j * 0.3, 0.8 - j * 0.15, 1);
-      puff.position.set(j * 1.2 - 1.2, 0, 0);
-      cloud.add(puff);
-    }
-    cloud.position.set(-30 + i * 10 + Math.random() * 4, 11 + Math.random() * 5, -50 - Math.random() * 10);
-    field.add(cloud);
-  }
-  return field;
-}
-scene.add(buildField());
+const stage = buildStage(scene);
 
 // 足元の丸い影
 const shadowTex = (() => {
@@ -165,15 +92,12 @@ function unlockAudio() {
 // ── 読み込み ────────────────────────────────────────
 await preload([...CHARACTERS.map((c) => c.key), 'hoho']);
 const owl = await createModel('hoho');
-owl.root.position.set(0, 0, -TRACK - 1.7);
-owl.root.rotation.y = Math.PI; // 体はうしろ(コースの外)を向く
+owl.root.position.copy(PERCH); // 大木の低い枝の上
+owl.root.rotation.y = Math.PI; // 体はうしろ(大木の幹)を向く
 owl.play('idle');
 owl.setFace('normal');
 scene.add(owl.root);
 const owlHead = owl.node('head');
-const owlShadow = shadow(2.2);
-owlShadow.position.set(0, 0.012, -TRACK - 1.7);
-scene.add(owlShadow);
 $('loading').remove();
 
 // ── ゲームの進行 ────────────────────────────────────
@@ -229,6 +153,7 @@ async function startGame() {
     lastCount: 0,
   };
   held = false;
+  stage.setGame(game.state);
   buildTrackDots();
   setMode('playing');
   splash('よーい…');
@@ -326,6 +251,7 @@ function renderHud() {
 function onEvents(events) {
   const s = game.state;
   for (const e of events) {
+    stage.onEvent(e, s);
     switch (e.type) {
       case 'chant':
         owl.setFace('normal');
@@ -445,7 +371,9 @@ function updateRunners(dt) {
   });
 }
 
+let freeCamera = false; // E2E でカメラを自由に置くとき
 function updateCamera(dt, snap = false) {
+  if (freeCamera) return;
   const aspect = innerWidth / innerHeight;
   const portrait = aspect < 1;
   let z, pos, look;
@@ -505,7 +433,10 @@ function frame() {
     }
     renderHud();
   }
-  if (game) updateRunners(dt);
+  if (game) {
+    updateRunners(dt);
+    stage.update(dt, game.state);
+  }
   // 先生の首: 0 = うしろ、1 = こっち。回り始めと終わりをなめらかに
   const look = !game || mode === 'select' ? 0 : game.state.phase === 'finished' ? 1 : lookAmount(game.state);
   owlHead.rotation.y = Math.PI * (look * look * (3 - 2 * look));
@@ -523,6 +454,8 @@ window.daruma = {
   pick: (key) => { picked = key; renderSelect(); },
   start: () => startGame(),
   hold: (on) => press(on),
+  camera,
+  freeCamera: (on) => { freeCamera = on; },
 };
 
 setMode(params.has('autostart') ? 'playing' : 'select');
