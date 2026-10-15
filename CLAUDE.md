@@ -9,6 +9,16 @@
 - ビルド工程はない。ブラウザは ES Modules を直接読む(Three.js は `vendor/` + importmap)。
   `vendor/` の Three.js と `package.json` の `three` は同じ版にそろえる。
 
+## ミニゲーム
+
+- 1本ごとに `src/games/<名前>/` を作る。`rules.js`(ルール)と `cpu.js`(CPU)は
+  **THREE にも DOM にも触らない**。あとでサーバーでも同じものを回すため。
+  画面は `game.js` が持ち、state を書きかえるのは `rules.step` だけにする。
+- 時間は固定の刻み(`STEP`)で進める。乱数は `src/rng.js` を通す(`Math.random()` は演出だけ)。
+- ルールを変えたら `npm test`。新しいルールにはテストを足す。
+  CPU どうしで何百回も回すテストが、決着すること・偏りすぎないことを見張っている。
+- 仕様は `docs/minigames/<名前>.md`。ルールを変えたら仕様も直す。
+
 ## キャラクター
 
 - モデルの元は `src/characters.js`。`models/*.glb` は書き出した結果なので、手で編集しない。

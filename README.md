@@ -16,13 +16,26 @@
 
 プロフィールと見分け方は `src/characters.js` に書いてある。
 
-## 見る
+見張り番などの NPC は `src/npcs.js`(`models/hoho.glb` = ホーホー先生)。
+
+全体の決めごとは [docs/GAME.md](docs/GAME.md)。
+
+## 遊ぶ・見る
 
 ```sh
-npm run serve   # http://localhost:8000/viewer.html
+npm run serve   # http://localhost:8000/
 ```
 
-`viewer.html` は glb を読み込んで、アニメーション・表情・プレイヤーの色を切り替えて見られる。
+| ページ | 中身 |
+| --- | --- |
+| `daruma.html` | ミニゲーム「だるまさんがころんだ」(ひとり + CPU4人)。`?seed=数字` で展開を固定できる |
+| `viewer.html` | キャラ図鑑。アニメーション・表情・プレイヤーの色を切り替えて見られる |
+
+## テスト
+
+```sh
+npm test        # ミニゲームのルールと CPU(ブラウザ不要)
+```
 
 ## glb を作り直す
 
