@@ -144,37 +144,28 @@ function buildTrack(g) {
   g.add(mesh);
 }
 
-// 山肌の高さ。近い順に 8 つの道の点の高さを、距離で重みをつけて混ぜる。
+// 山肌の高さ。道のすべての点の高さを、距離で重みをつけて混ぜる(重みは距離の3乗に反比例)。
+// 近い何点かだけで混ぜると、はなれた2本の道のちょうどまん中で高さが一気に切りかわって、壁になった。
 // 道のすぐまわりは、道より少し低く(土手のすそがもぐる。低すぎると道のわきが溝に見える)
 const groundPts = samples.filter((_, i) => i % 4 === 0);
-const near = new Array(8);
 function ground(x, z) {
-  near.fill(null);
+  let wsum = 0, ysum = 0, best = Infinity, near = groundPts[0];
   for (const p of groundPts) {
-    const d = (p.x - x) ** 2 + (p.z - z) ** 2;
-    for (let k = 0; k < near.length; k++) {
-      if (!near[k] || d < near[k].d) {
-        near.splice(k, 0, { d, y: p.y, s: p.s });
-        near.length = 8;
-        break;
-      }
-    }
-  }
-  let wsum = 0, ysum = 0;
-  for (const n of near) {
-    const w = 1 / (n.d + 4);
+    const d2 = (p.x - x) ** 2 + (p.z - z) ** 2;
+    if (d2 < best) { best = d2; near = p; }
+    const q = d2 + 16;
+    const w = 1 / (q * Math.sqrt(q));
     wsum += w;
-    ysum += n.y * w;
+    ysum += p.y * w;
   }
-  const d0 = Math.sqrt(near[0].d);
-  const hw = halfWidthAt(near[0].s);
+  const d0 = Math.sqrt(best);
+  const hw = halfWidthAt(near.s);
   let y = ysum / wsum + Math.max(0, d0 - 12) * 0.07 + Math.sin(x * 0.09) * Math.sin(z * 0.08) * Math.min(3, Math.max(0, d0 - 10) * 0.1);
-  y = Math.min(y, near[0].y - 0.35 + Math.max(0, d0 - hw - 1.8) * 0.45);
+  y = Math.min(y, near.y - 0.35 + Math.max(0, d0 - hw - 1.8) * 0.45);
   return { y, d0 };
 }
 
-// まわりの山の斜面(高さは ground)。
-// いちばん近い道だけに合わせると、高さのちがう道が近くを通るところで地面が段になって壁に見えるので、混ぜている
+// まわりの山の斜面(高さは ground)
 function buildTerrain(g) {
   const minX = Math.min(...samples.map((p) => p.x)) - 70, maxX = Math.max(...samples.map((p) => p.x)) + 70;
   const minZ = Math.min(...samples.map((p) => p.z)) - 70, maxZ = Math.max(...samples.map((p) => p.z)) + 70;
@@ -416,6 +407,84 @@ function buildGate(g, s, text, color) {
   g.add(grp);
 }
 
+// ゴールのあとの広場: 落ち葉をしきつめた丸い広場。観客の切り株、旗のポールと旗のひも、
+// つきあたりの大きな落ち葉の山(止まりきれなくても、ここへぼふっと入る見た目)
+function buildGoalArea(g) {
+  const center = coursePoint(LENGTH + 16, 0);
+  const yaw = courseHeading(LENGTH + 16).yaw;
+  const grp = new THREE.Group();
+  grp.position.copy(center);
+  grp.rotation.y = yaw;
+  // 広場の地面(道より 2cm 下。道とかさならない)
+  const map = leafCarpet();
+  map.repeat.set(5, 5);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(11, 40), new THREE.MeshToonMaterial({ map, color: 0xfff0dd, gradientMap: toonGradient }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.02;
+  grp.add(floor);
+  // ふちどり: 小石の輪
+  const stoneGeo = new THREE.DodecahedronGeometry(0.28, 0);
+  const stoneMat = toonMaterial(0xa8a39a);
+  const rand = makeRand(31);
+  for (let i = 0; i < 46; i++) {
+    const a = (i / 46) * Math.PI * 2;
+    if (Math.abs(Math.sin(a)) < 0.2 && Math.cos(a) < 0) continue; // ゴールから入るところはあける(ローカルの -z がゴールのがわ)
+    const st = new THREE.Mesh(stoneGeo, stoneMat);
+    st.position.set(Math.sin(a) * 11, 0.05, Math.cos(a) * 11);
+    st.rotation.set(rand() * 3, rand() * 3, 0);
+    st.scale.setScalar(0.7 + rand() * 0.6);
+    grp.add(st);
+  }
+  // つきあたりの落ち葉の山
+  const pileMat = new THREE.MeshToonMaterial({ map: leafCarpet(), color: 0xffe2c2, gradientMap: toonGradient });
+  pileMat.map.repeat.set(2, 2);
+  for (const [x, z, r, h] of [[0, 9.5, 3.4, 1.7], [-2.6, 8.6, 2.2, 1.2], [2.8, 8.8, 2.4, 1.3], [-0.8, 7.6, 1.5, 0.8], [1.4, 7.4, 1.3, 0.7]]) {
+    const pile = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), pileMat);
+    pile.scale.set(r, h, r * 0.8);
+    pile.position.set(x, -0.05, z);
+    grp.add(pile);
+  }
+  // 旗のポール4本と、そのあいだの旗のひも
+  const wood = toonMaterial(0x8a5a32);
+  const flagColors = [0xff5a4e, 0xffc23c, 0x3d8bff, 0x34c47c, 0x9b6bff];
+  const poles = [[-8.6, -2], [-7, 5.5], [7, 5.5], [8.6, -2]];
+  for (const [x, z] of poles) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 3.6, 8), wood);
+    pole.position.set(x, 1.8, z);
+    grp.add(pole);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8), toonMaterial(0xffc23c));
+    ball.position.set(x, 3.65, z);
+    grp.add(ball);
+  }
+  const flagGeo = new THREE.ConeGeometry(0.13, 0.28, 3);
+  for (let k = 0; k < poles.length - 1; k++) {
+    const [ax, az] = poles[k], [bx, bz] = poles[k + 1];
+    const n = Math.round(Math.hypot(bx - ax, bz - az) / 0.55);
+    for (let i = 1; i < n; i++) {
+      const u = i / n;
+      const f = new THREE.Mesh(flagGeo, toonMaterial(flagColors[(i + k) % 5]));
+      f.rotation.x = Math.PI;
+      f.position.set(ax + (bx - ax) * u, 3.4 - Math.sin(u * Math.PI) * 0.6, az + (bz - az) * u);
+      grp.add(f);
+    }
+  }
+  // 観客の切り株
+  const stumpGeo = new THREE.CylinderGeometry(0.42, 0.5, 0.42, 12);
+  const stumpMat = toonMaterial(0x8a5a32), ringMat = toonMaterial(0xe0b77c);
+  const topGeo = new THREE.CircleGeometry(0.4, 12);
+  topGeo.rotateX(-Math.PI / 2);
+  for (const seat of SEATS) {
+    const p = coursePoint(seat.s, seat.x);
+    const st = new THREE.Mesh(stumpGeo, stumpMat);
+    st.position.set(p.x, p.y + 0.2, p.z);
+    g.add(st);
+    const top = new THREE.Mesh(topGeo, ringMat);
+    top.position.set(p.x, p.y + 0.415, p.z);
+    g.add(top);
+  }
+  g.add(grp);
+}
+
 export const SEATS = [
   { s: LENGTH + 12, x: -5.5, kind: 'risu' },
   { s: LENGTH + 15, x: -6.2, kind: 'harinezumi' },
@@ -435,6 +504,7 @@ export function buildStage(scene) {
   buildMushrooms(g);
   buildGate(g, 0, 'スタート', '#3d8bff');
   buildGate(g, LENGTH, 'ゴール', '#d9443a');
+  buildGoalArea(g);
   mergeStatic(g, (o) => o.name === 'track');
   scene.add(g);
   return { group: g };

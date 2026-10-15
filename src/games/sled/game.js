@@ -11,7 +11,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { nextRandom, seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, ranking, step } from './rules.js';
-import { ACORNS, LENGTH } from './course.js';
+import { ACORNS, LENGTH, halfWidthAt } from './course.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, buildStage, coursePoint, courseHeading } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -95,6 +95,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
   owl.root.rotation.y = courseHeading(LENGTH).yaw + Math.PI; // 向かってくるそりのほうを見る
   owl.play('idle');
   scene.add(owl.root);
+  let owlCheer = 0;
   const audience = await Promise.all(SEATS.map(async (seat) => {
     const m = await createModel(seat.kind);
     m.root.position.copy(coursePoint(seat.s, seat.x, 0.4));
@@ -162,16 +163,18 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
   leafPool.frustumCulled = false;
   leafPool.count = 0;
   scene.add(leafPool);
-  const leafColors = [0xe2402f, 0xf08a24, 0xf6b93b, 0xc4532a, 0xe8a03a].map((c) => new THREE.Color(c));
+  // 0〜4: 落ち葉の色 / 5〜: 紙吹雪の色(ゴールで、もみじの形の紙吹雪をまく)
+  const leafColors = [0xe2402f, 0xf08a24, 0xf6b93b, 0xc4532a, 0xe8a03a, 0xff5a4e, 0xffd23c, 0x3d8bff, 0x34c47c, 0x9b6bff, 0xff8ad8, 0xffffff].map((c) => new THREE.Color(c));
+  const LEAF_KINDS = 5;
   const leaves = []; // { pos, vel, rot, spin, t, life, size, sway }
   for (let i = 0; i < LEAF_MAX; i++) leafPool.setColorAt(i, leafColors[i % leafColors.length]);
-  function emitLeaf(pos, vel, size = 1, life = 0.9 + Math.random() * 0.6) {
+  function emitLeaf(pos, vel, size = 1, life = 0.9 + Math.random() * 0.6, color = Math.floor(Math.random() * LEAF_KINDS)) {
     if (leaves.length >= LEAF_MAX) leaves.shift(); // いっぱいなら古いものから
     leaves.push({
       pos: pos.clone(), vel: vel.clone(), t: 0, life, size: size * (0.7 + Math.random() * 0.6),
       rot: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
       spin: new THREE.Vector3((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 14),
-      sway: Math.random() * 6, color: Math.floor(Math.random() * leafColors.length),
+      sway: Math.random() * 6, color,
     });
   }
   // はじける(ジャンプ・着地・どんぐり)
@@ -188,8 +191,8 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       const f = leaves[i];
       f.t += dt;
       if (f.t >= f.life) { leaves.splice(i, 1); continue; }
-      f.vel.y -= 4.5 * dt;
-      f.vel.multiplyScalar(Math.exp(-dt * 2.2)); // 空気でとまる
+      f.vel.y -= (f.color >= LEAF_KINDS ? 2.2 : 4.5) * dt; // 紙吹雪はもっとゆっくり
+      f.vel.multiplyScalar(Math.exp(-dt * (f.color >= LEAF_KINDS ? 1.6 : 2.2))); // 空気でとまる
       f.pos.addScaledVector(f.vel, dt);
       f.pos.x += Math.sin(f.t * 5 + f.sway) * dt * 0.6; // ひらひら
       f.rot.x += f.spin.x * dt;
@@ -230,6 +233,67 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       emitLeaf(trailPos, trailVel, mine ? 1 : 0.9, 0.6 + Math.random() * 0.5);
     }
   }
+
+  // ゴールの紙吹雪: 門の両方の柱の上から、内がわ・上へふきだす
+  function confetti(n = 70) {
+    const head = courseHeading(LENGTH);
+    const hw = halfWidthAt(LENGTH) + 0.8;
+    for (const sd of [-1, 1]) {
+      const top = coursePoint(LENGTH, sd * hw, 4.2);
+      const inward = coursePoint(LENGTH, 0, 0).sub(coursePoint(LENGTH, sd * hw, 0)).normalize();
+      for (let i = 0; i < n / 2; i++) {
+        tmpV.copy(inward).multiplyScalar(2 + Math.random() * 4);
+        tmpV.x += Math.sin(head.th) * (Math.random() - 0.3) * 3; // 少し前(広場のほう)へ
+        tmpV.z -= Math.cos(head.th) * (Math.random() - 0.3) * 3;
+        tmpV.y = 3 + Math.random() * 4;
+        emitLeaf(top, tmpV, 0.8, 2.4 + Math.random() * 1.4, LEAF_KINDS + Math.floor(Math.random() * (leafColors.length - LEAF_KINDS)));
+      }
+    }
+  }
+
+  // ゴールテープ: 1位が通ると切れて、走りぬけた子に押されて前へ流れ、先が地面につく(ひらひらゆれる)
+  const tape = (() => {
+    const hw = halfWidthAt(LENGTH) + 0.8;
+    const grp = new THREE.Group();
+    grp.position.copy(coursePoint(LENGTH, 0, 0.95));
+    grp.rotation.y = courseHeading(LENGTH).yaw;
+    scene.add(grp);
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 16;
+    const g2 = c.getContext('2d');
+    for (let i = 0; i < 16; i++) { g2.fillStyle = i % 2 ? '#ffffff' : '#ff5a4e'; g2.fillRect(i * 16, 0, 16, 16); }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+    const droop = Math.asin(0.9 / hw); // 先が地面につく傾き
+    const halves = [-1, 1].map((sd) => {
+      const pivot = new THREE.Group();
+      pivot.position.x = sd * hw;
+      const geo = new THREE.PlaneGeometry(hw, 0.14, 12, 1);
+      geo.translate(-sd * hw / 2, 0, 0); // 柱から内がわへのびる
+      const m = new THREE.Mesh(geo, mat);
+      pivot.add(m);
+      grp.add(pivot);
+      return { pivot, sd, swing: 0, vel: 0, turn: 0, tvel: 0 };
+    });
+    return {
+      broken: false,
+      reset() { this.broken = false; for (const h of halves) { h.swing = h.vel = h.turn = h.tvel = 0; h.pivot.rotation.set(0, 0, 0); } },
+      cut() { this.broken = true; for (const h of halves) { h.vel = 3; h.tvel = 9; } },
+      update(dt) {
+        if (!this.broken) return;
+        for (const h of halves) {
+          // ばねで、先が地面につく傾き(下へ)と、前へ流れる向きへ。ゆれながらおちつく
+          h.vel += ((droop - h.swing) * 30 - h.vel * 3) * dt;
+          h.swing += h.vel * dt;
+          h.tvel += ((1.0 - h.turn) * 20 - h.tvel * 2.5) * dt;
+          h.turn += h.tvel * dt;
+          h.pivot.rotation.z = h.sd * h.swing;
+          h.pivot.rotation.y = h.sd * (h.turn + Math.sin(performance.now() / 260 + h.sd) * 0.08);
+        }
+      },
+    };
+  })();
 
   // 風の線: 速いとき、道のわきを白い線が流れていく(世界に置いた線を、そりが追いぬいていく)
   const WIND = 18;
@@ -284,6 +348,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     if (game) for (const r of game.runners) scene.remove(r.holder);
     leaves.length = 0;
     for (const w of winds) w.s = -1e9;
+    tape.reset();
     acornMeshes.forEach((m) => { m.visible = true; });
 
     const state = createGame(players, seed);
@@ -480,7 +545,11 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
             sfx.fanfare();
           }
           for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 2; }
-          void r;
+          // 1位がテープを切る。紙吹雪は1位と自分のときに
+          if (!tape.broken) { tape.cut(); spray(r.holder.position.clone().setY(r.holder.position.y + 0.9), 6, 2); }
+          if (e.slot === 0 || ranking(s)[0] === e.slot && s.runners.filter((o) => o.finish !== null).length === 1) confetti(e.slot === 0 ? 90 : 60);
+          owl.play('cheer');
+          owlCheer = 2.5;
           break;
         }
         case 'finished':
@@ -691,6 +760,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       updateRunners(dt);
       updateFx(dt);
       updateWind(dt);
+      tape.update(dt);
     }
     if (!paused) {
       for (const a of audience) {
@@ -700,6 +770,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
         }
         a.model.update(dt);
       }
+      if (owlCheer > 0 && (owlCheer -= dt) <= 0) owl.play('idle');
       owl.update(dt);
     }
     atmosphere.update(dt);
@@ -715,6 +786,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     get intro() { return intro; },
     start: (key = picked) => { picked = key; return startGame(); },
     camera, renderer, scene,
+    debugPoint: (s, x, h) => coursePoint(s, x, h),
     freeCamera: (on) => { freeCamera = on; },
     setTime: (key) => atmosphere.apply(key),
     // 描かずに、画面の動き(落ち葉・カメラ)ごと sec 秒すすめる。自分は押しているキーのまま
