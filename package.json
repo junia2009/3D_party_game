@@ -5,7 +5,9 @@
   "scripts": {
     "serve": "python3 -m http.server 8000",
     "export:glb": "node tools/export-glb.mjs",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "gen:precache": "node tools/gen-precache.mjs",
+    "icons": "node tools/make-icons.mjs"
   },
   "devDependencies": {
     "three": "0.180.0"

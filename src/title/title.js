@@ -24,6 +24,11 @@ const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const settings = loadSettings();
 
+// PWA: オフラインでも遊べるように、配信するファイルを手元にしまっておく(sw.js)
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
 // 木の板の絵を、メニューのボタンの背景にする
 document.documentElement.style.setProperty('--wood', `url(${woodPlank(640, 140, { seed: 3 })})`);
 // 図鑑の表紙(色の濃い板)

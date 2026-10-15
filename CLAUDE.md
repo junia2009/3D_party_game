@@ -26,6 +26,18 @@
 - ビルド工程はない。ブラウザは ES Modules を直接読む(Three.js は `vendor/` + importmap)。
   `vendor/` の Three.js と `package.json` の `three` は同じ版にそろえる。
 
+## PWA(ホーム画面のアプリ・オフライン)
+
+- `manifest.webmanifest` と `sw.js`。一度ひらけば、電波がなくても遊べる(配信するファイルを全部プリキャッシュする)。
+- **`src/` `vendor/` `models/` `assets/` `icons/` や `index.html` を変えたら `npm run gen:precache`。**
+  一覧と版(中身のハッシュ)を `sw.js` に書く。忘れると `test/sw-precache.test.js` が落ちる。
+  版が変わると、ブラウザが sw.js を入れなおして、しまったファイルも取りなおす。
+- 取りかたはネットワーク優先。しまったものは、つながらないときだけ使う(古い版で動き続けることはない)。
+- アイコンの絵は `tools/make-icons.mjs` の SVG。変えたら `npm run icons` で `icons/` に書き出しなおす。
+- オフラインの確認は、スクラッチパッドの E2E で `ctx.setOffline(true)` と CDP の `Network.setCacheDisabled`
+  (HTTP キャッシュを切らないと、sw ではなくブラウザのキャッシュで動いているだけかもしれない)。
+  E2E で sw を使わないときは `serviceWorkers: 'block'`(古いコードを掴まないように)。
+
 ## ミニゲーム
 
 - 1本ごとに `src/games/<名前>/` を作る。`rules.js`(ルール)と `cpu.js`(CPU)は

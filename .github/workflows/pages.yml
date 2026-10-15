@@ -38,7 +38,7 @@ jobs:
       - name: 配信するファイルだけを集める
         run: |
           mkdir _site
-          cp -r index.html daruma.html viewer.html src vendor models assets _site/
+          cp -r index.html daruma.html viewer.html manifest.webmanifest sw.js src vendor models assets icons _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
