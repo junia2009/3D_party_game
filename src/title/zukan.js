@@ -102,7 +102,10 @@ export function createZukan({ sfx, onClose, faces }) {
     return models.get(key);
   }
   async function show(key) {
-    const m = await getModel(key);
+    attach(key, await getModel(key));
+  }
+  // 読みこみ済みのモデルを、待たずに舞台へ出す
+  function attach(key, m) {
     if (shown) holder.remove(shown.model.root);
     holder.add(m.root);
     shown = { key, model: m };
@@ -118,15 +121,16 @@ export function createZukan({ sfx, onClose, faces }) {
     renderer.render(scene, camera);
   }
   // そのキャラを描いた絵(めくる紙にのせる)。描いたあと、いまのキャラに描きもどす
+  // (先に両方読みこんでから、待たずに 描く → 写す → 描きもどす。あいだに画面へ出ることはない)
   async function snapshot(key) {
-    const keep = shown?.key;
-    await show(key);
-    shown.model.update(0);
+    const keep = shown;
+    const m = await getModel(key);
+    attach(key, m);
+    m.update(0);
     render();
     const url = canvas.toDataURL('image/png');
-    if (keep && keep !== key) {
-      await show(keep);
-      shown.model.update(0);
+    if (keep) {
+      attach(keep.key, keep.model);
       render();
     }
     return url;
@@ -193,7 +197,11 @@ export function createZukan({ sfx, onClose, faces }) {
     leaf.hidden = false;
     void leaf.offsetWidth;
     leaf.classList.add('go');
-    await new Promise((r) => setTimeout(r, 620));
+    // めくり終わるまで待つ(transitionend が来ないときのための保険つき)
+    await new Promise((r) => {
+      const t = setTimeout(r, parseFloat(getComputedStyle(leaf).transitionDuration) * 1000 + 400);
+      leaf.addEventListener('transitionend', () => { clearTimeout(t); r(); }, { once: true });
+    });
     if (forward) await show(CHARACTERS[i].key);
     else fill(i);
     leaf.hidden = true;

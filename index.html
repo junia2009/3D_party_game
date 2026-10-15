@@ -338,16 +338,22 @@
   .book {
     --paper-c: #fbf4e2; --line-c: rgba(160, 120, 70, .13);
     position: relative; width: min(94vw, 920px, calc((100dvh - 130px) * 1.5)); aspect-ratio: 1.5;
-    perspective: 2000px; transition: transform .8s cubic-bezier(.5, 0, .3, 1), clip-path .8s cubic-bezier(.5, 0, .3, 1);
-    clip-path: inset(-30px -30px -30px -30px); animation: bookin .45s cubic-bezier(.3, 1.4, .5, 1);
+    perspective: 2000px; transition: transform .8s cubic-bezier(.5, 0, .3, 1);
+    isolation: isolate; animation: bookin .45s cubic-bezier(.3, 1.4, .5, 1);
   }
   @keyframes bookin { from { opacity: 0; translate: 0 40px; scale: .8; } }
-  /* 表紙の板(ひらいたあとは、ページのうしろにふちだけ見える) */
-  .book::before {
-    content: ''; position: absolute; inset: -12px; border-radius: 16px; background: var(--wood-cover) center / cover;
-    box-shadow: 0 10px 0 #5a3a20, 0 18px 30px rgba(40, 20, 0, .35);
+  /* 表紙の板(ひらいたあとは、ページのうしろにふちだけ見える)。左右(縦長は上下)の2枚にわけて、
+     とじているあいだは表紙側の1枚だけ見せる。
+     ※ clip-path や overflow で本を切りぬくと、iPhone の Safari でめくる紙の立体がつぶれるので使わない */
+  .book::before, .book::after {
+    content: ''; position: absolute; z-index: -1; background: var(--wood-cover) center / cover;
+    box-shadow: 0 10px 0 #5a3a20, 0 18px 30px rgba(40, 20, 0, .35); transition: opacity .3s;
   }
-  .book.closed { transform: translateX(-25%); clip-path: inset(-30px -30px -30px 50%); }
+  .book::before { inset: -12px 50% -12px -12px; border-radius: 16px 0 0 16px; }
+  .book::after { inset: -12px -12px -12px 50%; border-radius: 0 16px 16px 0; }
+  .book.closed { transform: translateX(-25%); }
+  .book.closed::before, .book.closed .page.pic { opacity: 0; }
+  .page.pic { transition: opacity .3s; }
   .book.closing { animation: bookout .3s .5s forwards; }
   @keyframes bookout { to { opacity: 0; scale: .9; translate: 0 30px; } }
   .spread { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; }
@@ -401,6 +407,10 @@
   .leaf.prev { left: 0; transform-origin: 100% 50%; } .leaf.prev.go { transform: rotateY(180deg); }
   .leaf > .page { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 0 22px rgba(60, 35, 10, .25); }
   .leaf > .back { transform: rotateY(180deg); }
+  /* めくっているあいだ、紙に落ちる影(立ち上がるほど濃く) */
+  .leaf > .page::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(var(--shade-dir, 90deg), rgba(60, 35, 10, .45), rgba(60, 35, 10, 0) 70%); }
+  .leaf.go > .page::after { animation: leafshade .6s ease-in-out; }
+  @keyframes leafshade { 50% { opacity: 1; } }
   /* ページのすみ(めくる) */
   .corner {
     position: absolute; z-index: 3; width: 46px; height: 46px; border: 0; padding: 0; cursor: pointer;
@@ -461,7 +471,9 @@
   /* 縦長: 上下にひらく */
   @media (max-aspect-ratio: 1/1) {
     .book { width: min(94vw, 520px, calc((100dvh - 150px) / 1.6)); aspect-ratio: 1 / 1.6; }
-    .book.closed { transform: translateY(-25%); clip-path: inset(50% -30px -30px -30px); }
+    .book.closed { transform: translateY(-25%); }
+    .book::before { inset: -12px -12px 50% -12px; border-radius: 16px 16px 0 0; }
+    .book::after { inset: 50% -12px -12px -12px; border-radius: 0 0 16px 16px; }
     .spread { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
     .page.pic { border-radius: 10px 10px 0 0; background:
       radial-gradient(ellipse 30% 10% at 50% 84%, rgba(111, 170, 76, .55), rgba(111, 170, 76, 0) 100%),
@@ -469,9 +481,10 @@
       linear-gradient(transparent 80%, rgba(110, 70, 30, .2)), var(--paper-c); }
     .page.info { border-radius: 0 0 10px 10px; background: linear-gradient(rgba(110, 70, 30, .2), transparent 14%), repeating-linear-gradient(transparent 0 25px, var(--line-c) 25px 26px), var(--paper-c); }
     .leaf { top: auto; left: 0; right: 0; width: auto; height: 50%; }
-    .leaf.next { top: 50%; transform-origin: 50% 0; } .leaf.next.go { transform: rotateX(180deg); }
+    .leaf.next { top: 50%; left: 0; transform-origin: 50% 0; } .leaf.next.go { transform: rotateX(180deg); }
     .leaf.prev { top: 0; left: 0; transform-origin: 50% 100%; } .leaf.prev.go { transform: rotateX(-180deg); }
     .leaf > .back { transform: rotateX(180deg); }
+    .leaf > .page { --shade-dir: 180deg; }
     .corner.prev { top: 0; bottom: auto; right: 0; left: auto; transform: scaleY(-1); }
     .cover { top: 50%; bottom: -12px; left: -12px; right: -12px; width: auto; transform-origin: 50% 0; }
     .book.opened .cover { transform: rotateX(180deg); }
