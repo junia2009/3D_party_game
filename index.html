@@ -36,6 +36,7 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; }
+  html { background: var(--sky-bottom); } /* ホーム画面のアプリで、下の端まで空の色にする(白い帯が出ていた) */
   body {
     background: linear-gradient(var(--sky-top), var(--sky-bottom));
     font-family: var(--font-body); color: var(--ink);
@@ -134,28 +135,32 @@
     -webkit-text-stroke: 7px var(--ink); paint-order: stroke fill; text-align: center;
   }
   /* 競技のカード */
+  /* 競技のカード: どれも同じ大きさで2列にならべる。カード全体がボタン */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .card {
-    position: relative; display: grid; gap: 8px; padding: 12px; border-radius: 20px;
-    background: var(--paper); box-shadow: 0 6px 0 rgba(58,34,14,.3); border: 3px solid #8a6238;
+    position: relative; display: grid; align-content: start; gap: 6px; padding: 8px 8px 10px; border-radius: 18px; text-align: left;
+    background: var(--paper); box-shadow: 0 5px 0 rgba(58,34,14,.3); border: 3px solid #8a6238; font: inherit; color: inherit;
   }
-  .card .thumb { position: relative; border-radius: 12px; overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; background: #cfe8f4; }
+  button.card { cursor: pointer; transition: transform .08s; }
+  button.card:active { transform: translateY(4px); box-shadow: 0 1px 0 rgba(58,34,14,.3); }
+  .card .thumb { position: relative; display: block; border-radius: 11px; overflow: hidden; aspect-ratio: 16 / 10; background: #cfe8f4; }
   .card .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .ribbon {
-    position: absolute; left: -6px; top: 10px; padding: 4px 14px 5px 12px; background: var(--red); color: #fff;
-    font: 800 13px var(--font-body); letter-spacing: .08em; border-radius: 0 6px 6px 0; box-shadow: 0 2px 0 rgba(0,0,0,.2);
+    position: absolute; left: -4px; top: 7px; padding: 2px 9px 3px 8px; background: var(--red); color: #fff;
+    font: 800 11px var(--font-body); letter-spacing: .06em; border-radius: 0 5px 5px 0; box-shadow: 0 2px 0 rgba(0,0,0,.2);
   }
-  .card h3 { margin: 0; font: 400 22px var(--font-display); color: var(--ink); }
-  .card p { margin: 0; font-size: 14px; line-height: 1.6; color: #5a3c22; }
-  .meta { display: flex; flex-wrap: wrap; gap: 6px; }
-  .meta span { font: 800 12px var(--font-body); background: #f2e4c8; color: #6b4424; border-radius: 999px; padding: 3px 10px; }
-  .play {
-    display: block; width: 100%; border: 0; cursor: pointer; text-align: center; text-decoration: none; padding: 12px; border-radius: 14px;
-    background: var(--red); color: #fff; font: 400 20px var(--font-display); box-shadow: 0 5px 0 #8f2a24;
+  /* 「あそべる」しるし: 右下の赤い丸に三角 */
+  .go-mark {
+    position: absolute; right: 6px; bottom: 6px; width: 28px; height: 28px; border-radius: 50%; background: var(--red);
+    box-shadow: 0 2px 0 #8f2a24, 0 0 0 2px #fff;
   }
-  .play:active { transform: translateY(4px); box-shadow: 0 1px 0 #8f2a24; }
-  .card.locked .thumb { display: grid; place-items: center; background: repeating-linear-gradient(45deg, #e6d6b8 0 14px, #eadcc2 14px 28px); }
-  .card.locked .thumb b { font: 400 54px var(--font-display); color: rgba(74,42,18,.35); }
-  .cards { display: grid; gap: 14px; }
+  .go-mark::after { content: ''; position: absolute; left: 11px; top: 8px; border: 6px solid transparent; border-left: 9px solid #fff; border-right: 0; }
+  .card .name { font: 400 clamp(13px, 3.8vw, 17px)/1.25 var(--font-display); color: var(--ink); min-height: 2.5em; }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px; }
+  .meta span { font: 800 11px var(--font-body); background: #f2e4c8; color: #6b4424; border-radius: 999px; padding: 2px 8px; }
+  .card.locked .thumb { display: grid; place-items: center; background: repeating-linear-gradient(45deg, #e6d6b8 0 12px, #eadcc2 12px 24px); }
+  .card.locked .thumb b { font: 400 40px var(--font-display); color: rgba(74,42,18,.35); }
+  .card.locked .name { color: #8a6a4a; }
   .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   /* せってい */
   .opt { display: grid; gap: 8px; padding: 14px; border-radius: 18px; background: var(--paper); border: 3px solid #8a6238; box-shadow: 0 6px 0 rgba(58,34,14,.3); }
@@ -608,25 +613,20 @@
 
 <section class="screen sub" id="games" hidden aria-label="競技えらび">
   <div class="head"><button class="back" type="button" data-back>‹ もどる</button><h2>競技をえらぶ</h2></div>
+  <!-- 競技のカード: どれも同じ大きさで2列。カードを押すと入口(ルールとキャラえらび)へ -->
   <div class="cards">
-    <article class="card">
-      <div class="thumb"><img src="./assets/thumbs/daruma.jpg" alt="だるまさんがころんだ の画面" width="640" height="360"><span class="ribbon">第1競技</span></div>
-      <h3>だるまさんがころんだ</h3>
-      <p>ホーホー先生がふりむく前に、どんぐりの森をかけぬけろ!長押しで走って、はなすと止まる。</p>
-      <div class="meta"><span>1〜5人(あいている席は CPU)</span><span>30〜60びょう</span></div>
-      <button class="play" type="button" data-open="daruma">あそぶ</button>
-    </article>
-    <article class="card">
-      <div class="thumb"><img src="./assets/thumbs/catch.jpg" alt="どんぐりキャッチ の画面" width="640" height="360"><span class="ribbon">第2競技</span></div>
-      <h3>どんぐりキャッチ</h3>
-      <p>大木の枝がゆれたら、どんぐりが降ってくる!頭のかごで受けとめて、いちばんたくさん集めよう。</p>
-      <div class="meta"><span>1〜5人(あいている席は CPU)</span><span>45びょう</span></div>
-      <button class="play" type="button" data-open="catch">あそぶ</button>
-    </article>
-    <div class="row2">
-      <article class="card locked"><div class="thumb"><b>?</b><span class="ribbon">第3競技</span></div><p>じゅんびちゅう</p></article>
-      <article class="card locked"><div class="thumb"><b>?</b><span class="ribbon">第4競技</span></div><p>じゅんびちゅう</p></article>
-    </div>
+    <button class="card" type="button" data-open="daruma">
+      <span class="thumb"><img src="./assets/thumbs/daruma.jpg" alt="" width="640" height="360"><span class="ribbon">第1競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">だるまさんが ころんだ</span>
+      <span class="meta"><span>30〜60びょう</span></span>
+    </button>
+    <button class="card" type="button" data-open="catch">
+      <span class="thumb"><img src="./assets/thumbs/catch.jpg" alt="" width="640" height="360"><span class="ribbon">第2競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">どんぐりキャッチ</span>
+      <span class="meta"><span>45びょう</span></span>
+    </button>
+    <div class="card locked" aria-label="第3競技 じゅんびちゅう"><span class="thumb"><b>?</b><span class="ribbon">第3競技</span></span><span class="name">じゅんびちゅう</span><span class="meta"><span>もうすこし まってね</span></span></div>
+    <div class="card locked" aria-label="第4競技 じゅんびちゅう"><span class="thumb"><b>?</b><span class="ribbon">第4競技</span></span><span class="name">じゅんびちゅう</span><span class="meta"><span>もうすこし まってね</span></span></div>
   </div>
 </section>
 
