@@ -47,20 +47,94 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     o.start(t);
     o.stop(t + len);
   }
-  function sweep(from, to, len, type = 'square', gain = 0.06) {
-    if (!audio) return;
-    const t = audio.currentTime;
+  // 1つの音: 高さを pts([時間, 高さ]...)のとおりに動かし、ゆれ(vib)もつけられる
+  function voice({ type = 'sine', pts, len, gain = 0.1, at = 0, vib = 0, vibRate = 12 }) {
+    if (!audio || gain <= 0) return;
+    const t = audio.currentTime + at;
     const o = audio.createOscillator();
     const g = audio.createGain();
     o.type = type;
-    o.frequency.setValueAtTime(from, t);
-    o.frequency.exponentialRampToValueAtTime(to, t + len);
-    g.gain.setValueAtTime(gain, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + len);
+    o.frequency.setValueAtTime(pts[0][1], t);
+    for (const [dt, f] of pts.slice(1)) o.frequency.exponentialRampToValueAtTime(f, t + dt);
+    if (vib) {
+      const l = audio.createOscillator(), lg = audio.createGain();
+      l.frequency.value = vibRate;
+      lg.gain.value = vib;
+      l.connect(lg).connect(o.frequency);
+      l.start(t);
+      l.stop(t + len);
+    }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
     o.connect(g).connect(audio.destination);
     o.start(t);
-    o.stop(t + len);
+    o.stop(t + len + 0.02);
   }
+  // 雑音を短く(木の実のぶつかる カチッ、散らばる ジャラッ)
+  function click(at = 0, freq = 3000, gain = 0.15, len = 0.03) {
+    if (!audio || gain <= 0) return;
+    const t = audio.currentTime + at;
+    const buf = audio.createBuffer(1, Math.ceil(audio.sampleRate * len), audio.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 3;
+    const src = audio.createBufferSource();
+    src.buffer = buf;
+    const f = audio.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = freq;
+    f.Q.value = 2;
+    const g = audio.createGain();
+    g.gain.value = gain;
+    src.connect(f).connect(g).connect(audio.destination);
+    src.start(t);
+  }
+  // 効果音。vol は 0〜1(自分のことは 1、ほかの子のことは近いほど大きく)
+  const sfx = {
+    // コロン: 木の実が木のかごに落ちる
+    koron(vol = 1) {
+      click(0, 2600, 0.18 * vol);
+      voice({ type: 'triangle', pts: [[0, 760], [0.05, 720]], len: 0.09, gain: 0.12 * vol });
+      voice({ type: 'triangle', pts: [[0, 560], [0.08, 540]], len: 0.16, gain: 0.1 * vol, at: 0.07 });
+    },
+    // キラーン: 上がっていく鈴
+    kiran(vol = 1) {
+      [1318, 1760, 2093, 2637].forEach((f, i) => voice({ pts: [[0, f]], len: 0.35 + i * 0.08, gain: 0.07 * vol, at: i * 0.06, vib: f * 0.01, vibRate: 18 }));
+      voice({ pts: [[0, 3520]], len: 0.6, gain: 0.03 * vol, at: 0.25, vib: 40, vibRate: 22 });
+    },
+    // ポコッ: 地面から拾う
+    poko(vol = 1) {
+      voice({ pts: [[0, 620], [0.07, 380]], len: 0.1, gain: 0.12 * vol });
+    },
+    // ボヨン: ばね
+    boyon(vol = 1) {
+      voice({ pts: [[0, 160], [0.08, 420], [0.3, 150]], len: 0.36, gain: 0.14 * vol, vib: 30, vibRate: 16 });
+    },
+    // ぐるぐる〜: 目が回る
+    guruguru(vol = 1) {
+      voice({ type: 'triangle', pts: [[0, 760], [0.6, 240]], len: 0.65, gain: 0.08 * vol, vib: 90, vibRate: 9 });
+    },
+    // ゴツン: 頭に当たる
+    gotsun(vol = 1) {
+      click(0, 900, 0.25 * vol, 0.05);
+      voice({ type: 'square', pts: [[0, 220], [0.12, 70]], len: 0.16, gain: 0.08 * vol });
+    },
+    // ジャラッ: こぼれて散らばる
+    jara(vol = 1) {
+      for (let i = 0; i < 5; i++) click(i * 0.035 + Math.random() * 0.02, 2000 + Math.random() * 1800, 0.12 * vol);
+    },
+    // ポト: 地面に落ちる
+    poto(vol = 1) {
+      voice({ pts: [[0, 300], [0.05, 200]], len: 0.07, gain: 0.06 * vol });
+    },
+  };
+  // 自分のことは大きく、ほかの子のことは近いほど大きく(遠くは聞こえない)
+  function volFor(slot, x, z) {
+    if (slot === 0) return 1;
+    const me = game.state.runners[0];
+    return Math.max(0, 0.45 * (1 - Math.hypot(x - me.x, z - me.z) / 6));
+  }
+
   // ガサガサ(枝がゆれる)
   function rustle(gain = 0.25) {
     if (!audio) return;
@@ -696,10 +770,11 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
           r.catchT = 0.3;
           r.happyT = gold ? 1.2 : 0.6;
           sparkle(r.holder.position.clone().setY(1.75 * r.size), gold ? 0xffd24a : 0xfff3c0, gold ? 9 : 4, gold ? 0.5 : 0.3);
-          if (e.slot === 0) {
-            tone(gold ? 1318 : 1046, 0.08, 'sine', 0.1);
-            tone(gold ? 1760 : 1568, 0.14, 'sine', 0.1, 0.07);
-            if (gold) tone(2093, 0.25, 'sine', 0.08, 0.14);
+          {
+            const vol = volFor(e.slot, r.holder.position.x, r.holder.position.z);
+            if (e.type === 'pickup') sfx.poko(vol);
+            else sfx.koron(vol);
+            if (gold) sfx.kiran(Math.max(vol, 0.5));
           }
           if (e.slot === 0 || gold) {
             const p = r.holder.position;
@@ -731,12 +806,20 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
               sparkle(r.holder.position.clone().setY(2 * r.size), 0xffe066, 5, 0.32);
             }
           }
-          sweep(e.kind === 'cone' ? 320 : 600, e.kind === 'cone' ? 90 : 200, 0.3, 'square', 0.07);
+          {
+            const vol = volFor(e.slot, r.holder.position.x, r.holder.position.z);
+            if (e.kind === 'cone') sfx.gotsun(vol);
+            sfx.guruguru(vol);
+          }
           if (e.slot === 0) splash(e.kind === 'worm' ? 'けむし!' : 'ゴツン!', 'red');
           break;
         }
         case 'bump': {
-          sweep(240, 110, 0.15, 'square', 0.06);
+          {
+            const vol = Math.max(volFor(e.by, e.x, e.z), volFor(e.hit, e.x, e.z));
+            sfx.boyon(vol);
+            if (e.spilled) sfx.jara(vol);
+          }
           // ぶつけられた子は、びっくりしてくるっと回る。ぶつけた子はにやり
           game.runners[e.hit].spinT = 0.5;
           game.runners[e.by].happyT = 0.6;
@@ -748,7 +831,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
         }
         case 'land':
           if (e.gone) removeItem(e.id);
-          else tone(330, 0.05, 'sine', 0.04);
+          else sfx.poto(volFor(-1, e.x, e.z));
           break;
         case 'vanish':
           removeItem(e.id);
