@@ -92,7 +92,8 @@ function leafCarpet() {
 // 道の面と、両がわの落ち葉の山(土手)を1枚の帯で作る。横の断面:
 //   外 ← 土手の外すそ(地面) ← 土手の上 ← 道のふち ― 道 ― 道のふち → 土手の上 → 外すそ
 function buildTrack(g) {
-  const across = [-1.9, -0.9, -0.15, 0, 0.25, 0.5, 0.75, 1, 1.15, 1.9]; // 0〜1 が道。外は土手(道の半幅を基準)
+  // 0〜1 が道。外は土手(道の半幅を基準)。いちばん外(±2.6)は、地面の下へもぐる すそ(道が浮いて見えないように)
+  const across = [-2.6, -1.9, -0.9, -0.15, 0, 0.25, 0.5, 0.75, 1, 1.15, 1.9, 3.6];
   const lift = (u) => (u < 0 || u > 1 ? 0 : 0); // 道の面は平ら
   const pos = [], uv = [], col = [], idx = [];
   const ROW = across.length;
@@ -105,10 +106,15 @@ function buildTrack(g) {
       let x, h;
       if (u >= 0 && u <= 1) { x = -hw + u * hw * 2; h = lift(u); }
       else {
-        const out = u < 0 ? -u : u - 1; // 0〜0.9
+        const out = u < 0 ? -u : u - 1; // 0〜0.9(それより外は すそ)
         const side = u < 0 ? -1 : 1;
-        x = side * (hw + out * 1.8);
-        h = Math.sin(Math.min(1, out / 0.45) * Math.PI * 0.5) * 0.55 * (out < 0.45 ? 1 : 1 - (out - 0.45) / 0.45 * 0.9) + (rand() - 0.5) * 0.06;
+        if (out > 1) {
+          x = side * (hw + 2.0);
+          h = -2.2;
+        } else {
+          x = side * (hw + out * 1.8);
+          h = Math.sin(Math.min(1, out / 0.45) * Math.PI * 0.5) * 0.55 * (out < 0.45 ? 1 : 1 - (out - 0.45) / 0.45 * 0.9) + (rand() - 0.5) * 0.06;
+        }
       }
       const p = coursePoint(s, x, h);
       pos.push(p.x, p.y, p.z);
@@ -138,10 +144,13 @@ function buildTrack(g) {
   g.add(mesh);
 }
 
-// まわりの山の斜面: 道からはなれるほど少し高くなる(谷を下っていく形)
+// まわりの山の斜面。
+// 高さは、近くの道の高さを距離で重みをつけて混ぜて決める(いちばん近い道だけに合わせると、
+// 道が折り返して高さのちがう道が近くを通るところで、地面が段になって壁に見えた)。
+// 道のすぐまわりは、道より低くしておく(土手のすそが地面にもぐる)。
 function buildTerrain(g) {
-  const minX = Math.min(...samples.map((p) => p.x)) - 60, maxX = Math.max(...samples.map((p) => p.x)) + 60;
-  const minZ = Math.min(...samples.map((p) => p.z)) - 60, maxZ = Math.max(...samples.map((p) => p.z)) + 60;
+  const minX = Math.min(...samples.map((p) => p.x)) - 70, maxX = Math.max(...samples.map((p) => p.x)) + 70;
+  const minZ = Math.min(...samples.map((p) => p.z)) - 70, maxZ = Math.max(...samples.map((p) => p.z)) + 70;
   const nx = 150, nz = 200;
   const geo = new THREE.PlaneGeometry(maxX - minX, maxZ - minZ, nx, nz);
   geo.rotateX(-Math.PI / 2);
@@ -150,27 +159,105 @@ function buildTerrain(g) {
   const col = [];
   const c = new THREE.Color();
   const pts = samples.filter((_, i) => i % 4 === 0);
+  const near = new Array(8);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
-    let best = Infinity, by = 0;
+    // 近い順に 8 つ
+    near.fill(null);
     for (const p of pts) {
       const d = (p.x - x) ** 2 + (p.z - z) ** 2;
-      if (d < best) { best = d; by = p.y; }
+      for (let k = 0; k < near.length; k++) {
+        if (!near[k] || d < near[k].d) {
+          near.splice(k, 0, { d, y: p.y, s: p.s });
+          near.length = 8;
+          break;
+        }
+      }
     }
-    const d = Math.sqrt(best);
-    // 道のまわり(土手の外まで)は道より低くして、道の面をうめない。はなれるほど ゆるく高くなる
-    const y = by - 1.4 + Math.max(0, d - 8) * 0.09 + Math.sin(x * 0.13) * Math.sin(z * 0.11) * Math.min(2.5, Math.max(0, d - 8) * 0.12);
+    let wsum = 0, ysum = 0;
+    for (const n of near) {
+      const w = 1 / (n.d + 4);
+      wsum += w;
+      ysum += n.y * w;
+    }
+    const d0 = Math.sqrt(near[0].d);
+    const hw = halfWidthAt(near[0].s);
+    let y = ysum / wsum + Math.max(0, d0 - 12) * 0.07 + Math.sin(x * 0.09) * Math.sin(z * 0.08) * Math.min(3, Math.max(0, d0 - 10) * 0.1);
+    // 道のすぐまわりは、道より少し低く(土手のすそがもぐる。低すぎると道のわきが溝に見える)
+    y = Math.min(y, near[0].y - 0.35 + Math.max(0, d0 - hw - 1.8) * 0.45);
     pos.setY(i, y);
-    c.setHSL(0.07 + Math.sin(x * 0.07 + z * 0.05) * 0.03, 0.45, 0.3 + Math.sin(x * 0.11) * 0.04);
+    // 色: 落ち葉の絵を、場所ごとに少し暗く・赤く・茶色く。道より落ち着いた色にして、道を目立たせる
+    const patch = Math.sin(x * 0.21 + Math.sin(z * 0.13) * 2) * Math.sin(z * 0.17 + x * 0.05);
+    c.setHSL(0.02 + patch * 0.03, 0.32 + patch * 0.1, 0.4 + patch * 0.06);
     col.push(c.r, c.g, c.b);
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.computeVertexNormals();
-  const m = toonMaterial(0xffffff);
-  m.vertexColors = true;
+  const map = leafCarpet();
+  map.repeat.set((maxX - minX) / 7, (maxZ - minZ) / 7);
+  const m = new THREE.MeshToonMaterial({ map, vertexColors: true, gradientMap: toonGradient });
   const mesh = new THREE.Mesh(geo, m);
   mesh.name = 'terrain';
   g.add(mesh);
+}
+
+// 遠くの山なみ: 紅葉の山を2重にならべる(すその赤・中ほどのだいだい・てっぺんの岩)。
+// 霧の届くところより遠いので、霧は切って、空の色(霧の色)を手で半分まぜる(奥の列ほど多く)
+function buildMountains(g) {
+  const rand = makeRand(99);
+  const cx = (Math.min(...samples.map((p) => p.x)) + Math.max(...samples.map((p) => p.x))) / 2;
+  const cz = (Math.min(...samples.map((p) => p.z)) + Math.max(...samples.map((p) => p.z))) / 2;
+  const geo = new THREE.ConeGeometry(1, 1, 9, 4);
+  geo.translate(0, 0.5, 0);
+  const p = geo.attributes.position;
+  const cols = [];
+  const c = new THREE.Color();
+  for (let i = 0; i < p.count; i++) {
+    const t = p.getY(i);
+    if (t < 0.4) c.setHSL(0.015, 0.6, 0.36);
+    else if (t < 0.8) c.setHSL(0.06, 0.7, 0.46);
+    else c.setHSL(0.09, 0.45, 0.58);
+    cols.push(c.r, c.g, c.b);
+    // 少しでこぼこに
+    if (t > 0.01 && t < 0.99) {
+      const k = 1 + (rand() - 0.5) * 0.25;
+      p.setX(i, p.getX(i) * k);
+      p.setZ(i, p.getZ(i) * k);
+    }
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  geo.computeVertexNormals();
+  const mats = [0.3, 0.45].map((haze) => {
+    const m = toonMaterial(0xffffff);
+    m.vertexColors = true;
+    m.fog = false;
+    m.userData.haze = haze;
+    return m;
+  });
+  const white = new THREE.Color(0xffffff);
+  const n = 26;
+  const dummy = new THREE.Object3D();
+  for (let ring = 0; ring < 2; ring++) {
+    const mat = mats[ring];
+    const mesh = new THREE.InstancedMesh(geo, mat, n);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rand() * 0.2 + ring * 0.12;
+      const r = 430 + ring * 110 + rand() * 40;
+      const h = 110 + rand() * 90 + ring * 60;
+      dummy.position.set(cx + Math.cos(a) * r, -95, cz + Math.sin(a) * r);
+      dummy.scale.set(130 + rand() * 70, h, 130 + rand() * 70);
+      dummy.rotation.y = rand() * 6;
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.frustumCulled = false;
+    mesh.name = 'mountains';
+    // 時間帯で霧の色が変わるので、描くたびに合わせる
+    mesh.onBeforeRender = (_r, scene) => {
+      if (scene.fog) mat.color.copy(white).lerp(scene.fog.color, mat.userData.haze);
+    };
+    g.add(mesh);
+  }
 }
 
 // 紅葉の木: 幹 + 葉の塊。色は赤・だいだい・黄・少しだけ緑
@@ -336,6 +423,7 @@ export const SEATS = [
 export function buildStage(scene) {
   const g = new THREE.Group();
   buildTerrain(g);
+  buildMountains(g);
   buildTrack(g);
   buildTrees(g);
   buildIslands(g);

@@ -143,7 +143,7 @@ test('人くらいの反応でも、CPU と互角に戦える', () => {
   PERSONALITIES.human = { label: 'ひと', react: [0.45, 0.6], aim: 0.5, look: 22, greed: 1.0, shortcut: 0.5, tuck: 0.6, inside: 0.6 };
   try {
     let rankSum = 0, wins = 0;
-    const N = 100;
+    const N = 200; // 100 回だと、はじめの並びだけで勝ち数がぶれる
     for (let seed = 1; seed <= N; seed++) {
       const order = PLAYERS.map((_, i) => (i === 0 ? 'human' : kinds[(i + seed) % 3]));
       const r = ranking(run(seed, { personalities: order }).s);
