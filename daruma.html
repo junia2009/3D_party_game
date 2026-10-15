@@ -143,6 +143,12 @@
   .primary { background: var(--accent); color: var(--paper); box-shadow: 0 5px 0 #b8362d; }
   .secondary { background: #eef3f1; color: var(--ink); }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .home {
+    justify-self: center; padding: 6px 12px; border-radius: 10px;
+    color: var(--muted); font-weight: 800; font-size: 14px; text-decoration: none;
+  }
+  .home:active { background: #eef3f1; }
+  .home:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
   button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 
   .ranks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -193,6 +199,7 @@
     <p class="label">キャラをえらぶ</p>
     <div class="grid" id="chars"></div>
     <button class="primary" id="start" type="button">スタート</button>
+    <a class="home" href="./index.html">‹ タイトルへもどる</a>
   </div>
 </section>
 
@@ -204,6 +211,7 @@
       <button class="primary" id="again" type="button">もういちど</button>
       <button class="secondary" id="reselect" type="button">えらびなおす</button>
     </div>
+    <a class="home" href="./index.html">‹ タイトルへもどる</a>
   </div>
 </section>
 

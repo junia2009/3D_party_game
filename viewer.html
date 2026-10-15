@@ -47,6 +47,11 @@
     padding-block: 20px 40px;
     display: grid; gap: 18px;
   }
+  header .home {
+    display: inline-block; margin-bottom: 10px; padding: 6px 12px; border-radius: 10px;
+    background: var(--panel); color: var(--ink); font-weight: 800; font-size: 14px; text-decoration: none;
+  }
+  header .home:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   header .eyebrow { margin: 0; font-size: 12px; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
   header h1 {
     margin: 2px 0 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 7vw, 46px);
@@ -127,6 +132,7 @@
 <body>
 <div class="app">
   <header>
+    <a class="home" href="./index.html">‹ タイトルへもどる</a>
     <p class="eyebrow">パーティゲーム(仮題)・キャラクターデザイン v0.1</p>
     <h1>ワイワイ<span>アニマルズ</span> キャラ図鑑</h1>
   </header>
