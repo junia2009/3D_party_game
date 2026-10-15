@@ -388,7 +388,6 @@
     position: relative; margin: 0; justify-self: start; padding: 6px 12px; border-radius: 14px; background: #fff;
     border: 2px solid #d8bf93; font: 800 clamp(11px, min(4.6cqw, 4.6cqh), 16px) var(--font-body); color: var(--ink);
   }
-  .z-line::before { content: '「'; } .z-line::after { content: '」'; }
   .z-facts { margin: 0; display: grid; gap: clamp(2px, 1.2cqh, 4px); }
   .z-facts div { display: grid; grid-template-columns: 4.8em 1fr; gap: 6px; align-items: baseline; }
   .z-facts dt { font: 800 10px var(--font-body); color: #8a6238; background: #f2e4c8; border-radius: 6px; padding: 1px 6px; text-align: center; }
@@ -407,6 +406,7 @@
   .leaf.prev { left: 0; transform-origin: 100% 50%; } .leaf.prev.go { transform: rotateY(180deg); }
   .leaf > .page { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 0 22px rgba(60, 35, 10, .25); }
   .leaf > .back { transform: rotateY(180deg); }
+  .leaf > .page > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   /* めくっているあいだ、紙に落ちる影(立ち上がるほど濃く) */
   .leaf > .page::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(var(--shade-dir, 90deg), rgba(60, 35, 10, .45), rgba(60, 35, 10, 0) 70%); }
   .leaf.go > .page::after { animation: leafshade .6s ease-in-out; }

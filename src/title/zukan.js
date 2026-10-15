@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { CHARACTERS } from '../characters.js';
 import { createModel } from '../runtime/models.js';
 import { lineColor } from '../model-kit.js';
+import { paintElement } from './paint.js';
 
 const STAT_LABELS = ['はやさ', 'ちから', 'わざ', 'うん'];
 const POSES = [['wave', 1.2 * 2], ['cheer', 0.8 * 3], ['dizzy', 2.0]];
@@ -25,7 +26,7 @@ function infoHtml(c, i) {
     Array.from({ length: 5 }, (_, n) => `<b class="${n < v ? 'on' : ''}">${ACORN}</b>`).join('')}</i></div>`).join('');
   return `<div class="z-in">
     <div class="z-name"><h3>${c.name}</h3><span class="z-species">${c.species}</span></div>
-    <p class="z-line">${c.line}</p>
+    <p class="z-line">「${c.line}」</p>
     <dl class="z-facts">
       <div><dt>とくい</dt><dd>${c.role}</dd></div>
       <div><dt>せいかく</dt><dd>${c.personality}</dd></div>
@@ -162,6 +163,39 @@ export function createZukan({ sfx, onClose, faces }) {
 
   const vertical = () => innerWidth < innerHeight;
 
+  // プロフィールのページを絵にする(めくる紙にのせる。字のままだと傾いたときににじむ)
+  function paper(g, w, h) {
+    g.fillStyle = '#fbf4e2';
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(160, 120, 70, .13)';
+    for (let y = 25; y < h; y += 26) g.fillRect(0, y, w, 1);
+    // 背表紙の側の影(横長は左、縦長は上)
+    const v = vertical();
+    const s = v ? g.createLinearGradient(0, 0, 0, h * 0.14) : g.createLinearGradient(0, 0, w * 0.2, 0);
+    s.addColorStop(0, 'rgba(110, 70, 30, .2)');
+    s.addColorStop(1, 'rgba(110, 70, 30, 0)');
+    g.fillStyle = s;
+    g.fillRect(0, 0, w, h);
+  }
+  async function infoPicture(c, i) {
+    // 見えない写しのページをプロフィールのページにぴったり重ねて組み、それを描く
+    const ghost = info.cloneNode(false);
+    ghost.removeAttribute('id');
+    ghost.style.cssText = `position:absolute; left:${info.offsetLeft}px; top:${info.offsetTop}px; width:${info.offsetWidth}px; height:${info.offsetHeight}px; opacity:0; pointer-events:none;`;
+    ghost.style.setProperty('--char', accent(c));
+    ghost.innerHTML = infoHtml(c, i);
+    info.parentNode.append(ghost);
+    try {
+      return await paintElement(ghost, paper);
+    } finally {
+      ghost.remove();
+    }
+  }
+  function putPicture(face, cls, el) {
+    face.className = cls;
+    face.replaceChildren(el);
+  }
+
   // めくる。next: つぎへ(右/下のページが、左/上へ)。prev: 前へ(左/上のページが、右/下へ)
   async function turnTo(i) {
     if (turning || !open || i === index) return;
@@ -173,23 +207,19 @@ export function createZukan({ sfx, onClose, faces }) {
     leaf.className = 'leaf ' + (forward ? 'next' : 'prev');
     if (forward) {
       // 表: いまのプロフィール / 裏: つぎのキャラの絵
-      const pic = await snapshot(CHARACTERS[i].key);
-      front.className = 'front page info';
-      front.style.setProperty('--char', info.style.getPropertyValue('--char'));
-      front.innerHTML = info.innerHTML;
-      back.className = 'back page pic';
-      back.innerHTML = `<img src="${pic}" alt="">`;
+      const [pic, page] = await Promise.all([snapshot(CHARACTERS[i].key), infoPicture(CHARACTERS[index], index)]);
+      putPicture(front, 'front page info', page);
+      putPicture(back, 'back page pic', Object.assign(new Image(), { src: pic, alt: '' }));
+      const was = index;
       index = i;
       fill(i);
+      $('zNo').textContent = `No.${was + 1}`; // 左(上)のページは、めくり終わるまで前のキャラのまま
     } else {
       // 表: いまのキャラの絵 / 裏: 前のキャラのプロフィール
       const pic = canvas.toDataURL('image/png');
       const prev = CHARACTERS[i];
-      front.className = 'front page pic';
-      front.innerHTML = `<img src="${pic}" alt="">`;
-      back.className = 'back page info';
-      back.style.setProperty('--char', accent(prev));
-      back.innerHTML = infoHtml(prev, i);
+      putPicture(front, 'front page pic', Object.assign(new Image(), { src: pic, alt: '' }));
+      putPicture(back, 'back page info', await infoPicture(prev, i));
       index = i;
       await show(prev.key);
       $('zNo').textContent = `No.${i + 1}`;
@@ -202,8 +232,10 @@ export function createZukan({ sfx, onClose, faces }) {
       const t = setTimeout(r, parseFloat(getComputedStyle(leaf).transitionDuration) * 1000 + 400);
       leaf.addEventListener('transitionend', () => { clearTimeout(t); r(); }, { once: true });
     });
-    if (forward) await show(CHARACTERS[i].key);
-    else fill(i);
+    if (forward) {
+      await show(CHARACTERS[i].key);
+      $('zNo').textContent = `No.${i + 1}`;
+    } else fill(i);
     leaf.hidden = true;
     leaf.classList.remove('go');
     turning = false;
