@@ -140,7 +140,7 @@
   .meta { display: flex; flex-wrap: wrap; gap: 6px; }
   .meta span { font: 800 12px var(--font-body); background: #f2e4c8; color: #6b4424; border-radius: 999px; padding: 3px 10px; }
   .play {
-    display: block; text-align: center; text-decoration: none; padding: 12px; border-radius: 14px;
+    display: block; width: 100%; border: 0; cursor: pointer; text-align: center; text-decoration: none; padding: 12px; border-radius: 14px;
     background: var(--red); color: #fff; font: 400 20px var(--font-display); box-shadow: 0 5px 0 #8f2a24;
   }
   .play:active { transform: translateY(4px); box-shadow: 0 1px 0 #8f2a24; }
@@ -167,15 +167,182 @@
   }
   .toast.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
 
+  /* ── 競技の入口(ルールとキャラえらび)。島の上の「下の段」に出す ── */
+  #play {
+    top: auto; gap: 10px; max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 24px); overflow-y: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  }
+  .rules { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .rules li { display: flex; gap: 8px; align-items: baseline; font: 700 13px/1.45 var(--font-body); color: #5a3c22; }
+  .rules li::before { content: ''; flex: none; width: 10px; height: 12px; border-radius: 50% 50% 45% 45%; background: #c27a35; box-shadow: inset 0 4px 0 #7a4f2c; transform: translateY(1px); }
+  .rules b { color: var(--red); }
+  /* 6人を横1列に(縦長でも島が見えるように、低くおさめる) */
+  .chars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; padding-top: 6px; }
+  .chars button {
+    position: relative; display: grid; justify-items: center; gap: 0; padding: 2px 1px 4px; cursor: pointer; min-width: 0;
+    border: 3px solid #d8bf93; border-radius: 14px; background: #fff3d9;
+    transition: transform .12s cubic-bezier(.3, 1.6, .5, 1), border-color .12s, background .12s;
+  }
+  .chars button .face { width: 100%; max-width: 72px; aspect-ratio: 1; border-radius: 50%; display: block; }
+  .chars button span { font: 800 clamp(10px, 2.9vw, 14px) var(--font-body); color: var(--ink); white-space: nowrap; }
+  .chars button[aria-pressed="true"] { background: #e3f4d2; border-color: var(--leaf); transform: translateY(-3px); box-shadow: 0 4px 0 #2f6b25; }
+  .chars button[aria-pressed="true"]::after {
+    content: 'あなた'; position: absolute; top: -9px; left: 50%; transform: translateX(-50%); padding: 1px 8px 2px;
+    border-radius: 999px; background: var(--red); color: #fff; font: 800 10px var(--font-body); white-space: nowrap;
+  }
+  .go {
+    display: block; width: 100%; border: 0; cursor: pointer; text-align: center; padding: 12px; border-radius: 16px;
+    background: var(--red); color: #fff; font: 400 22px var(--font-display); letter-spacing: .06em;
+    box-shadow: 0 5px 0 #8f2a24; -webkit-text-stroke: 5px #8f2a24; paint-order: stroke fill;
+  }
+  .go:active { transform: translateY(4px); box-shadow: 0 1px 0 #8f2a24; }
+  .head h2.long { font-size: clamp(18px, min(5.4vw, 6.4vh), 28px); white-space: nowrap; }
+  /* 背の低い画面(横向きのスマホ)では、入口をつめて1画面に収める */
+  @media (max-height: 520px) {
+    #play { gap: 6px; }
+    #play .opt { padding: 8px 12px; }
+    #play .opt h3 { display: none; }
+    #play .back { min-height: 40px; }
+    #play .rules li { font-size: 12px; line-height: 1.35; }
+    #play .chars button .face { max-width: 50px; }
+    #play .go { padding: 8px; font-size: 20px; }
+  }
+
+  /* ── 葉っぱの幕(島から会場へ) ── */
+  #leaves { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 40; pointer-events: auto; }
+  .curtain-label {
+    position: fixed; left: 0; right: 0; top: 50%; z-index: 41; text-align: center; transform: translateY(-50%);
+    font: 400 20px var(--font-display); color: var(--cream); -webkit-text-stroke: 6px #2f4a1c; paint-order: stroke fill;
+  }
+
+  /* ── 競技の画面(だるまさんがころんだ) ── */
+  body.ingame { touch-action: none; }
+  .hud {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none;
+    --hud-ink: #1f2a33; --hud-paper: #fff; --lit: #ff8a3d; --watch: #e8344a; --accent: #ff5a4e;
+    color: var(--hud-ink);
+  }
+  .hud .top {
+    position: absolute; left: 0; right: 0; top: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px));
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .chant {
+    flex: 1; min-width: 0; background: var(--hud-paper); border-radius: 18px; padding: 8px 10px;
+    display: flex; justify-content: center; gap: 1px; box-shadow: 0 3px 0 rgba(31,42,51,.18);
+    font-family: var(--font-display); font-size: clamp(17px, 5.1vw, 34px); line-height: 1.15;
+  }
+  .chant span { color: #cfd8dc; transition: color .08s, transform .12s; }
+  .chant span.on { color: var(--lit); transform: translateY(-2px); }
+  .chant.watch span { color: var(--watch); }
+  .chant .msg { color: var(--hud-ink); font-size: .8em; }
+  .timer {
+    flex: none; width: 3.2em; text-align: center; background: var(--hud-ink); color: var(--hud-paper);
+    border-radius: 16px; padding: 8px 0; font: 800 20px var(--font-body); font-variant-numeric: tabular-nums;
+  }
+  .timer small { display: block; font-size: 10px; font-weight: 700; opacity: .7; margin-top: -2px; }
+  .hud .side { flex: none; display: grid; gap: 6px; justify-items: stretch; }
+  .acorns {
+    display: flex; align-items: center; justify-content: center; gap: 3px; background: var(--hud-paper);
+    border-radius: 12px; padding: 3px 6px; font: 800 15px var(--font-body); font-variant-numeric: tabular-nums;
+    box-shadow: 0 2px 0 rgba(31,42,51,.18);
+  }
+  .acorns svg { width: 16px; height: 18px; }
+  .progress {
+    position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: calc(env(safe-area-inset-top, 0px) + 132px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 170px); width: 24px;
+    background: rgba(255,255,255,.55); border-radius: 12px;
+  }
+  .progress::before, .progress::after {
+    content: ''; position: absolute; left: 4px; right: 4px; height: 3px; border-radius: 2px; background: var(--hud-ink); opacity: .5;
+  }
+  .progress::before { top: 10px; } .progress::after { bottom: 10px; }
+  .progress .dot {
+    position: absolute; left: 50%; width: 16px; height: 16px; margin: 0 0 -8px -8px; border-radius: 50%;
+    border: 2px solid var(--hud-paper); box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: bottom .1s linear;
+  }
+  .progress .dot.me { width: 22px; height: 22px; margin: 0 0 -11px -11px; border: 3px solid var(--hud-ink); z-index: 1; }
+  .progress .dot.stun { animation: stun .2s infinite; }
+  @keyframes stun { 50% { transform: translateX(3px); } }
+  .splash {
+    position: absolute; left: 0; right: 0; top: 34%; text-align: center;
+    font-family: var(--font-display); font-size: clamp(40px, 13vw, 84px); color: var(--hud-paper);
+    -webkit-text-stroke: 6px var(--hud-ink); paint-order: stroke fill; letter-spacing: .02em; opacity: 0;
+  }
+  .splash.show { animation: splash 1.1s ease-out forwards; }
+  .splash.red { color: var(--watch); }
+  @keyframes splash {
+    0% { opacity: 0; transform: scale(.4); }
+    15% { opacity: 1; transform: scale(1.12); }
+    25% { transform: scale(1); }
+    75% { opacity: 1; }
+    100% { opacity: 0; transform: translateY(-14px); }
+  }
+  .pausebtn {
+    pointer-events: auto; flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0;
+    background: var(--hud-paper); color: var(--hud-ink); display: grid; place-items: center; cursor: pointer;
+    box-shadow: 0 3px 0 rgba(31,42,51,.18);
+  }
+  .pausebtn svg { width: 20px; height: 20px; fill: currentColor; }
+  .pausebtn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(31,42,51,.18); }
+  .runbtn {
+    pointer-events: auto; position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+    width: 132px; height: 132px; border-radius: 50%; border: 0;
+    background: var(--accent); color: #fff;
+    font: 800 17px/1.25 var(--font-body); box-shadow: 0 8px 0 #b8362d, 0 12px 24px rgba(0,0,0,.18);
+    touch-action: none; cursor: pointer;
+  }
+  .runbtn.down { transform: translateX(-50%) translateY(6px); box-shadow: 0 2px 0 #b8362d; filter: brightness(1.08); }
+  .runbtn small { display: block; font-size: 11px; font-weight: 700; opacity: .85; }
+
+  /* いちじていし・結果: 島の画面と同じ、木わくの紙に木の板のボタン */
+  .modal {
+    position: fixed; inset: 0; z-index: 12; display: grid; place-items: center;
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 16px) max(16px, env(safe-area-inset-left, 0px));
+    background: rgba(40, 24, 10, .32); animation: fadein .25s;
+  }
+  #result { align-items: end; background: linear-gradient(transparent 30%, rgba(40, 24, 10, .35)); }
+  @keyframes fadein { from { opacity: 0; } }
+  .panel {
+    width: min(100%, 440px); display: grid; gap: 10px; padding: 16px; border-radius: 22px;
+    background: var(--paper); border: 4px solid #8a6238; box-shadow: 0 7px 0 rgba(58,34,14,.35);
+    animation: panelin .35s cubic-bezier(.3, 1.6, .5, 1);
+  }
+  @keyframes panelin { from { transform: translateY(24px) scale(.92); opacity: 0; } }
+  .panel h2 {
+    margin: 0 0 2px; text-align: center; font: 400 clamp(24px, 7vw, 30px) var(--font-display); color: var(--cream);
+    -webkit-text-stroke: 7px var(--ink); paint-order: stroke fill;
+  }
+  .panel .plank { --plank-h: 52px; justify-content: center; text-align: center; }
+  .panel .plank b { font-size: clamp(15px, 4.6vw, 19px); white-space: nowrap; }
+  .ranks { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .ranks li {
+    display: grid; grid-template-columns: 2em 18px 1fr auto; align-items: center; gap: 10px;
+    padding: 5px 12px; border-radius: 14px; background: #f6ead2; font-weight: 800; color: var(--ink);
+  }
+  .ranks li.me { background: #e3f4d2; box-shadow: inset 0 0 0 2px var(--leaf); }
+  .ranks .no { font: 400 20px var(--font-display); }
+  .ranks li:first-child .no { color: #d99a1e; }
+  .ranks .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(0,0,0,.2); }
+  .ranks small { display: block; font-weight: 700; font-size: 11px; color: #8a6238; }
+  .ranks .dist { font-variant-numeric: tabular-nums; font-size: 14px; text-align: right; }
+
   /* 横長: メニューは右側に縦に並べる(左は看板と島) */
   @media (min-aspect-ratio: 1/1) {
     #menu { --plank-h: clamp(44px, 10.5dvh, 64px); left: auto; right: max(32px, env(safe-area-inset-right, 0px)); bottom: 50%; transform: translateY(50%); width: min(400px, 36vw); }
     #menu.enter { transform: translate(24px, 50%); }
     .sub { left: auto; right: max(24px, env(safe-area-inset-right, 0px)); width: min(520px, 44vw); max-width: none; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
     .tap { bottom: 7vh; }
+    #play { top: calc(env(safe-area-inset-top, 0px) + 16px); }
+    .runbtn { left: auto; right: calc(max(12px, env(safe-area-inset-right, 0px)) + 46px); transform: none; width: 116px; height: 116px; }
+    .runbtn.down { transform: translateY(6px); }
+    .hud .top { justify-content: center; }
+    .chant { flex: 0 1 620px; }
+    #result { align-items: center; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .tap, .tag, .loading .roll, .loading .roll svg { animation: none; }
+    .tap, .tag, .loading .roll, .loading .roll svg, .panel, .modal { animation: none; }
   }
 </style>
 <script type="importmap">
@@ -232,7 +399,7 @@
       <h3>だるまさんがころんだ</h3>
       <p>ホーホー先生がふりむく前に、どんぐりの森をかけぬけろ!長押しで走って、はなすと止まる。</p>
       <div class="meta"><span>1〜5人(あいている席は CPU)</span><span>30〜60びょう</span></div>
-      <a class="play" href="./daruma.html">あそぶ</a>
+      <button class="play" type="button" data-open="daruma">あそぶ</button>
     </article>
     <div class="row2">
       <article class="card locked"><div class="thumb"><b>?</b><span class="ribbon">第2競技</span></div><p>じゅんびちゅう</p></article>
@@ -253,6 +420,62 @@
     <p>「じどう」は、重いと感じたら自動で軽くします。カクカクするときは「かるい」にしてください。</p>
   </div>
 </section>
+
+<section class="screen sub" id="play" hidden aria-label="だるまさんがころんだ">
+  <div class="head"><button class="back" type="button" data-back="games">‹ もどる</button><h2 class="long">だるまさんが ころんだ</h2></div>
+  <div class="opt">
+    <ul class="rules">
+      <li><span><b>長押し</b>で走る。はなすと止まる(少しすべる)。</span></li>
+      <li><span>ホーホー先生が<b>ふりむいたら</b>ぴたっと止まる。</span></li>
+      <li><span>動いているのが見つかると<b>5m もどされる</b>。</span></li>
+      <li><span>先にゴールにタッチした人の勝ち!</span></li>
+    </ul>
+  </div>
+  <div class="opt">
+    <h3>キャラをえらぶ</h3>
+    <div class="chars" id="chars"></div>
+  </div>
+  <button class="go" id="start" type="button">スタート!</button>
+</section>
+
+<div class="hud" id="hud" hidden>
+  <div class="top">
+    <div class="chant" id="chant" aria-live="polite"></div>
+    <div class="side">
+      <div class="timer" id="timer">60<small>びょう</small></div>
+      <div class="acorns" id="acorns" title="拾ったどんぐり"><svg viewBox="0 0 20 22" aria-hidden="true"><ellipse cx="10" cy="13" rx="6.5" ry="7.5" fill="#b5702f"/><path d="M2.5 9.5a7.5 5 0 0 1 15 0z" fill="#6e4a2a"/><rect x="9" y="2" width="2" height="4" rx="1" fill="#5a3c22"/></svg>0</div>
+    </div>
+    <button class="pausebtn" id="pauseBtn" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="progress" id="track"></div>
+  <div class="splash" id="splash"></div>
+  <button class="runbtn" id="run" type="button">おしてる間<br>はしる<small>スペースキーでも</small></button>
+</div>
+
+<section class="modal" id="pause" hidden aria-label="いちじていし">
+  <div class="panel">
+    <h2>いちじていし</h2>
+    <button class="go" id="resume" type="button">つづける</button>
+    <button class="plank" id="restart" type="button"><b>さいしょから</b></button>
+    <button class="plank" id="pauseReselect" type="button"><b>キャラをかえる</b></button>
+    <button class="plank" id="pauseMenu" type="button"><b>メニューへもどる</b></button>
+  </div>
+</section>
+
+<section class="modal" id="result" hidden aria-label="けっか">
+  <div class="panel">
+    <h2 id="resultTitle"></h2>
+    <ol class="ranks" id="ranks"></ol>
+    <button class="go" id="again" type="button">もういちど</button>
+    <div class="row2">
+      <button class="plank" id="reselect" type="button"><b>キャラをかえる</b></button>
+      <button class="plank" id="resultMenu" type="button"><b>メニューへ</b></button>
+    </div>
+  </div>
+</section>
+
+<canvas id="leaves" hidden></canvas>
+<div class="curtain-label" id="curtainLabel" hidden>会場へ むかっています…</div>
 
 <div class="toast" id="toast" role="status"></div>
 

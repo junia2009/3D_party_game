@@ -1,8 +1,12 @@
-// タイトル画面: 読み込み → タイトル(タップしてはじめる)→ メニュー → 競技えらび / せってい。
+// タイトル画面: 読み込み → タイトル(タップしてはじめる)→ メニュー → 競技えらび → 競技の入口 → 競技。
 //
 // 3D は空に浮かぶ島(island.js)と木の看板(sign.js)。画面ごとに島の見え方を変える
 // (縦長のメニューでは島を上へ、横長では左へずらして、メニューの場所をあける)。
 // ブラウザの戻るボタンは無いものとして作る。どの画面にも「もどる」を置く。
+//
+// 競技も同じページで動く(ページを読みこみ直さない)。「スタート!」でカメラが島の大木へ飛びこみ、
+// 葉っぱの幕(leaves.js)で画面がうまっているあいだに会場へ入れかえ、葉っぱが吹きとぶと会場の空から降りていく。
+// 描画の器(renderer)と毎フレームの輪はここが持ち、競技の画面には frame() を呼んで描いてもらう。
 
 import * as THREE from 'three';
 import { CHARACTERS, PLAYER_COLORS } from '../characters.js';
@@ -12,6 +16,8 @@ import { loadSettings, saveSettings } from '../settings.js';
 import { ROLES, buildIsland, islandHeight } from './island.js';
 import { buildSign, drawSign } from './sign.js';
 import { woodPlank } from './wood.js';
+import { createLeafCurtain } from './leaves.js';
+import { makePortraits } from './portraits.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -49,6 +55,27 @@ function jingle() {
   [[523, 0], [659, 0.11], [784, 0.22], [1047, 0.36]].forEach(([f, s]) => tone(f, s, 0.32, 'triangle', 0.13));
   [[1568, 0.36], [2093, 0.42], [2637, 0.48]].forEach(([f, s]) => tone(f, s, 0.5, 'sine', 0.05));
 }
+// 飛びこむときの「ヒュッ」: 雑音を高いほうへ流す
+function whoosh(len = 0.9, up = true) {
+  if (!audio || !settings.sound) return;
+  const buf = audio.createBuffer(1, audio.sampleRate * len, audio.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const src = audio.createBufferSource();
+  src.buffer = buf;
+  const f = audio.createBiquadFilter();
+  f.type = 'bandpass';
+  f.Q.value = 1.4;
+  const t = audio.currentTime;
+  f.frequency.setValueAtTime(up ? 300 : 2400, t);
+  f.frequency.exponentialRampToValueAtTime(up ? 2400 : 300, t + len);
+  const g = audio.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.16, t + len * 0.6);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  src.connect(f).connect(g).connect(audio.destination);
+  src.start();
+}
 // 木の板を押したときの「コッ」
 function knock() {
   tone(420, 0, 0.08, 'square', 0.04);
@@ -70,8 +97,12 @@ atmosphere.apply(params.get('time') || 'day');
 function applyQuality() {
   const light = settings.quality === 'light';
   renderer.setPixelRatio(Math.min(devicePixelRatio, light ? 1 : 2));
-  renderer.shadowMap.enabled = !light;
-  scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
+  // 影を切りかえたときだけ、素材を組み立てなおす(重いので、変わらないときはしない)
+  if (renderer.shadowMap.enabled !== !light || applyQuality.light !== light) {
+    renderer.shadowMap.enabled = !light;
+    scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
+  }
+  applyQuality.light = light;
   resize();
 }
 
@@ -104,7 +135,7 @@ const actors = await Promise.all(ROLES.map(async (role, i) => {
   if (role.podium) m.root.position.copy(island.podiumTop);
   else m.root.position.set(role.x, islandHeight(role.x, role.z), role.z);
   scene.add(m.root);
-  return { role, model: m };
+  return { role, model: m, ang: role.lead ? 0.75 : 0 };
 }));
 atmosphere.setupShadows([island.group, owl.root, ...actors.map((a) => a.model.root)], [island.group]);
 
@@ -149,6 +180,10 @@ const SCREENS = {
   menu: { el: $('menu'), view: [0.2, 0.17], sign: true, foot: 'menu', bias: 0.56 },
   games: { el: $('games'), view: [0.24, 0.17], sign: false },
   settings: { el: $('settings'), view: [0.24, 0.17], sign: false },
+  // 競技の入口: 選んだキャラが島の上でよろこぶのが見えるように、島を上の段に出す
+  play: { el: $('play'), view: [0.24, 0], sign: false, foot: 'play', bias: 0.5 },
+  // 大木へ飛びこんでいるところ / 競技の会場にいるあいだ
+  dive: { el: null, view: [0, 0], sign: false },
 };
 let screen = 'loading';
 const view = { x: 0, y: 0, sign: 1, r: 1 };
@@ -170,6 +205,7 @@ function go(next) {
   $('tap').hidden = next !== 'title';
   $('ver').hidden = next !== 'title';
   screen = next;
+  if (next === 'play') renderChars();
 }
 
 function toast(text) {
@@ -194,6 +230,8 @@ addEventListener('keydown', (e) => {
     go('menu');
   } else if (e.code === 'Escape' && (screen === 'games' || screen === 'settings')) {
     go('menu');
+  } else if (e.code === 'Escape' && screen === 'play') {
+    go('games');
   }
 });
 
@@ -221,10 +259,114 @@ for (const b of document.querySelectorAll('[data-back]')) {
   b.addEventListener('click', () => {
     unlockAudio();
     knock();
-    go('menu');
+    go(b.dataset.back || 'menu');
   });
 }
-for (const a of document.querySelectorAll('.play')) a.addEventListener('click', () => knock());
+
+// ── 競技の入口(ルールとキャラえらび) ───────────────────────
+let picked = CHARACTERS.some((c) => c.key === settings.character) ? settings.character : CHARACTERS[0].key;
+let faces = null; // キャラの顔の絵(はじめて入口をひらいたときに撮る)
+function renderChars() {
+  $('chars').replaceChildren(...CHARACTERS.map((c) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(c.key === picked));
+    const color = '#' + c.main.toString(16).padStart(6, '0');
+    const face = faces ? `<img class="face" src="${faces[c.key]}" alt="">` : `<i class="face" style="background:${color}"></i>`;
+    b.innerHTML = `${face}<span>${c.name}</span>`;
+    b.title = `${c.name}(${c.species})`;
+    b.addEventListener('click', () => {
+      unlockAudio();
+      knock();
+      picked = c.key;
+      settings.character = picked;
+      saveSettings(settings);
+      renderChars();
+    });
+    return b;
+  }));
+  if (!faces) {
+    faces = {};
+    makePortraits(renderer, CHARACTERS.map((c) => c.key)).then((f) => { faces = f; if (screen === 'play') renderChars(); });
+  }
+}
+for (const b of document.querySelectorAll('[data-open]')) {
+  b.addEventListener('click', () => {
+    unlockAudio();
+    knock();
+    ensureDaruma(); // ルールを読んでいるあいだに、会場を組み立てておく
+    go('play');
+  });
+}
+$('start').addEventListener('click', () => enterGame());
+
+// ── 競技の会場へ(同じページのまま) ─────────────────────
+const curtain = createLeafCurtain($('leaves'), $('curtainLabel'));
+let active = 'title'; // 'title' | 'game'(どちらを描くか)
+let daruma = null;
+let darumaReady = null;
+let busy = false; // 入れかえのとちゅう
+// 大木へ飛びこむ具合(0 = ふつう、1 = 葉の中)と、その向き
+const dive = { k: 0, dir: 0, crown: new THREE.Vector3(-1.4, 4.5, -2.2) };
+{
+  const crowns = island.group.getObjectByName('oakCrowns');
+  if (crowns) new THREE.Box3().setFromObject(crowns).getCenter(dive.crown);
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function ensureDaruma() {
+  darumaReady ??= import('../games/daruma/game.js')
+    .then((m) => m.createDaruma({
+      renderer,
+      settings,
+      getAudio: () => { unlockAudio(); return audio; },
+      onExit: (to) => leaveGame(to),
+    }))
+    .then((d) => {
+      daruma = d;
+      if (active === 'title') applyQuality(); // 会場の組み立てで影の設定が変わるので、島に合わせなおす
+      return d;
+    });
+  return darumaReady;
+}
+
+async function enterGame() {
+  if (busy) return;
+  busy = true;
+  unlockAudio();
+  knock();
+  whoosh(1.1, true);
+  go('dive');
+  dive.dir = 1;
+  const ready = ensureDaruma();
+  await wait(250);
+  await curtain.cover();
+  const d = await ready;
+  await d.enter(picked);
+  active = 'game';
+  dive.dir = 0;
+  dive.k = 1;
+  whoosh(0.8, false);
+  await curtain.reveal();
+  busy = false;
+}
+
+async function leaveGame(to) {
+  if (busy) return;
+  busy = true;
+  whoosh(0.9, true);
+  await curtain.cover();
+  daruma.exit();
+  active = 'title';
+  applyQuality();
+  go(to);
+  // 葉の中から、うしろへ引いて島へもどる
+  dive.k = 1;
+  dive.dir = -1;
+  clock.getDelta();
+  await curtain.reveal();
+  busy = false;
+}
 
 // せってい
 function renderSettings() {
@@ -257,7 +399,13 @@ renderSettings();
 const clock = new THREE.Clock();
 let t = 0;
 function frame() {
-  const dt = Math.min(clock.getDelta(), 0.1);
+  const rawDt = clock.getDelta();
+  requestAnimationFrame(frame);
+  if (active === 'game') {
+    daruma.frame(rawDt);
+    return;
+  }
+  const dt = Math.min(rawDt, 0.1);
   t += dt;
   const portrait = camera.aspect < 1;
   // 島のずらし方を、画面に合わせてなめらかに変える
@@ -267,34 +415,65 @@ function frame() {
   if (portrait && target.foot) {
     // 島の段: 看板の下ふちから、下の段(メニュー・「タップしてはじめる」)の上ふちまで
     const foot = $(target.foot).getBoundingClientRect().top;
+    const top = target.sign ? signBottom : safeProbe.offsetHeight + 12;
     if (foot > 0) {
-      const gap = foot - signBottom;
-      ty = (innerHeight / 2 - (signBottom + gap * target.bias)) / innerHeight;
+      const gap = foot - top;
+      ty = (innerHeight / 2 - (top + gap * target.bias)) / innerHeight;
       tr = THREE.MathUtils.clamp((ISLAND_FILL * innerHeight) / gap, 1, 1.35); // 段がせまいときは引いて小さく
     }
   }
-  view.x += ((portrait ? 0 : target.view[0]) - view.x) * k;
-  view.y += ((portrait ? ty : 0) - view.y) * k;
-  view.r += (tr - view.r) * k;
+  // 飛びこむあいだは、直前の画面の見え方のまま(島が遠のいて見えないように)
+  if (screen !== 'dive') {
+    view.x += ((portrait ? 0 : target.view[0]) - view.x) * k;
+    view.y += ((portrait ? ty : 0) - view.y) * k;
+    view.r += (tr - view.r) * k;
+  }
   view.sign += ((portrait && !target.sign ? 0 : 1) - view.sign) * k;
-  camera.setViewOffset(innerWidth, innerHeight, view.x * innerWidth, view.y * innerHeight, innerWidth, innerHeight);
+  // 大木へ飛びこむ(行きはだんだん速く、帰りはだんだんゆっくり)
+  if (dive.dir) {
+    dive.k = THREE.MathUtils.clamp(dive.k + (dive.dir * dt) / 1.1, 0, 1);
+    if (dive.k === 0) dive.dir = 0;
+  }
+  const dk = dive.dir >= 0 ? dive.k ** 2.2 : 1 - (1 - dive.k) ** 0.45;
+  const off = 1 - dk;
+  camera.setViewOffset(innerWidth, innerHeight, view.x * off * innerWidth, view.y * off * innerHeight, innerWidth, innerHeight);
   // カメラは島のまわりをゆっくり回る
   const a = t * 0.06 + 0.5;
   const r = (portrait ? 25 : 20) * view.r;
   camera.position.set(Math.sin(a) * r, portrait ? 6.5 : 5.2, Math.cos(a) * r);
-  camera.lookAt(0, portrait ? 2.6 : 1.4, 0);
+  const look = new THREE.Vector3(0, portrait ? 2.6 : 1.4, 0);
+  if (dk > 0) {
+    const near = dive.crown.clone().add(camera.position.clone().sub(dive.crown).setLength(1.2));
+    camera.position.lerp(near, dk);
+    look.lerp(dive.crown, Math.min(1, dk * 1.6));
+  }
+  camera.lookAt(look);
   camera.updateProjectionMatrix();
 
-  for (const { role, model } of actors) {
-    if (role.act === 'chase') {
+  const showPick = screen === 'play' || screen === 'dive';
+  for (const actor of actors) {
+    const { role, model } = actor;
+    const me = showPick && role.key === picked;
+    if (me) {
+      // 選ばれたキャラは、その場でよろこぶ
+      model.play('cheer');
+      model.setFace('happy');
+    } else {
+      model.play(role.act === 'chase' ? 'run' : role.act);
+      model.setFace(role.face || 'normal');
+    }
+    if (role.act === 'chase' && !me) {
       // 大木の幹のまわりを追いかけっこ
-      const ang = t * 0.7 + (role.lead ? 0.75 : 0);
-      const x = Math.cos(ang) * 2.3 - 1.4, z = Math.sin(ang) * 2.3 - 2.2;
+      actor.ang += dt * 0.7;
+      const x = Math.cos(actor.ang) * 2.3 - 1.4, z = Math.sin(actor.ang) * 2.3 - 2.2;
       model.root.position.set(x, islandHeight(x, z), z);
-      model.root.rotation.y = -ang;
+      model.root.rotation.y = -actor.ang;
     } else {
       // カメラのほうを向く
-      model.root.rotation.y = Math.atan2(camera.position.x - model.root.position.x, camera.position.z - model.root.position.z);
+      const to = Math.atan2(camera.position.x - model.root.position.x, camera.position.z - model.root.position.z);
+      let d = to - model.root.rotation.y;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      model.root.rotation.y += d * (1 - Math.exp(-dt * 8));
     }
     model.update(dt);
   }
@@ -315,15 +494,30 @@ function frame() {
 
   atmosphere.update(dt);
   renderer.render(scene, camera);
-  requestAnimationFrame(frame);
 }
 
 // 読み込みおわり
 $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 600);
 signDrop = 0;
-go(location.hash === '#menu' ? 'menu' : 'title');
+// #menu: メニューから / #daruma: だるまさんがころんだ の入口から
+if (location.hash === '#daruma') {
+  ensureDaruma();
+  go('play');
+} else {
+  go(location.hash === '#menu' ? 'menu' : 'title');
+}
 frame();
 
 // E2E 用の口
-window.title = { camera, scene, go, get screen() { return screen; }, setTime: (k) => atmosphere.apply(k), redrop: () => { signDrop = 0; } };
+window.title = {
+  camera, scene, go,
+  get screen() { return screen; },
+  get active() { return active; },
+  get busy() { return busy; },
+  setTime: (k) => atmosphere.apply(k),
+  redrop: () => { signDrop = 0; },
+  pick: (key) => { picked = key; renderChars(); },
+  start: () => enterGame(),
+  ready: () => ensureDaruma(),
+};

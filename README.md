@@ -30,8 +30,8 @@ npm run serve   # http://localhost:8000/
 
 | ページ | 中身 |
 | --- | --- |
-| `index.html` | 入口 |
-| `daruma.html` | ミニゲーム「だるまさんがころんだ」(ひとり + CPU4人)。`?seed=数字` で展開を固定、`?time=morning/day/evening/night` で時間帯を固定、`?fps` で重さを表示 |
+| `index.html` | ゲーム本体(タイトル・メニュー・競技まで全部ここ。ページは切り替わらない)。`#menu` でメニューから、`#daruma` で「だるまさんがころんだ」の入口から。競技は `?seed=数字` で展開を固定、`?time=morning/day/evening/night` で時間帯を固定、`?fps` で重さを表示 |
+| `daruma.html` | 前の入口。`index.html#daruma` へ送るだけ |
 | `viewer.html` | キャラ図鑑。アニメーション・表情・プレイヤーの色を切り替えて見られる |
 
 ## テスト
