@@ -355,6 +355,16 @@ const GAMES = {
     ],
     load: () => import('../games/catch/game.js').then((m) => m.createCatch),
   },
+  sled: {
+    name: '落ち葉そりレース',
+    rules: [
+      '画面の<b>左・右を押す</b>と、そっちへ曲がる。',
+      '<b>両方おす</b>と、ふせて速くなる(そのあいだは曲がれない)。',
+      'カーブは<b>内がわ</b>が近い。ふちの落ち葉にこすると遅くなる。',
+      '<b>キノコ</b>でジャンプ、<b>どんぐり</b>で加速。わかれ道は近道と遠回り。',
+    ],
+    load: () => import('../games/sled/game.js').then((m) => m.createSled),
+  },
 };
 let current = 'daruma'; // 入口に出している競技
 function openGame(key) {

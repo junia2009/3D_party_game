@@ -358,6 +358,35 @@
     background: rgba(255,255,255,.9); box-shadow: 0 3px 0 rgba(31,42,51,.3), inset 0 -4px 0 rgba(31,42,51,.12);
   }
 
+  /* 落ち葉そりレース: 左上に順位、まん中にタイム、下の左右に押すところのしるし */
+  .rank {
+    flex: none; min-width: 64px; text-align: center; font: 400 44px/1 var(--font-display); color: #fff;
+    -webkit-text-stroke: 7px var(--hud-ink); paint-order: stroke fill;
+  }
+  .rank small { font-size: 20px; }
+  .rank[data-rank="0"] { color: #ffd24a; }
+  .rank.up { animation: chipup .35s; }
+  .laptime { flex: 0 1 auto; margin: 6px auto 0; padding: 4px 14px; font: 800 20px var(--font-body); font-variant-numeric: tabular-nums; gap: 4px; align-items: baseline; }
+  .laptime small { font-size: 11px; color: var(--muted, #5d6b73); }
+  .pad {
+    position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); width: 76px; height: 76px; border-radius: 50%;
+    display: grid; place-items: center; font: 400 30px var(--font-display); color: rgba(255,255,255,.85);
+    background: rgba(31,42,51,.18); border: 3px solid rgba(255,255,255,.55); transition: transform .08s, background .08s;
+  }
+  .pad.left { left: max(16px, env(safe-area-inset-left, 0px)); }
+  .pad.right { right: max(16px, env(safe-area-inset-right, 0px)); }
+  .pad.on { background: rgba(255,138,61,.6); transform: scale(.92); }
+  #hudS .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 112px); }
+  #hudS .progress { top: calc(env(safe-area-inset-top, 0px) + 96px); bottom: calc(env(safe-area-inset-bottom, 0px) + 130px); }
+  /* どんぐりで速いあいだ: 画面のふちに流れる線 */
+  .speed {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s;
+    background: repeating-conic-gradient(from 0deg at 50% 45%, rgba(255,255,255,0) 0deg 9deg, rgba(255,255,255,.14) 9deg 10deg);
+    -webkit-mask: radial-gradient(ellipse at 50% 45%, transparent 45%, #000 80%); mask: radial-gradient(ellipse at 50% 45%, transparent 45%, #000 80%);
+  }
+  .speed.on { opacity: 1; animation: speedspin .3s linear infinite; }
+  @keyframes speedspin { to { transform: rotate(2deg); } }
+
   /* いちじていし・結果: 島の画面と同じ、木わくの紙に木の板のボタン */
   .modal {
     position: fixed; inset: 0; z-index: 12; display: grid; place-items: center;
@@ -632,7 +661,11 @@
       <span class="name">どんぐりキャッチ</span>
       <span class="meta"><span>45びょう</span></span>
     </button>
-    <div class="card locked" aria-label="第3競技 じゅんびちゅう"><span class="thumb"><b>?</b><span class="ribbon">第3競技</span></span><span class="name">じゅんびちゅう</span><span class="meta"><span>もうすこし まってね</span></span></div>
+    <button class="card" type="button" data-open="sled">
+      <span class="thumb"><img src="./assets/thumbs/sled.jpg" alt="" width="640" height="360"><span class="ribbon">第3競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">落ち葉そりレース</span>
+      <span class="meta"><span>30〜45びょう</span></span>
+    </button>
     <div class="card locked" aria-label="第4競技 じゅんびちゅう"><span class="thumb"><b>?</b><span class="ribbon">第4競技</span></span><span class="name">じゅんびちゅう</span><span class="meta"><span>もうすこし まってね</span></span></div>
   </div>
 </section>
@@ -687,6 +720,20 @@
   <div class="splash" id="splashC"></div>
   <p class="howto" id="howtoC">ゆびを おいて ずらすと はしる</p>
   <div class="stick" id="stickC" hidden><i></i></div>
+</div>
+
+<div class="hud" id="hudS" hidden>
+  <div class="speed" id="boostS" aria-hidden="true"></div>
+  <div class="top">
+    <div class="rank" id="rankS" data-rank="">1<small>い</small></div>
+    <div class="chant laptime"><span id="timeS">0.0</span><small>びょう</small></div>
+    <button class="pausebtn" id="pauseBtnS" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="progress" id="trackS"></div>
+  <div class="splash" id="splashS"></div>
+  <p class="howto" id="howtoS">左右で まがる・りょうほうで ふせる</p>
+  <div class="pad left" id="padL" aria-hidden="true">◀</div>
+  <div class="pad right" id="padR" aria-hidden="true">▶</div>
 </div>
 
 <section class="modal" id="pause" hidden aria-label="いちじていし">
