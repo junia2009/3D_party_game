@@ -305,6 +305,36 @@
   .runbtn.down { transform: translateX(-50%) translateY(6px); box-shadow: 0 2px 0 #b8362d; filter: brightness(1.08); }
   .runbtn small { display: block; font-size: 11px; font-weight: 700; opacity: .85; }
 
+  /* どんぐりキャッチ: 上に点数の札(多い順にならぶ)、拾ったところに「+1」 */
+  .scores { flex: 1; min-width: 0; display: flex; gap: 4px; justify-content: center; }
+  .chip {
+    display: flex; align-items: center; gap: 3px; padding: 4px 7px 4px 4px; border-radius: 999px; background: var(--hud-paper);
+    box-shadow: 0 3px 0 rgba(31,42,51,.18); font: 800 clamp(13px, 3.8vw, 17px) var(--font-body); font-variant-numeric: tabular-nums; transition: transform .2s;
+  }
+  #hudC .timer { width: 2.7em; font-size: 18px; padding: 6px 0; }
+  .chip b { min-width: 1.1em; text-align: center; }
+  .chip i { flex: none; width: 13px; height: 13px; border-radius: 50%; background: var(--c); border: 2px solid rgba(0,0,0,.2); }
+  .chip.me { outline: 3px solid var(--hud-ink); }
+  .chip.up b { display: inline-block; animation: chipup .3s; }
+  @keyframes chipup { 40% { transform: scale(1.5); color: #d98a12; } }
+  .chip.stun { animation: stun .2s infinite; }
+  .timer.rain { background: #d98a12; animation: chipup .5s infinite; }
+  .pops { position: absolute; inset: 0; overflow: hidden; }
+  .pop {
+    position: absolute; transform: translate(-50%, -50%); font: 400 22px var(--font-display); color: #fff;
+    -webkit-text-stroke: 5px #7a4a1c; paint-order: stroke fill; animation: popup .9s ease-out forwards; white-space: nowrap;
+  }
+  .pop.me { font-size: 28px; }
+  .pop.gold { color: #ffd24a; font-size: 32px; }
+  @keyframes popup { 0% { opacity: 0; translate: 0 6px; scale: .5; } 20% { opacity: 1; scale: 1.15; } 100% { opacity: 0; translate: 0 -46px; scale: 1; } }
+  .splash.gold { color: #ffd24a; }
+  .howto {
+    position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 26px); margin: 0; text-align: center;
+    font: 400 18px var(--font-display); color: #fff; -webkit-text-stroke: 5px var(--hud-ink); paint-order: stroke fill;
+    opacity: 0; transition: opacity .4s;
+  }
+  .howto.show { opacity: 1; animation: pulse 1.6s ease-in-out infinite; }
+
   /* いちじていし・結果: 島の画面と同じ、木わくの紙に木の板のボタン */
   .modal {
     position: fixed; inset: 0; z-index: 12; display: grid; place-items: center;
@@ -575,9 +605,16 @@
       <div class="meta"><span>1〜5人(あいている席は CPU)</span><span>30〜60びょう</span></div>
       <button class="play" type="button" data-open="daruma">あそぶ</button>
     </article>
+    <article class="card">
+      <div class="thumb"><img src="./assets/thumbs/catch.jpg" alt="どんぐりキャッチ の画面" width="640" height="360"><span class="ribbon">第2競技</span></div>
+      <h3>どんぐりキャッチ</h3>
+      <p>大木の枝がゆれたら、どんぐりが降ってくる!頭のかごで受けとめて、いちばんたくさん集めよう。</p>
+      <div class="meta"><span>1〜5人(あいている席は CPU)</span><span>45びょう</span></div>
+      <button class="play" type="button" data-open="catch">あそぶ</button>
+    </article>
     <div class="row2">
-      <article class="card locked"><div class="thumb"><b>?</b><span class="ribbon">第2競技</span></div><p>じゅんびちゅう</p></article>
       <article class="card locked"><div class="thumb"><b>?</b><span class="ribbon">第3競技</span></div><p>じゅんびちゅう</p></article>
+      <article class="card locked"><div class="thumb"><b>?</b><span class="ribbon">第4競技</span></div><p>じゅんびちゅう</p></article>
     </div>
   </div>
 </section>
@@ -595,15 +632,10 @@
   </div>
 </section>
 
-<section class="screen sub" id="play" hidden aria-label="だるまさんがころんだ">
-  <div class="head"><button class="back" type="button" data-back="games">‹ もどる</button><h2 class="long">だるまさんが ころんだ</h2></div>
+<section class="screen sub" id="play" hidden aria-label="競技の入口">
+  <div class="head"><button class="back" type="button" data-back="games">‹ もどる</button><h2 class="long" id="playTitle">だるまさんが ころんだ</h2></div>
   <div class="opt">
-    <ul class="rules">
-      <li><span><b>長押し</b>で走る。はなすと止まる(少しすべる)。</span></li>
-      <li><span>ホーホー先生が<b>ふりむいたら</b>ぴたっと止まる。</span></li>
-      <li><span>動いているのが見つかると<b>5m もどされる</b>。</span></li>
-      <li><span>先にゴールにタッチした人の勝ち!</span></li>
-    </ul>
+    <ul class="rules" id="playRules"></ul>
   </div>
   <div class="opt">
     <h3>キャラをえらぶ</h3>
@@ -624,6 +656,17 @@
   <div class="progress" id="track"></div>
   <div class="splash" id="splash"></div>
   <button class="runbtn" id="run" type="button">おしてる間<br>はしる<small>スペースキーでも</small></button>
+</div>
+
+<div class="hud" id="hudC" hidden>
+  <div class="top">
+    <div class="scores" id="scoresC" aria-label="どんぐりの数"></div>
+    <div class="side"><div class="timer" id="timerC">45<small>びょう</small></div></div>
+    <button class="pausebtn" id="pauseBtnC" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsC"></div>
+  <div class="splash" id="splashC"></div>
+  <p class="howto" id="howtoC">ゆびで なぞったところへ はしる</p>
 </div>
 
 <section class="modal" id="pause" hidden aria-label="いちじていし">

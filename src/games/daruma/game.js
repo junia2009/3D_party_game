@@ -191,7 +191,8 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
 
   function setMode(m) {
     mode = m;
-    setPaused(false);
+    paused = false;
+    $('pause').hidden = true;
     $('result').hidden = m !== 'result';
     $('hud').hidden = m !== 'playing';
     document.body.classList.toggle('ingame', m !== 'idle');
@@ -208,15 +209,18 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
   // アプリを裏に回したとき・画面を切ったときも、自動で止める。
   let paused = false;
   function setPaused(on) {
+    if (mode === 'idle') { paused = false; return; } // ほかの競技の いちじていし にさわらない
     paused = on && mode === 'playing';
     if (paused) press(false);
     $('pause').hidden = !paused;
   }
-  $('pauseBtn').addEventListener('click', () => setPaused(true));
-  $('resume').addEventListener('click', () => setPaused(false));
-  $('restart').addEventListener('click', () => { setPaused(false); startGame(); });
-  $('pauseReselect').addEventListener('click', () => leave('play'));
-  $('pauseMenu').addEventListener('click', () => leave('menu'));
+  // いちじていし・結果の画面は、ほかの競技と共有している。この競技の会場にいるときだけ反応する
+  const mine = (fn) => () => { if (mode !== 'idle') fn(); };
+  $('pauseBtn').addEventListener('click', mine(() => setPaused(true)));
+  $('resume').addEventListener('click', mine(() => setPaused(false)));
+  $('restart').addEventListener('click', mine(() => { setPaused(false); startGame(); }));
+  $('pauseReselect').addEventListener('click', mine(() => leave('play')));
+  $('pauseMenu').addEventListener('click', mine(() => leave('menu')));
   document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
 
   // ── 入力 ────────────────────────────────────────────
@@ -396,9 +400,9 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
   }
 
   // ── 結果のボタン ────────────────────────────────────
-  $('again').addEventListener('click', () => { unlockAudio(); startGame(); });
-  $('reselect').addEventListener('click', () => leave('play'));
-  $('resultMenu').addEventListener('click', () => leave('menu'));
+  $('again').addEventListener('click', mine(() => { unlockAudio(); startGame(); }));
+  $('reselect').addEventListener('click', mine(() => leave('play')));
+  $('resultMenu').addEventListener('click', mine(() => leave('menu')));
 
   // ── 見た目を state に合わせる ─────────────────────────
   function updateRunners(dt) {

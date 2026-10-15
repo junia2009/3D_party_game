@@ -10,9 +10,10 @@
 // 版はファイルの中身から作るので、1つでも変われば sw.js が変わり、ブラウザが入れなおす。
 
 // <precache>
-const VERSION = '5b1491899057';
+const VERSION = 'c46e70ecb489';
 const PRECACHE = [
   "./",
+  "./assets/thumbs/catch.jpg",
   "./assets/thumbs/daruma.jpg",
   "./daruma.html",
   "./icons/apple-touch-icon.png",
@@ -34,6 +35,10 @@ const PRECACHE = [
   "./models/ponta.glb",
   "./models/risu.glb",
   "./src/characters.js",
+  "./src/games/catch/cpu.js",
+  "./src/games/catch/game.js",
+  "./src/games/catch/rules.js",
+  "./src/games/catch/stage.js",
   "./src/games/daruma/atmosphere.js",
   "./src/games/daruma/audience.js",
   "./src/games/daruma/cpu.js",

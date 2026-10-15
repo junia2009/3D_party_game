@@ -52,3 +52,4 @@
 | 名前 | 状態 | 仕様 |
 | --- | --- | --- |
 | だるまさんがころんだ | 作成中 | [minigames/daruma.md](minigames/daruma.md) |
+| どんぐりキャッチ | 作成中 | [minigames/catch.md](minigames/catch.md) |

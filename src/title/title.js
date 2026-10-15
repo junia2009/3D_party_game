@@ -333,12 +333,42 @@ const zukan = createZukan({
   onClose: () => go('menu'),
   faces: () => (faces && Object.keys(faces).length ? faces : null),
 });
+// 競技の一覧。入口に出す名前とルール、会場の組み立て方
+const GAMES = {
+  daruma: {
+    name: 'だるまさんが ころんだ',
+    rules: [
+      '<b>長押し</b>で走る。はなすと止まる(少しすべる)。',
+      'ホーホー先生が<b>ふりむいたら</b>ぴたっと止まる。',
+      '動いているのが見つかると<b>5m もどされる</b>。',
+      '先にゴールにタッチした人の勝ち!',
+    ],
+    load: () => import('../games/daruma/game.js').then((m) => m.createDaruma),
+  },
+  catch: {
+    name: 'どんぐりキャッチ',
+    rules: [
+      '画面を<b>指でなぞる</b>と、そこへ走る。',
+      '枝がゆれたら、地面の<b>影</b>の下で頭のかごに受けとめる。',
+      '<b>金どんぐり</b>は 5 こ分。<b>毛虫・まつぼっくり</b>は目が回る。',
+      'ぶつかると、かごからこぼれる。いちばん多く集めた人の勝ち!',
+    ],
+    load: () => import('../games/catch/game.js').then((m) => m.createCatch),
+  },
+};
+let current = 'daruma'; // 入口に出している競技
+function openGame(key) {
+  current = key;
+  $('playTitle').textContent = GAMES[key].name;
+  $('playRules').innerHTML = GAMES[key].rules.map((r) => `<li><span>${r}</span></li>`).join('');
+  ensureGame(key); // ルールを読んでいるあいだに、会場を組み立てておく
+  go('play');
+}
 for (const b of document.querySelectorAll('[data-open]')) {
   b.addEventListener('click', () => {
     unlockAudio();
     knock();
-    ensureDaruma(); // ルールを読んでいるあいだに、会場を組み立てておく
-    go('play');
+    openGame(b.dataset.open);
   });
 }
 $('start').addEventListener('click', () => enterGame());
@@ -346,8 +376,8 @@ $('start').addEventListener('click', () => enterGame());
 // ── 競技の会場へ(同じページのまま) ─────────────────────
 const curtain = createLeafCurtain($('leaves'), $('curtainLabel'));
 let active = 'title'; // 'title' | 'game'(どちらを描くか)
-let daruma = null;
-let darumaReady = null;
+const games = {}; // 競技 → 組み立て(Promise)
+let playing = null; // いま会場にいる競技
 let busy = false; // 入れかえのとちゅう
 // 大木へ飛びこむ具合(0 = ふつう、1 = 葉の中)と、その向き
 const dive = { k: 0, dir: 0, crown: new THREE.Vector3(-1.4, 4.5, -2.2) };
@@ -357,20 +387,19 @@ const dive = { k: 0, dir: 0, crown: new THREE.Vector3(-1.4, 4.5, -2.2) };
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function ensureDaruma() {
-  darumaReady ??= import('../games/daruma/game.js')
-    .then((m) => m.createDaruma({
+function ensureGame(key) {
+  games[key] ??= GAMES[key].load()
+    .then((create) => create({
       renderer,
       settings,
       getAudio: () => { unlockAudio(); return audio; },
       onExit: (to) => leaveGame(to),
     }))
-    .then((d) => {
-      daruma = d;
+    .then((g) => {
       if (active === 'title') applyQuality(); // 会場の組み立てで影の設定が変わるので、島に合わせなおす
-      return d;
+      return g;
     });
-  return darumaReady;
+  return games[key];
 }
 
 async function enterGame() {
@@ -381,11 +410,11 @@ async function enterGame() {
   whoosh(1.1, true);
   go('dive');
   dive.dir = 1;
-  const ready = ensureDaruma();
+  const ready = ensureGame(current);
   await wait(250);
   await curtain.cover();
-  const d = await ready;
-  await d.enter(picked);
+  playing = await ready;
+  await playing.enter(picked);
   active = 'game';
   dive.dir = 0;
   dive.k = 1;
@@ -399,7 +428,7 @@ async function leaveGame(to) {
   busy = true;
   whoosh(0.9, true);
   await curtain.cover();
-  daruma.exit();
+  playing.exit();
   active = 'title';
   applyQuality();
   go(to);
@@ -445,7 +474,7 @@ function frame() {
   const rawDt = clock.getDelta();
   requestAnimationFrame(frame);
   if (active === 'game') {
-    daruma.frame(rawDt);
+    playing.frame(rawDt);
     return;
   }
   const dt = Math.min(rawDt, 0.1);
@@ -544,13 +573,13 @@ function frame() {
 $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 600);
 signDrop = 0;
-// #menu: メニューから / #daruma: だるまさんがころんだ の入口から / #zukan: 図鑑から
-if (location.hash === '#zukan') {
+// #menu: メニューから / #daruma・#catch: その競技の入口から / #zukan: 図鑑から
+const hash = location.hash.slice(1);
+if (hash === 'zukan') {
   ensureFaces();
   go('zukan');
-} else if (location.hash === '#daruma') {
-  ensureDaruma();
-  go('play');
+} else if (GAMES[hash]) {
+  openGame(hash);
 } else {
   go(location.hash === '#menu' ? 'menu' : 'title');
 }
@@ -566,6 +595,7 @@ window.title = {
   redrop: () => { signDrop = 0; },
   pick: (key) => { picked = key; renderChars(); },
   start: () => enterGame(),
-  ready: () => ensureDaruma(),
+  ready: () => ensureGame(current),
+  open: (key) => openGame(key),
   zukan,
 };
