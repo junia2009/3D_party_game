@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ワイワイアニマルズ キャラ図鑑</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap">
+<style>
+  /* 左に舞台(3D)、右に名札と操作。スマホでは縦に積む */
+  :root {
+    --bg: #e6f3f0;
+    --panel: #ffffff;
+    --ink: #1f2a33;
+    --muted: #5d6b73;
+    --line: #cfe0dc;
+    --accent: #ff5a4e;
+    --sky-top: #bfe6ff;
+    --sky-bottom: #fff4d6;
+    --chip: #f1f7f5;
+    --font-display: 'Dela Gothic One', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+    --font-body: 'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', 'Hiragino Sans', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12202a; --panel: #1b2b37; --ink: #eaf2f0; --muted: #9fb2b8; --line: #2c4250;
+      --accent: #ff7a6e; --sky-top: #24435c; --sky-bottom: #3b3550; --chip: #223644;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12202a; --panel: #1b2b37; --ink: #eaf2f0; --muted: #9fb2b8; --line: #2c4250;
+    --accent: #ff7a6e; --sky-top: #24435c; --sky-bottom: #3b3550; --chip: #223644;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px;
+    line-height: 1.6;
+  }
+  .app {
+    max-width: 1120px; margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 20px 40px;
+    display: grid; gap: 18px;
+  }
+  header .eyebrow { margin: 0; font-size: 12px; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
+  header h1 {
+    margin: 2px 0 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 7vw, 46px);
+    line-height: 1.1; text-wrap: balance;
+  }
+  header h1 span { color: var(--accent); }
+  .layout { display: grid; gap: 18px; }
+  @media (min-width: 880px) { .layout { grid-template-columns: 1.35fr 1fr; align-items: start; } }
+
+  .stage {
+    position: relative; border-radius: 28px; overflow: hidden;
+    height: min(64vh, 600px); min-height: 360px;
+    background: linear-gradient(var(--sky-top), var(--sky-bottom));
+    touch-action: none;
+  }
+  @media (min-width: 880px) { .stage { position: sticky; top: 16px; } }
+  .stage canvas { display: block; width: 100%; height: 100%; }
+  .view-toggle {
+    position: absolute; top: 12px; right: 12px; display: flex; background: var(--panel);
+    border-radius: 999px; padding: 4px; gap: 2px; box-shadow: 0 2px 0 var(--line);
+  }
+  .view-toggle button { border: 0; background: transparent; color: var(--ink); font: 700 13px var(--font-body); padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+  .view-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+  .hint { position: absolute; left: 14px; bottom: 10px; margin: 0; font-size: 12px; color: var(--muted); font-weight: 700; }
+  .loading { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 800; color: var(--muted); }
+
+  .panel { display: grid; gap: 14px; min-width: 0; }
+  .roster { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .roster button {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 14px;
+    border: 2px solid var(--line); background: var(--panel); color: var(--ink);
+    font: 800 14px var(--font-body); cursor: pointer; text-align: left; min-width: 0;
+  }
+  .roster button .dot { width: 18px; height: 18px; border-radius: 50%; flex: none; border: 2px solid rgba(0,0,0,.25); }
+  .roster button small { display: block; font-weight: 500; font-size: 11px; color: var(--muted); }
+  .roster button[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 3px 0 var(--ink); }
+
+  .card { background: var(--panel); border-radius: 20px; padding: 18px; display: grid; gap: 12px; }
+  .namerow { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .namerow h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 32px; line-height: 1.1; }
+  .namerow .species { font-weight: 800; color: var(--muted); }
+  .quote {
+    margin: 0; position: relative; background: var(--chip); border-radius: 14px; padding: 8px 12px;
+    font-weight: 800;
+  }
+  .facts { margin: 0; display: grid; gap: 6px; }
+  .facts div { display: grid; grid-template-columns: 5.5em 1fr; gap: 8px; }
+  .facts dt { color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: 0.06em; padding-top: 2px; }
+  .facts dd { margin: 0; }
+  .stats { display: grid; gap: 6px; }
+  .stat { display: grid; grid-template-columns: 4em 1fr; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; }
+  .pips { display: flex; gap: 4px; }
+  .pips i { height: 10px; flex: 1; max-width: 34px; border-radius: 4px; background: var(--line); }
+  .pips i.on { background: var(--accent); }
+
+  .ctrl h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: 0.08em; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button {
+    border: 2px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px;
+    padding: 5px 12px; font: 700 13px var(--font-body); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chips button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: var(--panel); }
+  .chips .sw { width: 14px; height: 14px; border-radius: 50%; }
+  button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .marks { margin: 0; padding-left: 1.2em; }
+  .common { background: var(--panel); border-radius: 20px; padding: 18px; }
+  .common h3 { margin: 0 0 6px; font-size: 15px; }
+  .common ul { margin: 0; padding-left: 1.2em; max-width: 68ch; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three.module.js",
+  "three/addons/": "./vendor/addons/"
+} }
+</script>
+</head>
+<body>
+<div class="app">
+  <header>
+    <p class="eyebrow">パーティゲーム(仮題)・キャラクターデザイン v0.1</p>
+    <h1>ワイワイ<span>アニマルズ</span> キャラ図鑑</h1>
+  </header>
+  <main class="layout">
+    <section class="stage" id="stage" aria-label="キャラクターの3D表示">
+      <canvas id="cv"></canvas>
+      <div class="view-toggle" role="group" aria-label="表示">
+        <button id="v-one" aria-pressed="true">1体</button>
+        <button id="v-all" aria-pressed="false">ぜんいん</button>
+      </div>
+      <p class="hint" id="hint">ドラッグでまわす</p>
+      <div class="loading" id="loading">モデルを読み込み中…</div>
+    </section>
+    <section class="panel">
+      <div class="roster" id="roster"></div>
+      <article class="card">
+        <div class="namerow"><h2 id="name"></h2><span class="species" id="species"></span></div>
+        <p class="quote" id="quote"></p>
+        <dl class="facts">
+          <div><dt>とくい</dt><dd id="role"></dd></div>
+          <div><dt>せいかく</dt><dd id="pers"></dd></div>
+          <div><dt>見分け方</dt><dd><ul class="marks" id="marks"></ul></dd></div>
+        </dl>
+        <div class="stats" id="stats"></div>
+      </article>
+      <div class="ctrl"><h3>アニメーション</h3><div class="chips" id="clips"></div></div>
+      <div class="ctrl"><h3>ひょうじょう</h3><div class="chips" id="exprs"></div></div>
+      <div class="ctrl"><h3>プレイヤーの色(スカーフ)</h3><div class="chips" id="players"></div></div>
+    </section>
+  </main>
+  <section class="common">
+    <h3>全員共通のつくり</h3>
+    <ul>
+      <li>2頭身。頭が体の半分あるので、遠くから見ても表情が読める。</li>
+      <li>骨格は全員同じ(頭・胴・腕2本・脚2本)。アニメーションを全員で使い回せる。</li>
+      <li>見分けはシルエットで。耳としっぽの形を全員ちがうものにしてある。</li>
+      <li>プレイヤーの色はスカーフだけに使う。体の色とぶつからない4色を選んである。</li>
+      <li>輪郭線は黒ではなく、それぞれの色を暗くした色。</li>
+    </ul>
+  </section>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { CHARACTERS, CLIPS, EXPRESSIONS, PLAYER_COLORS, lineColor } from './src/characters.js';
+
+const STAT_LABELS = ['はやさ', 'ちから', 'わざ', 'うん'];
+const $ = (id) => document.getElementById(id);
+const stage = $('stage');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ── three ─────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ canvas: $('cv'), antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c9d6, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(2, 4, 3);
+scene.add(sun);
+
+// トゥーン調の3段階の明るさ
+const grad = new THREE.DataTexture(new Uint8Array([110, 190, 255]), 3, 1, THREE.RedFormat);
+grad.minFilter = grad.magFilter = THREE.NearestFilter;
+grad.needsUpdate = true;
+
+const platform = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.3, 1.38, 0.16, 48),
+  new THREE.MeshToonMaterial({ color: 0x9fd8a8, gradientMap: grad }),
+);
+platform.position.y = -0.08;
+scene.add(platform);
+
+// 足元の丸い影
+const shadowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  r.addColorStop(0, 'rgba(20,40,40,0.35)');
+  r.addColorStop(1, 'rgba(20,40,40,0)');
+  g.fillStyle = r;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const shadowGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const shadowMat = new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false });
+
+// ── キャラの読み込み ──────────────────────────────
+// glb の素材は PBR(ふつうのビューアで見られるように)。ここではゲームと同じ
+// トゥーン調に差し替えて表示する。
+function toToon(root) {
+  const swap = new Map();
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material.isMeshStandardMaterial) return;
+    const m = o.material;
+    if (!swap.has(m)) {
+      const t = new THREE.MeshToonMaterial({ color: m.color, gradientMap: grad });
+      t.name = m.name;
+      swap.set(m, t);
+    }
+    o.material = swap.get(m);
+  });
+}
+
+const loader = new GLTFLoader();
+const chars = await Promise.all(CHARACTERS.map(async (def, i) => {
+  const gltf = await loader.loadAsync(`./models/${def.key}.glb`);
+  const root = gltf.scene;
+  toToon(root);
+  const mixer = new THREE.AnimationMixer(root);
+  const actions = Object.fromEntries(gltf.animations.map((a) => [a.name, mixer.clipAction(a)]));
+  const mats = {};
+  const faces = {};
+  root.traverse((o) => {
+    if (o.isMesh && (o.material.name === 'player_color' || o.material.name === 'player_outline')) {
+      mats[o.material.name] = o.material;
+    }
+    if (o.name.startsWith('face_')) faces[o.name.slice(5)] = o;
+  });
+  const holder = new THREE.Group();
+  holder.add(root);
+  const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+  shadow.position.y = 0.005;
+  shadow.scale.setScalar(0.95 * (def.size || 1));
+  holder.add(shadow);
+  holder.userData.index = i;
+  scene.add(holder);
+  return {
+    def, holder, root, mixer, actions, mats, faces, shadow,
+    rig: root.getObjectByName('rig'),
+    clip: null, expr: 'normal', player: i % PLAYER_COLORS.length,
+    yaw: 0, phase: i * 0.37,
+  };
+}));
+$('loading').remove();
+
+function setClip(c, key) {
+  if (c.clip === key) return;
+  const next = c.actions[key];
+  if (c.clip) c.actions[c.clip].fadeOut(0.2);
+  next.reset().fadeIn(0.2).play();
+  next.time = c.phase % next.getClip().duration;
+  c.clip = key;
+}
+function setExpr(c, key) {
+  for (const [k, node] of Object.entries(c.faces)) node.scale.setScalar(k === key ? 1 : 0);
+  c.expr = key;
+}
+function setPlayer(c, i) {
+  const hex = PLAYER_COLORS[i].hex;
+  c.mats.player_color?.color.setHex(hex);
+  c.mats.player_outline?.color.copy(lineColor(hex));
+  c.player = i;
+}
+chars.forEach((c) => { setClip(c, 'idle'); setExpr(c, 'normal'); setPlayer(c, c.player); });
+
+// ── 状態とUI ────────────────────────────────────
+let sel = 0;
+let view = 'one';
+
+function chip(container, items, isOn, onPick, swatch) {
+  container.replaceChildren(...items.map((it, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(isOn(it, i)));
+    if (swatch) {
+      const s = document.createElement('span');
+      s.className = 'sw';
+      s.style.background = swatch(it);
+      b.append(s);
+    }
+    b.append(it.label);
+    b.addEventListener('click', () => onPick(it, i));
+    return b;
+  }));
+}
+const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
+
+function render() {
+  const c = chars[sel];
+  const d = c.def;
+  $('roster').replaceChildren(...chars.map((cc, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(i === sel));
+    b.innerHTML = `<span class="dot" style="background:${css(cc.def.main)}"></span><span>${cc.def.name}<small>${cc.def.species}</small></span>`;
+    b.addEventListener('click', () => select(i));
+    return b;
+  }));
+  $('name').textContent = d.name;
+  $('species').textContent = d.species;
+  $('quote').textContent = `「${d.line}」`;
+  $('role').textContent = d.role;
+  $('pers').textContent = d.personality;
+  $('marks').replaceChildren(...d.marks.map((m) => Object.assign(document.createElement('li'), { textContent: m })));
+  $('stats').replaceChildren(...d.stats.map((v, i) => {
+    const row = document.createElement('div');
+    row.className = 'stat';
+    row.innerHTML = `<span>${STAT_LABELS[i]}</span><span class="pips">${[1, 2, 3, 4, 5].map((n) => `<i class="${n <= v ? 'on' : ''}"></i>`).join('')}</span>`;
+    return row;
+  }));
+  chip($('clips'), CLIPS, (it) => it.key === c.clip, (it) => {
+    setClip(c, it.key);
+    setExpr(c, it.face);
+    render();
+  });
+  chip($('exprs'), EXPRESSIONS, (it) => it.key === c.expr, (it) => { setExpr(c, it.key); render(); });
+  chip($('players'), PLAYER_COLORS, (_, i) => i === c.player, (_, i) => { setPlayer(c, i); render(); },
+    (it) => css(it.hex));
+  $('v-one').setAttribute('aria-pressed', String(view === 'one'));
+  $('v-all').setAttribute('aria-pressed', String(view === 'all'));
+  $('hint').textContent = view === 'one' ? 'ドラッグでまわす' : 'タップでえらぶ';
+  layout();
+}
+
+function select(i) {
+  sel = i;
+  const c = chars[i];
+  c.spawn = 0;
+  render();
+}
+
+$('v-one').addEventListener('click', () => { view = 'one'; render(); });
+$('v-all').addEventListener('click', () => { view = 'all'; render(); });
+
+// ── 配置とカメラ ──────────────────────────────────
+function layout() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  const narrow = w / h < 1;
+  chars.forEach((c, i) => {
+    c.holder.visible = view === 'all' || i === sel;
+    if (view === 'one') {
+      c.holder.position.set(0, 0, 0);
+    } else if (narrow) {
+      // 縦長の画面では 3体×2列。後ろの列は少しずらす
+      const row = Math.floor(i / 3), col = i % 3;
+      c.holder.position.set((col - 1) * 1.15 + (row ? 0.55 : 0), 0, row ? -1.2 : 0.5);
+    } else {
+      c.holder.position.set((i - 2.5) * 1.05, 0, 0);
+    }
+  });
+  if (view === 'one') {
+    camera.fov = 35;
+    camera.position.set(0, 1.25, narrow ? 5.0 : 4.3);
+    camera.lookAt(0, 0.85, 0);
+    platform.scale.set(1, 1, 1);
+    platform.position.z = 0;
+  } else if (narrow) {
+    camera.fov = 40;
+    camera.position.set(0, 5.0, 9.0);
+    camera.lookAt(0.2, 1.05, -0.4);
+    platform.scale.set(2.1, 1, 1.5);
+    platform.position.z = -0.35;
+  } else {
+    camera.fov = 32;
+    camera.position.set(0, 2.0, 8.2);
+    camera.lookAt(0, 0.75, 0);
+    platform.scale.set(3.0, 1, 1.05);
+    platform.position.z = 0;
+  }
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(layout).observe(stage);
+
+// ── 入力(ドラッグで回す/タップで選ぶ) ─────────────────
+let drag = null;
+const ray = new THREE.Raycaster();
+stage.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button')) return;
+  drag = { x: e.clientX, y: e.clientY, moved: 0 };
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x;
+  drag.moved += Math.abs(dx) + Math.abs(e.clientY - drag.y);
+  drag.x = e.clientX;
+  drag.y = e.clientY;
+  if (view === 'one') chars[sel].yaw += dx * 0.012;
+});
+stage.addEventListener('pointerup', (e) => {
+  if (drag && drag.moved < 8 && view === 'all') {
+    const r = stage.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+    const hit = ray.intersectObjects(chars.map((c) => c.root), true)[0];
+    if (hit) {
+      let o = hit.object;
+      while (o && o.userData.index === undefined) o = o.parent;
+      if (o) select(o.userData.index);
+    }
+  }
+  drag = null;
+});
+
+// ── ループ ──────────────────────────────────────
+const clock = new THREE.Clock();
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  for (const c of chars) {
+    if (!c.holder.visible) continue;
+    c.mixer.update(reduceMotion ? dt * 0.4 : dt);
+    // 選びなおしたときに、ぽんと出てくる
+    if (c.spawn !== undefined && c.spawn < 1) {
+      c.spawn = Math.min(1, c.spawn + dt * 3.2);
+      const k = c.spawn, s = 1.70158;
+      const e = 1 + (s + 1) * (k - 1) ** 3 + s * (k - 1) ** 2;
+      c.root.scale.setScalar(Math.max(0.01, e));
+    }
+    c.holder.rotation.y = view === 'one' ? c.yaw : 0;
+    // 跳んでいる高さに合わせて影を小さく
+    const lift = c.rig.position.y;
+    c.shadow.scale.setScalar(0.95 * (c.def.size || 1) * (1 - Math.min(0.5, lift * 0.9)));
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+window.viewer = { chars, select, setView: (v) => { view = v; render(); }, setClip, setExpr, setPlayer, render };
+render();
+frame();
+</script>
+</body>
+</html>

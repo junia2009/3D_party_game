@@ -1,0 +1,12 @@
+{
+  "name": "3d-party-game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8000",
+    "export:glb": "node tools/export-glb.mjs"
+  },
+  "devDependencies": {
+    "three": "0.180.0"
+  }
+}
