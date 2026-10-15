@@ -195,7 +195,14 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     items.delete(id);
   }
   // 枝がゆれたところの目じるし(葉っぱがひらひら落ちる)
-  const leafGeo = new THREE.PlaneGeometry(0.16, 0.1);
+  // 葉っぱ1枚: 先のとがった形(四角い板だと、紙きれに見えた)
+  const leafGeo = (() => {
+    const sh = new THREE.Shape();
+    sh.moveTo(0, -0.11);
+    sh.quadraticCurveTo(0.075, -0.02, 0, 0.11);
+    sh.quadraticCurveTo(-0.075, -0.02, 0, -0.11);
+    return new THREE.ShapeGeometry(sh, 5);
+  })();
   const leafMats = [0x6fb24e, 0x8fcf5f, 0xd9a34a].map((c) => new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide, transparent: true }));
   const leaves = [];
   function shakeLeaves(x, z) {
@@ -512,8 +519,9 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
         case 'shake': {
           rustle(0.18);
           shakeLeaves(e.x, e.z);
-          // 大木の茂みもゆらす
+          // 大木の茂みもゆらす。広場の上の茂みがゆれると、地面の木漏れ日もゆれる
           stage.crowns && (stage.crowns.userData.shake = 0.5);
+          stage.shakeAt(e.x, e.z);
           break;
         }
         case 'drop':
@@ -812,6 +820,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
         a.model.update(dt);
       }
       owl.update(dt);
+      stage.update(dt);
       if (owl.current === 'flap' && owl.actions.flap.time > 1.2) owl.play('idle');
       // 茂みのゆれ
       const cr = stage.crowns;
