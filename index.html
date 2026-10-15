@@ -328,6 +328,158 @@
   .ranks small { display: block; font-weight: 700; font-size: 11px; color: #8a6238; }
   .ranks .dist { font-variant-numeric: tabular-nums; font-size: 14px; text-align: right; }
 
+  /* ── キャラ図鑑: 島の前でひらく本 ──
+     横長は左右にひらく(左にキャラ、右にプロフィール)。縦長は上下にひらく(上にキャラ、下にプロフィール) */
+  .zukan {
+    position: fixed; inset: 0; z-index: 7; display: grid; place-items: center; align-content: center; gap: 14px;
+    padding: calc(env(safe-area-inset-top, 0px) + 18px) max(14px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 12px) max(14px, env(safe-area-inset-left, 0px));
+    background: radial-gradient(closest-side, rgba(40, 24, 8, .05), rgba(40, 24, 8, .32)); animation: fadein .3s;
+  }
+  .book {
+    --paper-c: #fbf4e2; --line-c: rgba(160, 120, 70, .13);
+    position: relative; width: min(94vw, 920px, calc((100dvh - 130px) * 1.5)); aspect-ratio: 1.5;
+    perspective: 2000px; transition: transform .8s cubic-bezier(.5, 0, .3, 1), clip-path .8s cubic-bezier(.5, 0, .3, 1);
+    clip-path: inset(-30px -30px -30px -30px); animation: bookin .45s cubic-bezier(.3, 1.4, .5, 1);
+  }
+  @keyframes bookin { from { opacity: 0; translate: 0 40px; scale: .8; } }
+  /* 表紙の板(ひらいたあとは、ページのうしろにふちだけ見える) */
+  .book::before {
+    content: ''; position: absolute; inset: -12px; border-radius: 16px; background: var(--wood-cover) center / cover;
+    box-shadow: 0 10px 0 #5a3a20, 0 18px 30px rgba(40, 20, 0, .35);
+  }
+  .book.closed { transform: translateX(-25%); clip-path: inset(-30px -30px -30px 50%); }
+  .book.closing { animation: bookout .3s .5s forwards; }
+  @keyframes bookout { to { opacity: 0; scale: .9; translate: 0 30px; } }
+  .spread { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; }
+  .page { position: relative; overflow: hidden; background: var(--paper-c); }
+  .page.pic {
+    border-radius: 10px 0 0 10px;
+    background:
+      radial-gradient(ellipse 34% 9% at 50% 84%, rgba(111, 170, 76, .55), rgba(111, 170, 76, 0) 100%),
+      radial-gradient(ellipse 42% 12% at 50% 85%, rgba(111, 170, 76, .25), rgba(111, 170, 76, 0) 100%),
+      linear-gradient(90deg, transparent 80%, rgba(110, 70, 30, .2)), var(--paper-c);
+  }
+  .page.pic::before { content: ''; position: absolute; inset: 12px; border: 2px dashed rgba(160, 120, 70, .35); border-radius: 12px; pointer-events: none; }
+  .page.pic canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  .page.pic img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .z-no {
+    position: absolute; left: 0; top: 22px; padding: 3px 14px 4px 12px; border-radius: 0 999px 999px 0; background: var(--red);
+    color: #fff; font: 400 16px var(--font-display); letter-spacing: .04em; box-shadow: 0 2px 0 rgba(0,0,0,.18); pointer-events: none;
+  }
+  .z-hint { position: absolute; left: 56px; right: 56px; bottom: 14px; margin: 0; text-align: center; line-height: 1.3; font: 800 11px var(--font-body); color: rgba(122, 90, 60, .7); pointer-events: none; }
+  /* プロフィールの字は、ページの大きさ(cq 単位)に合わせて変える */
+  .page.info {
+    container-type: size;
+    border-radius: 0 10px 10px 0;
+    display: grid; align-content: start; overflow: hidden;
+    background: linear-gradient(90deg, rgba(110, 70, 30, .2), transparent 20%), repeating-linear-gradient(transparent 0 25px, var(--line-c) 25px 26px), var(--paper-c);
+  }
+  .z-in { display: grid; align-content: start; gap: clamp(3px, 2.2cqh, 12px); height: 100%; padding: clamp(8px, 5cqh, 26px) clamp(12px, 6cqw, 30px) clamp(14px, 7cqh, 28px); }
+  .z-name { display: flex; align-items: baseline; gap: 10px; border-bottom: 4px solid var(--char, #c27a35); padding-bottom: 3px; }
+  .z-name h3 { margin: 0; font: 400 clamp(18px, min(9cqw, 9cqh), 36px) var(--font-display); color: var(--ink); }
+  .z-species { font: 800 clamp(10px, 3.6cqh, 12px) var(--font-body); color: #fff; background: var(--char, #c27a35); border-radius: 999px; padding: 2px 10px; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
+  .z-line {
+    position: relative; margin: 0; justify-self: start; padding: 6px 12px; border-radius: 14px; background: #fff;
+    border: 2px solid #d8bf93; font: 800 clamp(11px, min(4.6cqw, 4.6cqh), 16px) var(--font-body); color: var(--ink);
+  }
+  .z-line::before { content: '「'; } .z-line::after { content: '」'; }
+  .z-facts { margin: 0; display: grid; gap: clamp(2px, 1.2cqh, 4px); }
+  .z-facts div { display: grid; grid-template-columns: 4.8em 1fr; gap: 6px; align-items: baseline; }
+  .z-facts dt { font: 800 10px var(--font-body); color: #8a6238; background: #f2e4c8; border-radius: 6px; padding: 1px 6px; text-align: center; }
+  .z-facts dd { margin: 0; font: 700 clamp(10px, min(4.3cqw, 4.3cqh), 14px)/1.4 var(--font-body); color: #4a3220; }
+  .z-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 14px; }
+  @container (max-width: 250px) { .z-stats { grid-template-columns: 1fr; } }
+  .stat span { white-space: nowrap; }
+  .stat { display: flex; align-items: center; justify-content: space-between; gap: 4px; font: 800 clamp(9px, 3.6cqh, 11px) var(--font-body); color: #8a6238; }
+  .stat i { display: flex; gap: 1px; }
+  .stat b { width: clamp(10px, 4.4cqh, 14px); aspect-ratio: 14 / 15; color: #e6d6b8; } .stat b.on { color: #c27a35; }
+  .stat svg { width: 100%; height: 100%; display: block; }
+  .z-folio { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 700 11px var(--font-body); color: rgba(122, 90, 60, .6); }
+  /* めくる紙 */
+  .leaf { position: absolute; top: 0; bottom: 0; width: 50%; z-index: 4; transform-style: preserve-3d; transition: transform .6s cubic-bezier(.45, .05, .3, 1); }
+  .leaf.next { left: 50%; transform-origin: 0 50%; } .leaf.next.go { transform: rotateY(-180deg); }
+  .leaf.prev { left: 0; transform-origin: 100% 50%; } .leaf.prev.go { transform: rotateY(180deg); }
+  .leaf > .page { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 0 22px rgba(60, 35, 10, .25); }
+  .leaf > .back { transform: rotateY(180deg); }
+  /* ページのすみ(めくる) */
+  .corner {
+    position: absolute; z-index: 3; width: 46px; height: 46px; border: 0; padding: 0; cursor: pointer;
+    background: linear-gradient(135deg, transparent 49%, #e7d6b3 50%, #f6ecd4 72%, #e0caa0); filter: drop-shadow(-2px -2px 2px rgba(80, 50, 20, .25));
+    transition: width .15s, height .15s;
+  }
+  .corner::after { position: absolute; right: 7px; bottom: 3px; font: 400 15px var(--font-display); color: #8a6238; content: '›'; }
+  .corner.next { right: 0; bottom: 0; border-radius: 0 0 10px 0; }
+  .corner.prev { left: 0; bottom: 0; transform: scaleX(-1); border-radius: 0 0 10px 0; }
+  .corner:hover, .corner:active { width: 58px; height: 58px; }
+  .corner[disabled] { visibility: hidden; }
+  /* 表紙 */
+  .cover {
+    position: absolute; top: -12px; bottom: -12px; left: 50%; width: calc(50% + 12px); z-index: 6;
+    transform-origin: 0 50%; transform-style: preserve-3d;
+    transition: transform .8s cubic-bezier(.5, 0, .3, 1), visibility 0s .8s;
+  }
+  .book.opened .cover { transform: rotateY(-180deg); visibility: hidden; }
+  .cover > div { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 0 16px 16px 0; }
+  .cover-front {
+    display: grid; place-items: center; align-content: center; gap: 8px; text-align: center;
+    background: linear-gradient(90deg, rgba(40, 20, 0, .35), transparent 12%), var(--wood-cover) center / cover;
+    box-shadow: inset 0 0 0 6px rgba(90, 56, 28, .5), inset 0 0 0 9px rgba(255, 230, 180, .25);
+  }
+  .cover-front b { font: 400 clamp(28px, 7vmin, 52px) var(--font-display); color: var(--cream); -webkit-text-stroke: 8px var(--ink); paint-order: stroke fill; letter-spacing: .06em; }
+  .cover-front small { font: 800 clamp(12px, 2.4vmin, 16px) var(--font-body); color: var(--cream); background: var(--red); padding: 3px 14px 4px; border-radius: 6px; box-shadow: 0 2px 0 #8f2a24; }
+  .cover-front svg { width: clamp(46px, 10vmin, 80px); height: auto; filter: drop-shadow(0 3px 0 rgba(0,0,0,.25)); }
+  /* 表紙のうら(見返し): どんぐりと葉のもよう */
+  .cover-back {
+    transform: rotateY(180deg); border-radius: 16px 0 0 16px;
+    background:
+      radial-gradient(circle at 25% 30%, rgba(194, 122, 53, .28) 0 7px, transparent 8px) 0 0 / 56px 56px,
+      radial-gradient(ellipse 9px 5px at 70% 75%, rgba(79, 154, 60, .25) 0 100%, transparent 100%) 0 0 / 56px 56px,
+      #ead8b2;
+    box-shadow: inset 0 0 0 10px #d9c08e;
+  }
+  /* 下の帯: もどる と しおり(キャラの顔) */
+  .z-bar { display: flex; align-items: center; gap: 10px; width: min(94vw, 920px); }
+  .z-tabs { flex: 1; display: flex; justify-content: center; gap: clamp(4px, 1.6vw, 10px); }
+  .z-tabs button {
+    width: clamp(36px, 10vw, 50px); aspect-ratio: 1; padding: 0; border-radius: 50%; cursor: pointer; overflow: hidden;
+    border: 3px solid var(--char); background: #fff6e0; transition: transform .15s cubic-bezier(.3, 1.6, .5, 1); box-shadow: 0 3px 0 rgba(58, 34, 14, .3);
+  }
+  .z-tabs button img { width: 100%; height: 100%; display: block; }
+  .z-tabs button span { font: 400 16px var(--font-display); color: var(--ink); }
+  .z-tabs button[aria-current="true"] { transform: translateY(-5px) scale(1.12); box-shadow: 0 5px 0 rgba(58, 34, 14, .35), 0 0 0 3px #fff; }
+
+  /* 横向きのスマホ(背が低い): 下の帯を左に縦に並べて、本を画面の高さいっぱいに */
+  @media (min-aspect-ratio: 1/1) and (max-height: 560px) {
+    .zukan { grid-auto-flow: column; gap: 22px; }
+    .z-bar { order: -1; flex-direction: column; width: auto; }
+    .z-tabs { flex-direction: column; flex: none; }
+    .z-tabs button { width: clamp(30px, 9dvh, 42px); }
+    .z-tabs button[aria-current="true"] { transform: translateX(5px) scale(1.12); }
+    .book { width: min(calc(94vw - 110px), calc((100dvh - 44px) * 1.5)); }
+  }
+
+  /* 縦長: 上下にひらく */
+  @media (max-aspect-ratio: 1/1) {
+    .book { width: min(94vw, 520px, calc((100dvh - 150px) / 1.6)); aspect-ratio: 1 / 1.6; }
+    .book.closed { transform: translateY(-25%); clip-path: inset(50% -30px -30px -30px); }
+    .spread { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    .page.pic { border-radius: 10px 10px 0 0; background:
+      radial-gradient(ellipse 30% 10% at 50% 84%, rgba(111, 170, 76, .55), rgba(111, 170, 76, 0) 100%),
+      radial-gradient(ellipse 40% 13% at 50% 85%, rgba(111, 170, 76, .25), rgba(111, 170, 76, 0) 100%),
+      linear-gradient(transparent 80%, rgba(110, 70, 30, .2)), var(--paper-c); }
+    .page.info { border-radius: 0 0 10px 10px; background: linear-gradient(rgba(110, 70, 30, .2), transparent 14%), repeating-linear-gradient(transparent 0 25px, var(--line-c) 25px 26px), var(--paper-c); }
+    .leaf { top: auto; left: 0; right: 0; width: auto; height: 50%; }
+    .leaf.next { top: 50%; transform-origin: 50% 0; } .leaf.next.go { transform: rotateX(180deg); }
+    .leaf.prev { top: 0; left: 0; transform-origin: 50% 100%; } .leaf.prev.go { transform: rotateX(-180deg); }
+    .leaf > .back { transform: rotateX(180deg); }
+    .corner.prev { top: 0; bottom: auto; right: 0; left: auto; transform: scaleY(-1); }
+    .cover { top: 50%; bottom: -12px; left: -12px; right: -12px; width: auto; transform-origin: 50% 0; }
+    .book.opened .cover { transform: rotateX(180deg); }
+    .cover > div { border-radius: 0 0 16px 16px; }
+    .cover-back { transform: rotateX(180deg); }
+    .z-bar { width: min(94vw, 520px); }
+  }
+
   /* 横長: メニューは右側に縦に並べる(左は看板と島) */
   @media (min-aspect-ratio: 1/1) {
     #menu { --plank-h: clamp(44px, 10.5dvh, 64px); left: auto; right: max(32px, env(safe-area-inset-right, 0px)); bottom: 50%; transform: translateY(50%); width: min(400px, 36vw); }
@@ -472,6 +624,31 @@
       <button class="plank" id="resultMenu" type="button"><b>メニューへ</b></button>
     </div>
   </div>
+</section>
+
+<section class="zukan" id="zukan" hidden aria-label="キャラ図鑑">
+  <div class="book closed" id="book">
+    <div class="spread">
+      <div class="page pic">
+        <canvas id="zukanCv" aria-label="キャラの3D"></canvas>
+        <span class="z-no" id="zNo">No.1</span>
+        <p class="z-hint">さわると ポーズ<br>ドラッグで まわる</p>
+        <button class="corner prev" id="zPrev" type="button" aria-label="まえのページ"></button>
+      </div>
+      <div class="page info" id="zInfo"></div>
+      <button class="corner next" id="zNext" type="button" aria-label="つぎのページ"></button>
+    </div>
+    <div class="leaf" id="zLeaf" hidden><div class="front"></div><div class="back"></div></div>
+    <div class="cover" aria-hidden="true">
+      <div class="cover-front">
+        <svg viewBox="0 0 40 46"><ellipse cx="20" cy="27" rx="14" ry="16" fill="#c27a35" stroke="#4a2a14" stroke-width="3"/><ellipse cx="14" cy="22" rx="3" ry="6" fill="#fff" opacity=".45"/><path d="M4 18a16 11 0 0 1 32 0q-16 6-32 0z" fill="#7a4f2c" stroke="#4a2a14" stroke-width="3"/><path d="M20 6v-4" stroke="#4a2a14" stroke-width="3" stroke-linecap="round"/></svg>
+        <b>キャラ図鑑</b>
+        <small>森のなかまたち</small>
+      </div>
+      <div class="cover-back"></div>
+    </div>
+  </div>
+  <div class="z-bar"><button class="back" id="zClose" type="button">‹ もどる</button><div class="z-tabs" id="zTabs"></div></div>
 </section>
 
 <canvas id="leaves" hidden></canvas>

@@ -18,6 +18,7 @@ import { buildSign, drawSign } from './sign.js';
 import { woodPlank } from './wood.js';
 import { createLeafCurtain } from './leaves.js';
 import { makePortraits } from './portraits.js';
+import { createZukan } from './zukan.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -25,6 +26,8 @@ const settings = loadSettings();
 
 // 木の板の絵を、メニューのボタンの背景にする
 document.documentElement.style.setProperty('--wood', `url(${woodPlank(640, 140, { seed: 3 })})`);
+// 図鑑の表紙(色の濃い板)
+document.documentElement.style.setProperty('--wood-cover', `url(${woodPlank(720, 480, { seed: 9, radius: 0.04, tone: ['#b9804a', '#a56d3c', '#8f5c30'] })})`);
 
 // ── 音 ─────────────────────────────────────────────
 let audio = null;
@@ -184,6 +187,8 @@ const SCREENS = {
   play: { el: $('play'), view: [0.24, 0], sign: false, foot: 'play', bias: 0.5 },
   // 大木へ飛びこんでいるところ / 競技の会場にいるあいだ
   dive: { el: null, view: [0, 0], sign: false },
+  // キャラ図鑑(本は島の前でひらく。島はうしろでそのまま)
+  zukan: { el: null, view: [0, 0], sign: false },
 };
 let screen = 'loading';
 const view = { x: 0, y: 0, sign: 1, r: 1 };
@@ -206,6 +211,10 @@ function go(next) {
   $('ver').hidden = next !== 'title';
   screen = next;
   if (next === 'play') renderChars();
+  if (next === 'zukan') {
+    ensureFaces();
+    zukan.open();
+  }
 }
 
 function toast(text) {
@@ -230,6 +239,8 @@ addEventListener('keydown', (e) => {
     go('menu');
   } else if (e.code === 'Escape' && (screen === 'games' || screen === 'settings')) {
     go('menu');
+  } else if (screen === 'zukan') {
+    // 図鑑のキーは図鑑が見る
   } else if (e.code === 'Escape' && screen === 'play') {
     go('games');
   }
@@ -240,9 +251,7 @@ for (const b of document.querySelectorAll('#menu [data-go]')) {
   b.addEventListener('click', () => {
     unlockAudio();
     knock();
-    const to = b.dataset.go;
-    if (to === 'zukan') location.href = './viewer.html';
-    else go(to);
+    go(b.dataset.go);
   });
 }
 for (const b of document.querySelectorAll('[data-soon]')) {
@@ -265,7 +274,16 @@ for (const b of document.querySelectorAll('[data-back]')) {
 
 // ── 競技の入口(ルールとキャラえらび) ───────────────────────
 let picked = CHARACTERS.some((c) => c.key === settings.character) ? settings.character : CHARACTERS[0].key;
-let faces = null; // キャラの顔の絵(はじめて入口をひらいたときに撮る)
+let faces = null; // キャラの顔の絵(はじめて入口・図鑑をひらいたときに撮る)
+function ensureFaces() {
+  if (faces) return;
+  faces = {};
+  makePortraits(renderer, CHARACTERS.map((c) => c.key)).then((f) => {
+    faces = f;
+    if (screen === 'play') renderChars();
+    if (screen === 'zukan') zukan.refreshTabs();
+  });
+}
 function renderChars() {
   $('chars').replaceChildren(...CHARACTERS.map((c) => {
     const b = document.createElement('button');
@@ -285,11 +303,31 @@ function renderChars() {
     });
     return b;
   }));
-  if (!faces) {
-    faces = {};
-    makePortraits(renderer, CHARACTERS.map((c) => c.key)).then((f) => { faces = f; if (screen === 'play') renderChars(); });
-  }
+  ensureFaces();
 }
+
+// ── キャラ図鑑 ──────────────────────────────────────
+// ぱらっ(ページをめくる): 短い雑音を高いほうだけ
+function rustle(len = 0.22) {
+  if (!audio || !settings.sound) return;
+  const buf = audio.createBuffer(1, audio.sampleRate * len, audio.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length) ** 2;
+  const src = audio.createBufferSource();
+  src.buffer = buf;
+  const f = audio.createBiquadFilter();
+  f.type = 'highpass';
+  f.frequency.value = 1400;
+  const g = audio.createGain();
+  g.gain.value = 0.3;
+  src.connect(f).connect(g).connect(audio.destination);
+  src.start();
+}
+const zukan = createZukan({
+  sfx: { page: () => rustle(), open: () => { knock(); setTimeout(() => rustle(0.35), 650); }, close: () => { rustle(0.3); setTimeout(knock, 600); }, boop: () => tone(660, 0, 0.12, 'sine', 0.08) },
+  onClose: () => go('menu'),
+  faces: () => (faces && Object.keys(faces).length ? faces : null),
+});
 for (const b of document.querySelectorAll('[data-open]')) {
   b.addEventListener('click', () => {
     unlockAudio();
@@ -494,14 +532,18 @@ function frame() {
 
   atmosphere.update(dt);
   renderer.render(scene, camera);
+  if (screen === 'zukan') zukan.frame(dt);
 }
 
 // 読み込みおわり
 $('loading').classList.add('done');
 setTimeout(() => $('loading').remove(), 600);
 signDrop = 0;
-// #menu: メニューから / #daruma: だるまさんがころんだ の入口から
-if (location.hash === '#daruma') {
+// #menu: メニューから / #daruma: だるまさんがころんだ の入口から / #zukan: 図鑑から
+if (location.hash === '#zukan') {
+  ensureFaces();
+  go('zukan');
+} else if (location.hash === '#daruma') {
   ensureDaruma();
   go('play');
 } else {
@@ -520,4 +562,5 @@ window.title = {
   pick: (key) => { picked = key; renderChars(); },
   start: () => enterGame(),
   ready: () => ensureDaruma(),
+  zukan,
 };
