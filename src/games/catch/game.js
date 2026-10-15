@@ -169,7 +169,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   }
   // 落ちるところの輪(どんぐりは白、金どんぐりは金、じゃまものは赤)。落ちる直前にきゅっと縮む
   const ringGeo = new THREE.RingGeometry(0.42, 0.5, 32).rotateX(-Math.PI / 2);
-  const ringMats = { acorn: 0xffffff, gold: 0xffd24a, worm: 0xff5a4e, cone: 0xff5a4e };
+  const ringMats = { acorn: 0xffffff, gold: 0xffd24a, worm: 0xff5a4e, cone: 0xff5a4e }; // ふつうのどんぐりは影だけ(輪は出さない)
   const items = new Map(); // id → { mesh, shadow, ring, kind, fly }
   const itemGroup = new THREE.Group();
   scene.add(itemGroup);
@@ -205,11 +205,6 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       leaves.push({ m, vy: -(1.2 + Math.random()), ph: Math.random() * 6, life: 3 });
     }
   }
-  // 自分の行き先の目じるし
-  const targetRing = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.3, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex, transparent: true, opacity: 0.8, depthWrite: false }));
-  targetRing.position.y = 0.03;
-  targetRing.visible = false;
-  scene.add(targetRing);
 
   // ── かご ───────────────────────────────────────────
   const weave = (() => {
@@ -262,7 +257,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   let game = null; // { state, players, cpus, runners(見た目), acc, endTimer }
   let intro = 1;
   const INTRO_TIME = 2.4;
-  const input = { touch: null, keys: new Set(), target: null };
+  const input = { touch: null, stick: null, keys: new Set(), target: null };
 
   async function startGame({ fromSky = false } = {}) {
     const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
@@ -299,6 +294,11 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       scene.add(holder);
       return { model, holder, basket, shadow: sh, size, face: model.root.rotation.y, bob: 0 };
     }));
+    // 自分の足もとに、自分の色の輪
+    const foot = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.58, 36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex, transparent: true, opacity: 0.9, depthWrite: false }));
+    foot.position.y = 0.025;
+    foot.renderOrder = 2;
+    runners[0].holder.add(foot);
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
     runners[0].holder.add(marker);
@@ -308,8 +308,8 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     input.touch = null;
+    input.stick = null;
     input.target = null;
-    targetRing.visible = false;
     buildScores();
     setMode('playing');
     intro = fromSky ? 0 : 1;
@@ -350,30 +350,49 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   $('resultMenu').addEventListener('click', mine(() => leave('menu')));
   document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
 
-  // ── 入力: なぞったところへ ─────────────────────────────
-  const ray = new THREE.Raycaster();
-  const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  const hit = new THREE.Vector3();
-  function groundAt(clientX, clientY) {
-    const v = new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1);
-    ray.setFromCamera(v, camera);
-    if (!ray.ray.intersectPlane(ground, hit)) return null;
-    const d = Math.hypot(hit.x, hit.z), max = ARENA_R - RULES.bodyR;
-    return d <= max ? { x: hit.x, z: hit.z } : { x: (hit.x / d) * max, z: (hit.z / d) * max };
-  }
+  // ── 入力: どこでもスティック ─────────────────────────
+  // 画面のどこを触っても、そこがスティックのまん中になる。指をずらした向きへ、ずらした量に応じた速さで走る。
+  // 指は画面の下のほうに置いたままでよい(広場をかくさない)。パソコンは矢印キー / WASD。
+  const STICK_R = 56; // これだけずらすと全速力(px)
+  const stickEl = $('stickC'), knobEl = stickEl.firstElementChild;
   const canSteer = (e) => mode === 'playing' && !paused && !e.target.closest('button, a');
   window.addEventListener('pointerdown', (e) => {
-    if (!canSteer(e)) return;
+    if (!canSteer(e) || input.touch !== null) return;
     unlockAudio();
     input.touch = e.pointerId;
-    input.target = groundAt(e.clientX, e.clientY);
+    input.stick = { ox: e.clientX, oy: e.clientY, dx: 0, dy: 0 };
+    stickEl.style.left = `${e.clientX}px`;
+    stickEl.style.top = `${e.clientY}px`;
+    knobEl.style.transform = 'translate(-50%, -50%)';
+    stickEl.hidden = false;
     $('howtoC').classList.remove('show');
   });
   window.addEventListener('pointermove', (e) => {
-    if (input.touch !== e.pointerId || mode !== 'playing' || paused) return;
-    input.target = groundAt(e.clientX, e.clientY);
+    if (input.touch !== e.pointerId || !input.stick) return;
+    let dx = e.clientX - input.stick.ox, dy = e.clientY - input.stick.oy;
+    const d = Math.hypot(dx, dy);
+    // 大きくずらしたら、スティックのまん中も指についてくる(指を戻さなくても向きを変えられる)
+    if (d > STICK_R * 1.4) {
+      input.stick.ox += (dx / d) * (d - STICK_R * 1.4);
+      input.stick.oy += (dy / d) * (d - STICK_R * 1.4);
+      stickEl.style.left = `${input.stick.ox}px`;
+      stickEl.style.top = `${input.stick.oy}px`;
+      dx = e.clientX - input.stick.ox;
+      dy = e.clientY - input.stick.oy;
+    }
+    const k = Math.min(1, Math.hypot(dx, dy) / STICK_R);
+    const a = Math.atan2(dy, dx);
+    input.stick.dx = Math.cos(a) * k;
+    input.stick.dy = Math.sin(a) * k;
+    knobEl.style.transform = `translate(calc(-50% + ${input.stick.dx * STICK_R}px), calc(-50% + ${input.stick.dy * STICK_R}px))`;
   });
-  for (const ev of ['pointerup', 'pointercancel']) window.addEventListener(ev, (e) => { if (input.touch === e.pointerId) input.touch = null; });
+  const release = (e) => {
+    if (input.touch !== e.pointerId) return;
+    input.touch = null;
+    input.stick = null;
+    stickEl.hidden = true;
+  };
+  for (const ev of ['pointerup', 'pointercancel']) window.addEventListener(ev, release);
   const KEYS = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
   window.addEventListener('keydown', (e) => {
     if (mode !== 'playing') return;
@@ -386,21 +405,31 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     }
   });
   window.addEventListener('keyup', (e) => input.keys.delete(e.code));
-  window.addEventListener('blur', () => { input.keys.clear(); input.touch = null; });
+  window.addEventListener('blur', () => { input.keys.clear(); input.touch = null; input.stick = null; stickEl.hidden = true; });
 
+  // 画面の上下左右を、地面の向きにする(カメラの向きに合わせる)
+  const fwd = new THREE.Vector3();
   function myInput() {
+    if (input.target) return input.target; // E2E 用
     const me = game.state.runners[0];
+    let sx = 0, sy = 0;
     if (input.keys.size) {
-      let dx = 0, dz = 0;
-      for (const k of input.keys) { dx += KEYS[k][0]; dz += KEYS[k][1]; }
-      const d = Math.hypot(dx, dz);
-      if (!d) return null;
-      input.target = null;
-      return { x: me.x + (dx / d) * 1.5, z: me.z + (dz / d) * 1.5 };
+      for (const k of input.keys) { sx += KEYS[k][0]; sy += KEYS[k][1]; }
+      const d = Math.hypot(sx, sy);
+      if (d) { sx /= d; sy /= d; }
+    } else if (input.stick) {
+      sx = input.stick.dx;
+      sy = input.stick.dy;
     }
-    if (!input.target) return null;
-    if (input.touch === null && Math.hypot(input.target.x - me.x, input.target.z - me.z) < 0.1) input.target = null;
-    return input.target;
+    const k = Math.hypot(sx, sy);
+    if (k < 0.12) return null; // まん中あたりは止まる
+    camera.getWorldDirection(fwd);
+    fwd.y = 0;
+    fwd.normalize();
+    // 画面の右 = カメラの右、画面の上 = カメラの前
+    const wx = -fwd.z * sx + fwd.x * -sy, wz = fwd.x * sx + fwd.z * -sy;
+    // ルールは「行き先」で動くので、ずらした量に応じた近さに行き先を置く(近いほどゆっくり)
+    return { x: me.x + wx * 0.6 * k, z: me.z + wz * 0.6 * k };
   }
 
   // ── HUD ─────────────────────────────────────────────
@@ -645,8 +674,8 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
         v.shadow.position.set(it.x, 0.02, it.z);
         v.shadow.scale.setScalar(0.4 + near * 0.6);
         v.shadow.material.opacity = 0.5 + near * 0.5;
-        // 輪: 大きく出て、落ちる直前に受けとれる大きさまで縮む
-        v.ring.visible = true;
+        // 輪(金どんぐりとじゃまものだけ): 大きく出て、落ちる直前に受けとれる大きさまで縮む
+        v.ring.visible = v.kind !== 'acorn';
         v.ring.scale.setScalar(RULES.catchR / 0.46 * (1 + f * 0.8));
         v.ring.material.opacity = 0.35 + near * 0.6;
       } else {
@@ -687,11 +716,13 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       pos = new THREE.Vector3(w.x * 0.6, 3.4, w.z + (portrait ? 7 : 5.5));
       look = new THREE.Vector3(w.x, 1.1, w.z);
     } else {
-      // 広場全体が入るよう、手前の高いところから。自分のほうへ少しだけ寄せる
-      pos = new THREE.Vector3(me.x * 0.1, portrait ? 15 : 9.8, (portrait ? 12.4 : 10.4) + me.z * 0.08);
-      look = new THREE.Vector3(me.x * 0.12, 0, (portrait ? -0.2 : -0.9) + me.z * 0.1);
+      // 自分に寄せて追いかける。見る先は自分の少し奥(どんぐりは奥の大木のほうから来ることが多い)。
+      // 広場の外ばかり映らないよう、見る先は広場の中に寄せておく
+      const fx = me.x * 0.8, fz = me.z * 0.8;
+      pos = new THREE.Vector3(fx, portrait ? 9.2 : 6.6, fz + (portrait ? 7.4 : 6.2));
+      look = new THREE.Vector3(fx, 0, fz - (portrait ? 1.0 : 0.9));
     }
-    camera.fov = portrait ? 58 : 44;
+    camera.fov = portrait ? 58 : 46;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
     if (intro < 1) {
@@ -704,7 +735,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       camera.lookAt(camera.userData.look);
       return;
     }
-    const k = snap ? 1 : 1 - Math.exp(-dt * 3);
+    const k = snap ? 1 : 1 - Math.exp(-dt * 4);
     camera.position.lerp(pos, k);
     camera.userData.look = camera.userData.look ? camera.userData.look.lerp(look, k) : look.clone();
     camera.lookAt(camera.userData.look);
@@ -764,12 +795,6 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     if (game && !paused) {
       updateRunners(dt);
       updateItems(dt);
-      const t = input.target;
-      targetRing.visible = !!t && mode === 'playing';
-      if (t) {
-        targetRing.position.set(t.x, 0.03, t.z);
-        targetRing.scale.setScalar(1 + 0.12 * Math.sin(time * 8));
-      }
     }
     if (!paused) {
       for (const a of audience) {
@@ -831,6 +856,8 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     exit() {
       setMode('idle');
       input.touch = null;
+      input.stick = null;
+      $('stickC').hidden = true;
       input.keys.clear();
     },
     get intro() { return intro; },

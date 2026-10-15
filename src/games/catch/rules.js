@@ -36,7 +36,7 @@ export const RULES = {
   fallTime: 1.25, // 影が出てから落ちるまで
   shakeTime: 0.9, // 枝がゆれてから、ひとつめの影が出るまで
   groundTime: 2.6, // 地面に落ちたどんぐりが残る時間
-  bumpSpeed: 3.4, // これより勢いよくぶつかると、相手のかごからこぼれる
+  bumpSpeed: 3.6, // ぶつけた側がこれより速く突っこむと、相手のかごからこぼれる(出あいがしらは数えない)
   bumpCool: 0.9,
   spill: 2, // 1回でこぼれる数
   spillLock: 0.4, // こぼれたどんぐりが、地面に落ちて拾えるようになるまで
@@ -44,8 +44,9 @@ export const RULES = {
 
 // 何秒ごとに枝がゆれるか / 1回に何こ降るか / 何が降るか
 const RATE = {
-  normal: { every: [1.2, 1.8], count: [2, 4], gold: 0.06, worm: 0.07, cone: 0.07 },
-  rain: { every: [0.45, 0.65], count: [4, 6], gold: 0.1, worm: 0.05, cone: 0.05 },
+  // 少なく大きく: ひとつひとつを見て取りに行けるくらい
+  normal: { every: [1.3, 1.9], count: [1, 3], gold: 0.07, worm: 0.08, cone: 0.08 },
+  rain: { every: [0.55, 0.75], count: [2, 4], gold: 0.12, worm: 0.06, cone: 0.06 },
 };
 
 // 席ごとのスタート位置: 広場のまん中を囲む円の上に等間隔(だれも有利にならないように)
@@ -179,7 +180,7 @@ export function step(s, inputs) {
       b.x += nx * push; b.z += nz * push;
       // おたがいに向かう速さ
       const sa = a.vx * nx + a.vz * nz, sb = -(b.vx * nx + b.vz * nz);
-      if (sa + sb > RULES.bumpSpeed && a.bumpCool <= 0 && b.bumpCool <= 0 && s.phase === 'play') {
+      if (Math.max(sa, sb) > RULES.bumpSpeed && a.bumpCool <= 0 && b.bumpCool <= 0 && s.phase === 'play') {
         // 勢いのあったほうがぶつけた側。ぶつけられた側のかごからこぼれる
         const [hit, by, sign] = sa >= sb ? [j, i, 1] : [i, j, -1];
         const victim = R[hit];

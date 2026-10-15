@@ -334,6 +334,16 @@
     opacity: 0; transition: opacity .4s;
   }
   .howto.show { opacity: 1; animation: pulse 1.6s ease-in-out infinite; }
+  /* どこでもスティック: 触ったところに出る */
+  .stick {
+    position: fixed; width: 132px; height: 132px; margin: -66px 0 0 -66px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, rgba(255,255,255,.12) 55%, rgba(255,255,255,.35) 56%, rgba(255,255,255,.35) 60%, rgba(255,255,255,0) 61%);
+    border: 3px solid rgba(255,255,255,.75); box-shadow: 0 0 0 2px rgba(31,42,51,.25);
+  }
+  .stick i {
+    position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; border-radius: 50%; transform: translate(-50%, -50%);
+    background: rgba(255,255,255,.9); box-shadow: 0 3px 0 rgba(31,42,51,.3), inset 0 -4px 0 rgba(31,42,51,.12);
+  }
 
   /* いちじていし・結果: 島の画面と同じ、木わくの紙に木の板のボタン */
   .modal {
@@ -666,7 +676,8 @@
   </div>
   <div class="pops" id="popsC"></div>
   <div class="splash" id="splashC"></div>
-  <p class="howto" id="howtoC">ゆびで なぞったところへ はしる</p>
+  <p class="howto" id="howtoC">ゆびを おいて ずらすと はしる</p>
+  <div class="stick" id="stickC" hidden><i></i></div>
 </div>
 
 <section class="modal" id="pause" hidden aria-label="いちじていし">
