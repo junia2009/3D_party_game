@@ -318,7 +318,8 @@
   .chip.up b { display: inline-block; animation: chipup .3s; }
   @keyframes chipup { 40% { transform: scale(1.5); color: #d98a12; } }
   .chip.stun { animation: stun .2s infinite; }
-  .timer.rain { background: #d98a12; animation: chipup .5s infinite; }
+  .timer.rain { background: #d98a12; animation: rainbeat .5s infinite; } /* 雨のあいだは時計が脈打つ(字の色は変えない) */
+  @keyframes rainbeat { 40% { transform: scale(1.1); } }
   .pops { position: absolute; inset: 0; overflow: hidden; }
   .pop {
     position: absolute; transform: translate(-50%, -50%); font: 400 22px var(--font-display); color: #fff;

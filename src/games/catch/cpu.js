@@ -10,7 +10,7 @@
 // 乱数は CPU ごとに持つ(シードはゲームのシードと席から作る)。
 
 import { nextRandom, randRange, seedFrom } from '../../rng.js';
-import { ARENA_R, ITEMS, RULES, isHazard } from './rules.js';
+import { ARENA_R, ITEMS, RULES, isHazard, startPos } from './rules.js';
 
 export const PERSONALITIES = {
   // notice: 影に気づくまで(秒)/ guess: 落ちる場所の見まちがい(m)/ reachMax: 追いかける遠さ(m)
@@ -109,8 +109,11 @@ export function cpuInput(cpu, s, slot) {
     });
   }
   if (!best) {
-    // 何もなければ、広場のまん中寄りでぶらぶら待つ
-    best = cpu.target && Math.hypot(cpu.target.x, cpu.target.z) < 2.5 ? cpu.target : { x: randRange(cpu, -2, 2), z: randRange(cpu, -2, 2) };
+    // 何もなければ、自分の持ち場(スタートした場所のあたり)へもどって待つ。みんなでまん中に固まらないように
+    const home = startPos(slot, s.runners.length);
+    best = cpu.target && Math.hypot(cpu.target.x - home.x * 1.2, cpu.target.z - home.z * 1.2) < 1.2
+      ? cpu.target
+      : { x: home.x * 1.2 + randRange(cpu, -0.8, 0.8), z: home.z * 1.2 + randRange(cpu, -0.8, 0.8) };
   }
   cpu.target = best;
   if (cpu.seen.size > 60) cpu.seen.clear();

@@ -45,8 +45,9 @@ export const RULES = {
 // 何秒ごとに枝がゆれるか / 1回に何こ降るか / 何が降るか
 const RATE = {
   // 少なく大きく: ひとつひとつを見て取りに行けるくらい
-  normal: { every: [1.3, 1.9], count: [1, 3], gold: 0.07, worm: 0.08, cone: 0.08 },
-  rain: { every: [0.55, 0.75], count: [2, 4], gold: 0.12, worm: 0.06, cone: 0.06 },
+  // 1回のゆれは 1〜2 こにして、そのかわり回数を多く(同じ場所にまとめて降らせない)
+  normal: { every: [0.85, 1.25], count: [1, 2], gold: 0.07, worm: 0.08, cone: 0.08 },
+  rain: { every: [0.38, 0.52], count: [1, 3], gold: 0.12, worm: 0.06, cone: 0.06 },
 };
 
 // 席ごとのスタート位置: 広場のまん中を囲む円の上に等間隔(だれも有利にならないように)
@@ -87,6 +88,19 @@ function pickKind(s, rate) {
   return 'acorn';
 }
 
+// 枝がゆれる場所: 広場のふちまで、広さに合わせてまんべんなく。
+// 候補を 3 つ作って、まわりにいる子がいちばん少ないところにする(みんなで固まっていると取りにくい。散らばるほど得)
+function pickSpot(s) {
+  let best = null, bestCrowd = Infinity;
+  for (let i = 0; i < 3; i++) {
+    const a = nextRandom(s) * Math.PI * 2, d = Math.sqrt(nextRandom(s)) * (ARENA_R - 0.6);
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    const crowd = s.runners.filter((r) => Math.hypot(r.x - x, r.z - z) < 1.8).length;
+    if (crowd < bestCrowd) { best = { x, z }; bestCrowd = crowd; }
+  }
+  return best;
+}
+
 function insideArena(x, z, margin) {
   const d = Math.hypot(x, z), max = ARENA_R - margin;
   return d <= max ? { x, z } : { x: (x / d) * max, z: (z / d) * max };
@@ -113,8 +127,8 @@ export function step(s, inputs) {
     s.nextShake -= dt;
     if (s.nextShake <= 0) {
       s.nextShake = randRange(s, rate.every[0], rate.every[1]);
-      const a = nextRandom(s) * Math.PI * 2, d = Math.sqrt(nextRandom(s)) * (ARENA_R - 1.2);
-      const sh = { x: Math.cos(a) * d, z: Math.sin(a) * d, left: RULES.shakeTime, count: rate.count[0] + Math.floor(nextRandom(s) * (rate.count[1] - rate.count[0] + 1)) };
+      const spot = pickSpot(s);
+      const sh = { x: spot.x, z: spot.z, left: RULES.shakeTime, count: rate.count[0] + Math.floor(nextRandom(s) * (rate.count[1] - rate.count[0] + 1)) };
       s.shakes.push(sh);
       ev.push({ type: 'shake', x: sh.x, z: sh.z, count: sh.count });
     }
@@ -124,9 +138,10 @@ export function step(s, inputs) {
     if (sh.left > 0) continue;
     const rate = s.rain ? RATE.rain : RATE.normal;
     for (let k = 0; k < sh.count; k++) {
-      const a = nextRandom(s) * Math.PI * 2, d = Math.sqrt(nextRandom(s)) * 1.3;
+      // 2こ目からは、少しはなれたところへ、少しおくれて
+      const a = nextRandom(s) * Math.PI * 2, d = k === 0 ? 0 : randRange(s, 1.0, 1.9);
       const p = insideArena(sh.x + Math.cos(a) * d, sh.z + Math.sin(a) * d, 0.4);
-      const it = { id: s.nextId++, kind: pickKind(s, rate), x: p.x, z: p.z, left: RULES.fallTime + k * 0.16, ground: null, lock: 0 };
+      const it = { id: s.nextId++, kind: pickKind(s, rate), x: p.x, z: p.z, left: RULES.fallTime + k * 0.3, ground: null, lock: 0 };
       s.items.push(it);
       ev.push({ type: 'drop', id: it.id, kind: it.kind, x: it.x, z: it.z, left: it.left });
     }
