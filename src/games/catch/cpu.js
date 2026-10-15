@@ -83,8 +83,14 @@ export function cpuInput(cpu, s, slot) {
   for (const it of s.items) {
     if (isHazard(it.kind)) continue;
     const value = it.kind === 'gold' ? ITEMS.gold.value * p.greed / 2 : 1;
-    if (it.ground !== null) { consider(it.x, it.z, value * 0.9, it.ground); continue; }
     const v = view(cpu, p, it);
+    if (it.ground !== null) {
+      // 地面のどんぐりにも、気づくまで少しかかる(落ちた・こぼれたのを見てから)
+      v.groundAt ??= s.t;
+      if (s.t - v.groundAt < v.notice) continue;
+      consider(it.x, it.z, value * 0.9, it.ground);
+      continue;
+    }
     if (RULES.fallTime - it.left < v.notice) continue; // まだ気づいていない
     // 見まちがいは、落ちてくるにつれて小さくなる
     const k = Math.min(1, it.left / RULES.fallTime);

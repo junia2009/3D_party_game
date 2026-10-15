@@ -354,7 +354,10 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   // ── 入力: どこでもスティック ─────────────────────────
   // 画面のどこを触っても、そこがスティックのまん中になる。指をずらした向きへ、ずらした量に応じた速さで走る。
   // 指は画面の下のほうに置いたままでよい(広場をかくさない)。パソコンは矢印キー / WASD。
-  const STICK_R = 56; // これだけずらすと全速力(px)
+  const STICK_R = 56; // スティックの玉が動ける大きさ(px)
+  // 少しずらせば全速力(指先で 1cm たらず)。前は STICK_R いっぱいまでずらさないと全速力にならず、
+  // ふつうにずらすと半分くらいの速さしか出なくて、いつも全速力の CPU に追いつけなかった
+  const FULL = 26, DEAD = 6;
   const stickEl = $('stickC'), knobEl = stickEl.firstElementChild;
   const canSteer = (e) => mode === 'playing' && !paused && !e.target.closest('button, a');
   window.addEventListener('pointerdown', (e) => {
@@ -381,11 +384,13 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       dx = e.clientX - input.stick.ox;
       dy = e.clientY - input.stick.oy;
     }
-    const k = Math.min(1, Math.hypot(dx, dy) / STICK_R);
+    const dist = Math.hypot(dx, dy);
+    const k = Math.min(1, Math.max(0, (dist - DEAD) / (FULL - DEAD)));
     const a = Math.atan2(dy, dx);
     input.stick.dx = Math.cos(a) * k;
     input.stick.dy = Math.sin(a) * k;
-    knobEl.style.transform = `translate(calc(-50% + ${input.stick.dx * STICK_R}px), calc(-50% + ${input.stick.dy * STICK_R}px))`;
+    const shown = Math.min(dist, STICK_R);
+    knobEl.style.transform = `translate(calc(-50% + ${Math.cos(a) * shown}px), calc(-50% + ${Math.sin(a) * shown}px))`;
   });
   const release = (e) => {
     if (input.touch !== e.pointerId) return;
@@ -423,14 +428,15 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       sy = input.stick.dy;
     }
     const k = Math.hypot(sx, sy);
-    if (k < 0.12) return null; // まん中あたりは止まる
+    if (k < 0.05) return null; // まん中あたりは止まる
     camera.getWorldDirection(fwd);
     fwd.y = 0;
     fwd.normalize();
     // 画面の右 = カメラの右、画面の上 = カメラの前
     const wx = -fwd.z * sx + fwd.x * -sy, wz = fwd.x * sx + fwd.z * -sy;
     // ルールは「行き先」で動くので、ずらした量に応じた近さに行き先を置く(近いほどゆっくり)
-    return { x: me.x + wx * 0.6 * k, z: me.z + wz * 0.6 * k };
+    // (wx, wz はもう k 倍になっている。もう一度 k をかけると、少しのずらしでは止まってしまう)
+    return { x: me.x + wx * 0.6, z: me.z + wz * 0.6 };
   }
 
   // ── HUD ─────────────────────────────────────────────
@@ -827,6 +833,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     get intro() { return intro; },
     start: (key = picked) => { picked = key; return startGame(); },
     steer: (t) => { input.target = t; },
+    get stick() { return input.stick && { ...input.stick }; },
     // 描かずに、みんな CPU で sec 秒すすめる(途中の場面を撮る用)
     advance: (sec) => {
       const me = createCpu('normal', 1, 0);
