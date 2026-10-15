@@ -323,3 +323,68 @@ export function laneStones(g, laneEdges, from, to) {
   });
   g.add(mesh);
 }
+
+// ── 土の出た地面(大木の根元など) ──────────────────────
+// 縁がでこぼこの楕円。外側は透明
+export function dirtPatch(g, { x, z, rx, rz, seed = 3 }) {
+  const rand = makeRand(seed);
+  const S = 512;
+  const [c, ctx] = canvas(S, S);
+  ctx.fillStyle = '#bf9c70';
+  ctx.beginPath();
+  for (let i = 0; i <= 64; i++) {
+    const a = (i / 64) * Math.PI * 2;
+    const r = 0.86 + 0.06 * Math.sin(a * 3 + 1) + 0.04 * Math.sin(a * 7) + 0.03 * Math.sin(a * 13 + 2);
+    ctx.lineTo(S / 2 + Math.cos(a) * r * S / 2, S / 2 + Math.sin(a) * r * S / 2);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  for (let i = 0; i < 300; i++) {
+    ctx.fillStyle = rand() < 0.5 ? `rgba(120, 84, 50, ${0.06 + rand() * 0.08})` : `rgba(240, 214, 170, ${0.06 + rand() * 0.08})`;
+    ctx.beginPath();
+    ctx.ellipse(rand() * S, rand() * S, 8 + rand() * 40, 6 + rand() * 25, rand() * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let i = 0; i < 9000; i++) {
+    ctx.fillStyle = rand() < 0.5 ? `rgba(110, 78, 48, ${0.15 + rand() * 0.25})` : `rgba(250, 232, 200, ${0.2 + rand() * 0.3})`;
+    ctx.fillRect(rand() * S, rand() * S, 1 + rand() * 2, 1 + rand() * 2);
+  }
+  ctx.restore();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshToonMaterial({ map: tex, transparent: true, alphaTest: 0.5, gradientMap: toonGradient });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(rx * 2, rz * 2), m);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, 0.009, z);
+  g.add(mesh);
+}
+
+// ── 落ち葉(地面に散らばる) ────────────────────────────
+export function leafLitter(g, { count, place, colors, seed = 9 }) {
+  const rand = makeRand(seed);
+  // 葉っぱ1枚: 先のとがった平たい形
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -0.1);
+  shape.quadraticCurveTo(0.07, -0.02, 0, 0.1);
+  shape.quadraticCurveTo(-0.07, -0.02, 0, -0.1);
+  const geo = new THREE.ShapeGeometry(shape, 4);
+  geo.rotateX(-Math.PI / 2);
+  const mat = toonMaterial(0xffffff);
+  mat.side = THREE.DoubleSide;
+  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  const dummy = new THREE.Object3D();
+  const color = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    const [x, y, z] = place(rand);
+    dummy.position.set(x, y + 0.015 + rand() * 0.01, z);
+    dummy.rotation.set((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5);
+    dummy.scale.setScalar(0.8 + rand() * 0.9);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+    mesh.setColorAt(i, color.setHex(colors[Math.floor(rand() * colors.length)]));
+  }
+  g.add(mesh);
+  return mesh;
+}

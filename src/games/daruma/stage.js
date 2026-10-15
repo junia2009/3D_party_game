@@ -17,7 +17,9 @@
 import * as THREE from 'three';
 import { toonMaterial } from '../../runtime/models.js';
 import { LANES, TRACK } from './rules.js';
-import { buildPath as buildDirtPath, grassTexture, laneStones, scatterFoliage } from './ground.js';
+import { buildPath as buildDirtPath, dirtPatch, grassTexture, laneStones, leafLitter, scatterFoliage } from './ground.js';
+import { buildForestTrees, buildOak as buildOakTree } from './trees.js';
+import { mergeStatic } from '../../runtime/merge.js';
 
 export const laneX = (slot) => (slot - (LANES - 1) / 2) * 1.15;
 export const PATH_WIDTH = LANES * 1.15 + 0.9;
@@ -65,7 +67,7 @@ export function groundHeight(x, z) {
 }
 
 function buildTerrain(g) {
-  const size = 420, seg = 160;
+  const size = 420, seg = 120; // 2.6m ごとに1頂点。広場は平らなので、これで足りる
   const geo = new THREE.PlaneGeometry(size, size, seg, seg);
   geo.rotateX(-Math.PI / 2);
   geo.translate(30, 0, -90);
@@ -98,11 +100,7 @@ let pathEdge = () => PATH_WIDTH / 2;
 function buildPath(g) {
   pathEdge = buildDirtPath(g, { width: PATH_WIDTH, from: PATH_FROM, to: PATH_TO, laneXs: Array.from({ length: LANES }, (_, i) => laneX(i)) });
   // 大木の根元とゴールのまわりは土が広く出ている
-  const root = new THREE.Mesh(new THREE.CircleGeometry(1, 40), mat(0xbf9c70));
-  root.rotation.x = -Math.PI / 2;
-  root.scale.set(7, 3.6, 1);
-  root.position.set(-2.4, 0.008, -TRACK - 2.6);
-  g.add(root);
+  dirtPatch(g, { x: -2.6, z: -TRACK - 3, rx: 7.5, rz: 4.2 });
   // レーンの区切り(小石の列)
   laneStones(g, Array.from({ length: LANES + 1 }, (_, i) => (i - LANES / 2) * 1.15), -0.3, -TRACK + 0.2);
   for (const z of [0, -TRACK]) {
@@ -152,37 +150,16 @@ function buildGates(g) {
 
 // ── どんぐりの大木 ─────────────────────────────────
 function buildOak(g) {
-  const bark = mat(0x6f4f37);
-  const base = new THREE.Vector3(OAK.x, 0, OAK.z);
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(OAK.trunkR * 0.75, OAK.trunkR * 1.15, 9, 20), bark);
-  trunk.position.set(OAK.x, 4.5, OAK.z);
-  g.add(trunk);
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 + 0.3;
-    const out = new THREE.Vector3(Math.cos(a) * 3.0, 0, Math.sin(a) * 3.0).add(base);
-    g.add(limb(bark, new THREE.Vector3(OAK.x, 1.4, OAK.z), out, 0.5, 0.15));
-  }
-  // 先生の枝: 幹から道の真上へ。少し上がってから水平に
-  const from = new THREE.Vector3(OAK.x + 0.9, PERCH.y - 0.6, OAK.z + 0.4);
-  const mid = new THREE.Vector3(-2.6, PERCH.y - 0.15, PERCH.z - 0.9);
-  const tip = new THREE.Vector3(1.6, PERCH.y - 0.18, PERCH.z - 0.1);
-  g.add(limb(bark, from, mid, 0.42, 0.3), limb(bark, mid, tip, 0.3, 0.14));
-  // 上へ伸びる枝
-  g.add(limb(bark, new THREE.Vector3(OAK.x, 7, OAK.z), new THREE.Vector3(OAK.x + 3.5, 10, OAK.z + 2), 0.6, 0.25));
-  g.add(limb(bark, new THREE.Vector3(OAK.x, 7.5, OAK.z), new THREE.Vector3(OAK.x - 3, 10.5, OAK.z - 1.5), 0.6, 0.25));
-  // 葉の茂み。ゴール前 6m(どんぐりが落ちてくるところ)の上まで張り出す
-  const leafMat = mat(0x4f9a4a);
-  const clumps = [
-    [OAK.x, 11, OAK.z, 5], [OAK.x - 3.5, 9.5, OAK.z - 2, 3.6], [OAK.x + 4, 10.5, OAK.z + 1.5, 4],
-    [-1.2, 9.2, -TRACK + 0.5, 3.6], [1.8, 8.8, -TRACK - 1.5, 3.2], [-0.5, 8.6, -TRACK + 4.5, 3.2],
-    [-4, 8.8, -TRACK + 3, 3.2], [OAK.x + 1, 13, OAK.z - 2, 3.6],
-  ];
-  for (const [x, y, z, r] of clumps) {
-    const cl = new THREE.Mesh(SPHERE, leafMat);
-    cl.scale.set(r, r * 0.75, r);
-    cl.position.set(x, y, z);
-    g.add(cl);
-  }
+  buildOakTree(g, OAK, PERCH);
+  // 根元の落ち葉と、落ちたどんぐりの色の葉
+  leafLitter(g, {
+    count: 260,
+    colors: [0xc98a3a, 0xa86a2c, 0xdcae4e, 0x8f6a3a, 0x7f8f3a],
+    place: (rand) => {
+      const a = rand() * Math.PI * 2, d = OAK.trunkR * 1.1 + Math.pow(rand(), 0.7) * 5.5;
+      return [OAK.x + Math.cos(a) * d, 0, OAK.z + Math.sin(a) * d * 0.8];
+    },
+  });
 }
 
 // ── 観客席(切り株と根っこ) ───────────────────────────
@@ -204,50 +181,37 @@ function buildSeats(g) {
 }
 
 // ── 森・谷・山 ─────────────────────────────────────
-function tree(material, trunkMat, x, z, h) {
-  const t = new THREE.Group();
-  const trunk = new THREE.Mesh(CYL, trunkMat);
-  trunk.scale.set(0.12 * h ** 0.8, h * 0.5, 0.12 * h ** 0.8);
-  trunk.position.y = h * 0.25;
-  const crown = new THREE.Mesh(SPHERE, material);
-  crown.scale.set(h * 0.33, h * 0.45, h * 0.33);
-  crown.position.y = h * 0.62;
-  t.add(trunk, crown);
-  t.position.set(x, groundHeight(x, z) - 0.2, z);
-  return t;
-}
-
 function buildForest(g, rand) {
-  const trunkMat = mat(0x6e4d35);
-  const greens = [0x3f7f45, 0x4a8f4b, 0x5a9d52, 0x37703d].map(mat);
-  const add = (x, z, h) => g.add(tree(greens[Math.floor(rand() * greens.length)], trunkMat, x, z, h));
+  const spots = [];
+  const add = (x, z, h) => spots.push({ x, y: groundHeight(x, z), z, h, kind: rand() < 0.3 ? 'pine' : 'broad' });
   // 左の森(大木のうしろまで)
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 170; i++) {
     const x = -8 - rand() * 50;
     const z = 14 - rand() * 60;
-    if (x > -10 && z < -18 && z > -32) continue; // 大木のまわりはあける
+    if (x > -11 && z < -17 && z > -33) continue; // 大木のまわりはあける
     add(x, z, 4.5 + rand() * 5);
   }
-  // 手前の森(カメラのうしろ)
-  for (let i = 0; i < 70; i++) add(-30 + rand() * 60, 8 + rand() * 25, 4.5 + rand() * 4);
-  // 右の斜面と奥の斜面: まばらに
-  for (let i = 0; i < 40; i++) {
-    const x = 9 + rand() * 40;
-    const z = 6 - rand() * 50;
-    add(x, z, 3.5 + rand() * 4);
+  // 手前の森(カメラのうしろ)。小道の上はあける
+  for (let i = 0; i < 90; i++) {
+    const x = -30 + rand() * 60, z = 8 + rand() * 25;
+    if (Math.abs(x) < 5) continue;
+    add(x, z, 4.5 + rand() * 4);
   }
+  // 右の斜面と奥の斜面: まばらに
+  for (let i = 0; i < 40; i++) add(9 + rand() * 40, 6 - rand() * 50, 3.5 + rand() * 4);
   for (let i = 0; i < 30; i++) {
     const x = -20 + rand() * 40;
     if (Math.abs(x) < 9) continue; // 先生のうしろはあけておく(シルエットを谷と空に抜く)
     add(x, -30 - rand() * 25, 3.5 + rand() * 4);
   }
-  // 谷の木立(遠いので小さな塊)
-  for (let i = 0; i < 160; i++) {
+  // 谷の木立
+  for (let i = 0; i < 200; i++) {
     const x = -60 + rand() * 200;
     const z = -40 - rand() * 110;
     if (groundHeight(x, z) > -20) continue;
     add(x, z, 3 + rand() * 3);
   }
+  buildForestTrees(g, spots);
 }
 
 function buildRiver(g) {
@@ -352,6 +316,7 @@ export function buildStage(scene) {
   buildForest(g, rand);
   buildRiver(g);
   buildMountains(g, rand);
+  mergeStatic(g); // 動かないものはまとめて描く
   scene.add(g);
 
   let gimmicks = null;

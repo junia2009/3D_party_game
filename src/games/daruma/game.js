@@ -362,6 +362,9 @@ function updateRunners(dt) {
     } else if (s.phase === 'turn' || s.phase === 'watch') {
       face = 'surprised';
     }
+    // 決着したら、勝った人はみんなのほうへふり向く
+    const turn = done && s.winner === i ? 0 : Math.PI;
+    v.model.root.rotation.y += (turn - v.model.root.rotation.y) * (1 - Math.exp(-dt * 6));
     v.model.play(clip, { timeScale });
     v.model.setFace(face);
     v.model.update(dt);
@@ -382,10 +385,10 @@ function updateCamera(dt, snap = false) {
     // 決着: 勝った人を正面(先生の側)から映す
     const w = s.winner;
     const wz = -game.runners[w].x;
-    // 真正面は先生の陰になるので、先生から離れる側の斜め前から
-    const side = laneX(w) > 0 ? 1 : -1;
-    pos = new THREE.Vector3(laneX(w) + side * (portrait ? 2.2 : 2.8), 2.0, wz - (portrait ? 3.4 : 2.6));
-    look = new THREE.Vector3(laneX(w), 0.95, wz);
+    // 勝った人はコースのほうへふり向いて喜ぶ。それをコース側から、大木と先生を背景に映す
+    // (ゴールの向こう側から映すと、大木の根や枝がカメラにかぶる)
+    pos = new THREE.Vector3(laneX(w) * 0.6, 1.9, wz + (portrait ? 5.2 : 4.2));
+    look = new THREE.Vector3(laneX(w) * 0.9, 1.3, wz - 1);
   } else if (mode === 'playing') {
     // 自分のうしろ。5レーン全部が入るよう引きぎみにして、少しだけ自分の側へ寄せる
     z = -game.runners[0].x;
@@ -455,6 +458,8 @@ window.daruma = {
   start: () => startGame(),
   hold: (on) => press(on),
   camera,
+  renderer,
+  scene,
   freeCamera: (on) => { freeCamera = on; },
 };
 
