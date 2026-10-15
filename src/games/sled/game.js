@@ -54,38 +54,124 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     o.start(t);
     o.stop(t + len + 0.02);
   }
-  // すべる音: 雑音をずっと流して、速さで大きさと高さを変える
+  // 雑音(ふつうの雑音と、落ち葉をふむ「シャカシャカ」の粒)。音を出せるようになったら1回だけ作る
+  let noise = null;
+  function noiseBufs() {
+    if (noise) return noise;
+    const len = audio.sampleRate * 2;
+    const white = audio.createBuffer(1, len, audio.sampleRate);
+    const w = white.getChannelData(0);
+    for (let i = 0; i < len; i++) w[i] = Math.random() * 2 - 1;
+    // 落ち葉: 短い「シャッ」がばらばらにたくさん(ふむたびに鳴る粒)+うすい雑音
+    const leaf = audio.createBuffer(1, len, audio.sampleRate);
+    const l = leaf.getChannelData(0);
+    for (let i = 0; i < len; i++) l[i] = (Math.random() * 2 - 1) * 0.18;
+    for (let k = 0; k < 260; k++) {
+      const at = Math.floor(Math.random() * len), dur = Math.floor(audio.sampleRate * (0.004 + Math.random() * 0.02)), amp = 0.4 + Math.random() * 0.6;
+      for (let j = 0; j < dur; j++) l[(at + j) % len] += (Math.random() * 2 - 1) * amp * (1 - j / dur) ** 2;
+    }
+    noise = { white, leaf };
+    return noise;
+  }
+  // 雑音を短く鳴らす(ぼふっ・パン・シュイーン・わーっ)
+  function hiss({ type = 'bandpass', f0, f1 = f0, q = 1, len, gain = 0.1, at = 0, attack = 0.005, buf = 'white' }) {
+    if (!audio || gain <= 0) return;
+    const t = audio.currentTime + at;
+    const src = audio.createBufferSource();
+    src.buffer = noiseBufs()[buf];
+    src.loop = true;
+    const f = audio.createBiquadFilter();
+    f.type = type;
+    f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t);
+    f.frequency.exponentialRampToValueAtTime(f1, t + len);
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    src.connect(f).connect(g).connect(audio.destination);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + len + 0.05);
+  }
+
+  // すべりつづける音。3つを重ねて、速さ・曲がり・こすれで大きさと高さを変える
+  //   leaves: 落ち葉をふむシャカシャカ(道のでこぼこで、こきざみにゆれる。速いほどこまかく)
+  //   wind:   速いときのゴォー
+  //   scrape: 土手をこするザザッ
   let slide = null;
   function startSlide() {
     if (!audio || slide) return;
-    const len = 2;
-    const buf = audio.createBuffer(1, audio.sampleRate * len, audio.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    const src = audio.createBufferSource();
-    src.buffer = buf;
-    src.loop = true;
-    const f = audio.createBiquadFilter();
-    f.type = 'bandpass';
-    f.Q.value = 0.8;
-    const g = audio.createGain();
-    g.gain.value = 0;
-    src.connect(f).connect(g).connect(audio.destination);
-    src.start();
-    slide = { src, f, g };
+    const { white, leaf } = noiseBufs();
+    const layer = (buf, type, freq, q) => {
+      const src = audio.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const f = audio.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = audio.createGain();
+      g.gain.value = 0;
+      src.connect(f).connect(g).connect(audio.destination);
+      src.start(0, Math.random() * 1.5);
+      return { src, f, g };
+    };
+    const leaves = layer(leaf, 'bandpass', 2500, 0.7);
+    const wind = layer(white, 'lowpass', 400, 0.5);
+    const scrape = layer(leaf, 'bandpass', 700, 1.2);
+    // でこぼこのゆれ: 落ち葉の音の大きさを、ゆっくりした波でゆらす
+    const lfo = audio.createOscillator(), lg = audio.createGain();
+    lfo.frequency.value = 6;
+    lg.gain.value = 0;
+    const shake = audio.createGain();
+    shake.gain.value = 1;
+    leaves.g.disconnect();
+    leaves.g.connect(shake).connect(audio.destination);
+    lfo.connect(lg).connect(shake.gain);
+    lfo.start();
+    slide = { leaves, wind, scrape, lfo, lg };
   }
   function stopSlide() {
     if (!slide) return;
-    slide.src.stop();
+    for (const l of [slide.leaves, slide.wind, slide.scrape]) l.src.stop();
+    slide.lfo.stop();
     slide = null;
   }
+  function updateSlide(dt, me, lean) {
+    if (!slide) return;
+    const on = mode === 'playing' && me.air <= 0 && me.finish === null;
+    const k = on ? Math.min(1, me.v / 12) : 0;
+    const ease = (p, to, rate = 8) => { p.value += (to - p.value) * Math.min(1, dt * rate); };
+    ease(slide.leaves.g.gain, k * (0.07 + Math.abs(lean) * 0.05) * (me.tuck ? 0.75 : 1));
+    ease(slide.leaves.f.frequency, 1600 + k * 2600 + Math.abs(lean) * 800);
+    ease(slide.lfo.frequency, 4 + k * 10);
+    ease(slide.lg.gain, k * 0.35);
+    const fast = on ? Math.max(0, Math.min(1, (me.v - 8) / 6)) + (me.boost > 0 ? 0.5 : 0) : 0;
+    ease(slide.wind.g.gain, fast * 0.09, 4);
+    ease(slide.wind.f.frequency, 300 + fast * 700 + (me.tuck ? 200 : 0), 4);
+    ease(slide.scrape.g.gain, on && me.scrape ? 0.16 : 0, 14);
+  }
+
   const sfx = {
     koron: () => { voice({ type: 'triangle', pts: [[0, 880], [0.05, 830]], len: 0.08, gain: 0.1 }); voice({ type: 'triangle', pts: [[0, 1320]], len: 0.14, gain: 0.08, at: 0.06 }); },
-    jump: () => voice({ pts: [[0, 220], [0.25, 660]], len: 0.3, gain: 0.12 }),
-    land: () => voice({ type: 'triangle', pts: [[0, 160], [0.1, 70]], len: 0.14, gain: 0.12 }),
+    // どんぐりで加速: シュイーン(上がっていく風)
+    zoom: () => { hiss({ f0: 500, f1: 3500, q: 3, len: 0.45, gain: 0.08, attack: 0.08 }); voice({ type: 'sine', pts: [[0, 600], [0.35, 1400]], len: 0.4, gain: 0.04, at: 0.05 }); },
+    // キノコ: ぼよーん(ばねで上がる)
+    jump: () => {
+      voice({ type: 'triangle', pts: [[0, 140], [0.08, 90]], len: 0.12, gain: 0.14 });
+      voice({ pts: [[0, 260], [0.35, 780]], len: 0.45, gain: 0.11, at: 0.04, vib: 30, vibRate: 14 });
+    },
+    // 着地: ぼふっ(落ち葉の山に落ちる)
+    land: () => { hiss({ type: 'lowpass', f0: 1800, f1: 300, len: 0.3, gain: 0.2, buf: 'leaf' }); voice({ type: 'sine', pts: [[0, 110], [0.12, 55]], len: 0.16, gain: 0.13 }); },
     bump: () => voice({ pts: [[0, 180], [0.08, 380], [0.25, 150]], len: 0.28, gain: 0.1, vib: 25, vibRate: 16 }),
     beep: (hi) => voice({ type: 'square', pts: [[0, hi ? 1046 : 523]], len: hi ? 0.4 : 0.15, gain: 0.06 }),
     fanfare: () => [784, 988, 1175, 1568].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.3 + i * 0.1, gain: 0.1, at: i * 0.13 })),
+    // テープが切れる: パン!
+    snap: () => { hiss({ type: 'highpass', f0: 2500, len: 0.12, gain: 0.16, attack: 0.002 }); voice({ type: 'square', pts: [[0, 1600], [0.05, 600]], len: 0.06, gain: 0.03 }); },
+    // 観客の歓声: わーっ(人の声くらいの高さの雑音を、いくつかずらして重ねる)
+    cheer: (gain = 0.06) => {
+      for (let i = 0; i < 5; i++) hiss({ f0: 700 + i * 180, f1: 900 + i * 150, q: 4, len: 1.2 + Math.random() * 0.5, gain: gain * (0.6 + Math.random() * 0.4), at: i * 0.05, attack: 0.15 });
+    },
   };
 
   // ── 読みこみ: 観客(ゴールのまわり)と、ゴールの門の上の先生 ─────────
@@ -415,7 +501,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     if (mode === 'idle') { paused = false; return; }
     paused = on && mode === 'playing';
     $('pause').hidden = !paused;
-    if (paused) { input.pointers.clear(); if (slide) slide.g.gain.value = 0; }
+    if (paused) { input.pointers.clear(); if (slide) for (const l of [slide.leaves, slide.wind, slide.scrape]) l.g.gain.value = 0; }
   }
   const mine = (fn) => () => { if (mode !== 'idle') fn(); };
   $('pauseBtnS').addEventListener('click', mine(() => setPaused(true)));
@@ -519,6 +605,8 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
           if (e.slot === 0) {
             acornMeshes[e.i].visible = false;
             sfx.koron();
+            // 加速のシュイーンは、続けて拾ったときに鳴りすぎないように間をあける
+            if (s.t - (game.zoomAt ?? -9) > 1.2) { sfx.zoom(); game.zoomAt = s.t; }
             spray(acornMeshes[e.i].position, 4, 1.5);
           }
           break;
@@ -546,7 +634,8 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
           }
           for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 2; }
           // 1位がテープを切る。紙吹雪は1位と自分のときに
-          if (!tape.broken) { tape.cut(); spray(r.holder.position.clone().setY(r.holder.position.y + 0.9), 6, 2); }
+          sfx.cheer(e.slot === 0 || !tape.broken ? 0.07 : 0.035);
+          if (!tape.broken) { sfx.snap(); tape.cut(); spray(r.holder.position.clone().setY(r.holder.position.y + 0.9), 6, 2); }
           if (e.slot === 0 || ranking(s)[0] === e.slot && s.runners.filter((o) => o.finish !== null).length === 1) confetti(e.slot === 0 ? 90 : 60);
           owl.play('cheer');
           owlCheer = 2.5;
@@ -653,13 +742,8 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     });
     // どんぐりはくるくる回る
     for (const m of acornMeshes) m.rotation.y += dt * 2;
-    // すべる音: 自分の速さで
-    if (slide) {
-      const me = s.runners[0];
-      const k = mode === 'playing' && me.air <= 0 && me.finish === null ? Math.min(1, me.v / 11) : 0;
-      slide.g.gain.value += (k * 0.12 - slide.g.gain.value) * Math.min(1, dt * 8);
-      slide.f.frequency.value = 600 + k * 1600;
-    }
+    // すべる音: 自分の速さ・曲がり・こすれで
+    updateSlide(dt, s.runners[0], game.runners[0].lean);
   }
 
   let freeCamera = false;
