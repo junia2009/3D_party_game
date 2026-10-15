@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { toonMaterial } from '../../runtime/models.js';
 import { LANES, TRACK } from './rules.js';
+import { buildPath as buildDirtPath, grassTexture, laneStones, scatterFoliage } from './ground.js';
 
 export const laneX = (slot) => (slot - (LANES - 1) / 2) * 1.15;
 export const PATH_WIDTH = LANES * 1.15 + 0.9;
@@ -57,7 +58,9 @@ export function groundHeight(x, z) {
   const left = x < -10 ? Math.min(5, (-10 - x) * 0.12) : 0;
   // 広場の外だけ、ゆるくうねらせる
   const outside = smooth((Math.abs(x) - 8) / 4) + smooth((-26 - z) / 4) + smooth((z - 8) / 4);
-  const wave = Math.min(1, outside) * (Math.sin(x * 0.21) * 0.6 + Math.sin(z * 0.17 + 1.3) * 0.5);
+  // 小道ぞい(スタートのうしろへ続く部分)は平らなまま。うねると道が地面に埋もれる
+  const alongPath = z > 0 ? smooth((Math.abs(x) - 4) / 3) : 1;
+  const wave = Math.min(1, outside) * alongPath * (Math.sin(x * 0.21) * 0.6 + Math.sin(z * 0.17 + 1.3) * 0.5);
   return drop + left + wave;
 }
 
@@ -83,15 +86,17 @@ function buildTerrain(g) {
   geo.computeVertexNormals();
   const m = toonMaterial(0xffffff);
   m.vertexColors = true;
+  m.map = grassTexture();
+  m.map.repeat.set(size / 6, size / 6); // 6m ごとにくり返す
   g.add(new THREE.Mesh(geo, m));
 }
 
 // ── 小道 ───────────────────────────────────────────
+const PATH_FROM = 16, PATH_TO = -TRACK - 3.5; // スタートのうしろは森の中へ続いていく
+let pathEdge = () => PATH_WIDTH / 2;
+
 function buildPath(g) {
-  const path = new THREE.Mesh(new THREE.PlaneGeometry(PATH_WIDTH, TRACK + 8), mat(0xc9a77a));
-  path.rotation.x = -Math.PI / 2;
-  path.position.set(0, 0.01, -TRACK / 2 + 1);
-  g.add(path);
+  pathEdge = buildDirtPath(g, { width: PATH_WIDTH, from: PATH_FROM, to: PATH_TO, laneXs: Array.from({ length: LANES }, (_, i) => laneX(i)) });
   // 大木の根元とゴールのまわりは土が広く出ている
   const root = new THREE.Mesh(new THREE.CircleGeometry(1, 40), mat(0xbf9c70));
   root.rotation.x = -Math.PI / 2;
@@ -99,22 +104,22 @@ function buildPath(g) {
   root.position.set(-2.4, 0.008, -TRACK - 2.6);
   g.add(root);
   // レーンの区切り(小石の列)
-  const pebbleGeo = new THREE.SphereGeometry(0.06, 8, 6);
-  const pebbleMat = mat(0xeee6d6);
-  for (let i = 0; i <= LANES; i++) {
-    const x = (i - LANES / 2) * 1.15;
-    for (let z = -0.4; z > -TRACK; z -= 0.55) {
-      const p = new THREE.Mesh(pebbleGeo, pebbleMat);
-      p.position.set(x, 0.02, z);
-      p.scale.y = 0.5;
-      g.add(p);
-    }
-  }
+  laneStones(g, Array.from({ length: LANES + 1 }, (_, i) => (i - LANES / 2) * 1.15), -0.3, -TRACK + 0.2);
   for (const z of [0, -TRACK]) {
     const line = new THREE.Mesh(new THREE.BoxGeometry(PATH_WIDTH - 0.4, 0.02, 0.12), mat(0xffffff));
     line.position.set(0, 0.02, z);
     g.add(line);
   }
+}
+
+// 草や石を置いてよい場所か(道・大木の根元・観客席・旗の柱を避ける)
+function isFree(x, z) {
+  if (z < PATH_FROM + 0.5 && z > PATH_TO - 0.5 && Math.abs(x) < pathEdge(z, Math.sign(x) || 1) + 0.05) return false;
+  if (Math.hypot(x - OAK.x, z - OAK.z) < 3.4) return false;
+  if (Math.hypot((x + 2.4) / 7, (z + TRACK + 2.6) / 3.6) < 1) return false;
+  if (SEATS.some((s) => Math.hypot(x - s.x, z - s.z) < 0.7)) return false;
+  if (Math.abs(z - 0.3) < 0.3 && Math.abs(Math.abs(x) - (PATH_WIDTH / 2 + 0.2)) < 0.3) return false;
+  return groundHeight(x, z) > -4;
 }
 
 // ── スタートの旗とゴールのテープ ───────────────────────
@@ -343,6 +348,7 @@ export function buildStage(scene) {
   buildGates(g);
   buildOak(g);
   buildSeats(g);
+  scatterFoliage(g, { isFree, heightAt: groundHeight, pathEdge, pathFrom: PATH_FROM, pathTo: PATH_TO });
   buildForest(g, rand);
   buildRiver(g);
   buildMountains(g, rand);
