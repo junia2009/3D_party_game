@@ -772,6 +772,16 @@
   .rtip.good { color: #ffd24a; }
   .rtip.show { animation: rtip 1.4s ease-out forwards; }
   @keyframes rtip { 0% { opacity: 0; transform: translateY(8px) scale(.8); } 15% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
+  /* 順位の入れかわり: 順位の下に、小さな札 */
+  .notice {
+    position: absolute; left: max(12px, env(safe-area-inset-left, 0px)); top: calc(env(safe-area-inset-top, 0px) + 62px);
+    padding: 3px 10px; border-radius: 999px; background: var(--hud-paper); box-shadow: 0 3px 0 rgba(31,42,51,.18);
+    font: 800 14px var(--font-body); color: var(--hud-ink); opacity: 0; pointer-events: none;
+  }
+  .notice.up { color: #c27a00; }
+  .notice.down { color: #6b7a84; }
+  .notice.show { animation: notice 1.6s ease-out forwards; }
+  @keyframes notice { 0% { opacity: 0; transform: translateX(-12px); } 12% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
   .pop.bang { color: #ffd24a; font-size: 30px; -webkit-text-stroke: 6px #5a3a1c; }
   .pop.don { color: #ff8a6a; font-size: 34px; -webkit-text-stroke: 6px #6a2a1c; }
   .sprayfx {
@@ -997,6 +1007,7 @@
     <button class="pausebtn" id="pauseBtnK" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
   </div>
   <div class="progress" id="trackK"></div>
+  <div class="notice" id="noticeK"></div>
   <div class="pops" id="popsK"></div>
   <div class="splash" id="splashK"></div>
   <p class="howto" id="howtoK">左・右を こうごに たたいて こぐ</p>

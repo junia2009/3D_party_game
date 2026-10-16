@@ -12,7 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonGradient, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, ranking, step } from './rules.js';
-import { FALLS, LENGTH, LOGS, LOG_R, TUNNEL, WHIRLS, currentAt, logX } from './course.js';
+import { FALLS, LENGTH, LOGS, LOG_R, POND_END, TUNNEL, WHIRLS, currentAt, logX } from './course.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, buildStage, coursePoint, courseHeading, seatPoint } from './stage.js';
 import { PADDLE_TIP, makePaddle, makeRaft, wakeTexture } from './raft.js';
@@ -86,6 +86,13 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     beep: (hi) => voice({ type: 'square', pts: [[0, hi ? 1046 : 523]], len: hi ? 0.4 : 0.15, gain: 0.06 }),
     fanfare: () => [784, 988, 1175, 1568].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.3 + i * 0.1, gain: 0.1, at: i * 0.13 })),
     finish: () => [659, 784].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.35, gain: 0.07, at: i * 0.16 })),
+    // ラストスパート: 太鼓
+    drums: () => { for (let i = 0; i < 8; i++) { voice({ type: 'sine', pts: [[0, i % 2 ? 110 : 90], [0.1, 55]], len: 0.16, gain: 0.12, at: i * 0.12 }); } voice({ type: 'triangle', pts: [[0, 523]], len: 0.3, gain: 0.06, at: 0.96 }); voice({ type: 'triangle', pts: [[0, 784]], len: 0.5, gain: 0.07, at: 1.08 }); },
+    pass: () => [880, 1175].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.14, gain: 0.06, at: i * 0.07 })),
+    passed: () => [440, 330].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.16, gain: 0.05, at: i * 0.09 })),
+    creak: () => { voice({ type: 'sawtooth', pts: [[0, 180], [0.6, 120]], len: 0.7, gain: 0.025 }); voice({ type: 'sawtooth', pts: [[0, 240], [0.5, 170]], len: 0.6, gain: 0.015, at: 0.1 }); },
+    slap: () => { hiss({ type: 'lowpass', f0: 2000, f1: 500, len: 0.25, gain: 0.08 }); voice({ type: 'sine', pts: [[0, 200], [0.08, 90]], len: 0.12, gain: 0.08 }); },
+    bird: () => { const f = 2300 + Math.random() * 1000; const n = 2 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) voice({ type: 'sine', pts: [[0, f], [0.07, f * 1.25]], len: 0.09, gain: 0.016, at: i * 0.13 }); },
     cheer: (g = 0.05) => { for (let i = 0; i < 5; i++) hiss({ f0: 700 + i * 180, f1: 900 + i * 150, q: 4, len: 1.3, gain: g, at: i * 0.05, attack: 0.15 }); },
   };
   // 川の音: ずっと流れている(急流で大きく)
@@ -150,6 +157,120 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     scene.add(g);
     return { lg, g };
   });
+
+  // ── ビーバー: ダムの上で応援する2ひき。ゴールした子がいると、とびはねて しっぽで水をたたく ──────
+  function makeBeaver() {
+    const g = new THREE.Group();
+    const fur = toonMaterial(0x8a5a32), light = toonMaterial(0xc89a62), dark = toonMaterial(0x3a2414);
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), fur);
+    body.scale.set(1, 1.2, 0.9);
+    body.position.y = 0.5;
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 8), light);
+    belly.scale.set(1, 1.2, 0.6);
+    belly.position.set(0, 0.45, 0.2);
+    const head = new THREE.Group();
+    head.position.y = 1.05;
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), fur);
+    const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), light);
+    muzzle.scale.set(1.2, 0.8, 0.9);
+    muzzle.position.set(0, -0.06, 0.24);
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), dark);
+    nose.position.set(0, 0.0, 0.37);
+    const teeth = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.03), toonMaterial(0xfffaf0));
+    teeth.position.set(0, -0.15, 0.33);
+    head.add(skull, muzzle, nose, teeth);
+    for (const sd of [-1, 1]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), dark);
+      eye.position.set(sd * 0.12, 0.08, 0.25);
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), fur);
+      ear.position.set(sd * 0.22, 0.22, 0);
+      head.add(eye, ear);
+    }
+    const arms = [-1, 1].map((sd) => {
+      const a = new THREE.Group();
+      a.position.set(sd * 0.36, 0.75, 0.12);
+      const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.22, 3, 6), fur);
+      m.position.y = -0.14;
+      a.add(m);
+      g.add(a);
+      return a;
+    });
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.15, -0.35);
+    const paddle = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 0.6), toonMaterial(0x4a3426));
+    paddle.position.z = -0.3;
+    tail.add(paddle);
+    g.add(body, belly, head, tail);
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return { g, head, arms, tail, jump: 0, t: Math.random() * 6 };
+  }
+  const beavers = [-1, 1].map((sd) => {
+    const b = makeBeaver();
+    b.g.position.copy(coursePoint(POND_END + 0.4, sd * 1.6, 1.25));
+    b.g.rotation.y = courseHeading(POND_END).yaw + Math.PI; // 上流(ゴールのほう)を向く
+    scene.add(b.g);
+    return b;
+  });
+  function cheerBeavers() { for (const b of beavers) b.jump = 1.6; }
+  function updateBeavers(dt) {
+    for (const b of beavers) {
+      b.t += dt;
+      const j = b.jump > 0 ? Math.abs(Math.sin(b.t * 9)) * 0.35 : 0;
+      b.g.children[0].position.y = 0.5; // 体
+      b.g.position.y = coursePoint(POND_END + 0.4, 0, 1.25).y + j;
+      b.head.rotation.set(Math.sin(b.t * 1.7) * 0.08, Math.sin(b.t * 0.9) * 0.3, 0);
+      b.arms.forEach((a, k) => { a.rotation.z = (k ? -1 : 1) * (b.jump > 0 ? 2.4 + Math.sin(b.t * 12) * 0.3 : 0.2); });
+      // しっぽで水をたたく
+      const slap = b.jump > 0 ? Math.max(0, Math.sin(b.t * 9)) : Math.max(0, Math.sin(b.t * 1.3)) * 0.2;
+      b.tail.rotation.x = -0.2 - slap * 0.9;
+      if (b.jump > 0) {
+        b.jump -= dt;
+        if (Math.sin(b.t * 9) > 0.98 && Math.random() < 0.5) { spray(b.g.localToWorld(tmp.set(0, 0.1, -0.9)), 5, 1.4, 1); if (b.g.position.distanceTo(camera.position) < 30) sfx.slap(); }
+      }
+    }
+  }
+
+  // ── 紙ふぶき(葉っぱ色): ゴールの門の上から ふきだす ─────────────────
+  const CONF_N = 120;
+  const conf = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.12, 0.08), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), CONF_N);
+  conf.frustumCulled = false;
+  conf.count = 0;
+  scene.add(conf);
+  const confP = Array.from({ length: CONF_N }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(), w: new THREE.Vector3(), t: 9 }));
+  const CONF_COLORS = [0xffd24a, 0xff6b5a, 0x6cc4ff, 0x8fdc6a, 0xff9ad5, 0xf3a24a].map((c) => new THREE.Color(c));
+  const confM = new THREE.Matrix4(), confQ = new THREE.Quaternion(), confS = new THREE.Vector3();
+  function confetti() {
+    const head = courseHeading(LENGTH);
+    confP.forEach((c, i) => {
+      c.t = 0;
+      c.p.copy(coursePoint(LENGTH, (i % 2 ? 1 : -1) * 3, 4.2));
+      const a = Math.random() * Math.PI * 2;
+      c.v.set(Math.cos(a) * 2.5 - Math.sin(head.th) * 1.5, 3 + Math.random() * 3.5, Math.sin(a) * 2.5 + Math.cos(head.th) * 1.5);
+      c.w.set(Math.random() * 10, Math.random() * 10, Math.random() * 10);
+      conf.setColorAt(i, CONF_COLORS[i % CONF_COLORS.length]);
+    });
+    conf.instanceColor.needsUpdate = true;
+    conf.count = CONF_N;
+  }
+  function updateConfetti(dt) {
+    if (!conf.count) return;
+    let alive = 0;
+    confP.forEach((c, i) => {
+      c.t += dt;
+      if (c.t < 4) alive++;
+      c.v.y = Math.max(-1.0, c.v.y - 9 * dt);
+      c.v.x *= 1 - dt * 1.1;
+      c.v.z *= 1 - dt * 1.1;
+      c.p.addScaledVector(c.v, dt);
+      c.p.x += Math.sin(c.t * 5 + i) * dt * 0.4;
+      c.r.set(c.r.x + c.w.x * dt, c.r.y + c.w.y * dt, c.r.z + c.w.z * dt);
+      confS.setScalar(c.t < 3.5 ? 1 : Math.max(0.001, (4 - c.t) / 0.5));
+      confM.compose(c.p, confQ.setFromEuler(c.r), confS);
+      conf.setMatrixAt(i, confM);
+    });
+    conf.instanceMatrix.needsUpdate = true;
+    if (!alive) conf.count = 0;
+  }
 
   // ── うずのあわ: 白いつぶが らせんに まわりながら、まん中へ吸いこまれる ─────────
   const FOAM_N = 36;
@@ -312,6 +433,9 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     atmosphere.sun.target.position.copy(coursePoint(LENGTH / 2, 0));
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     taps.length = 0;
+    camera.userData.goalK = 0;
+    for (const d of stage.doors) { d.userData.open = 0; d.userData.opening = false; }
+    $('noticeK').classList.remove('show');
     $('comboK').textContent = '0';
     $('powK').style.width = '0%';
     buildBoard();
@@ -443,7 +567,9 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     // ことば(同じものは続けて出さない)
     g.fast = e.power < 0.45 && e.alt ? (g.fast || 0) + 1 : 0;
     let tip = null;
-    if (!e.alt && e.side !== 0) tip = ['おなじがわ! こうごに', 'warn'];
+    // 同じがわは 曲がるときに わざと使うので、4回つづいたときだけ(まちがえていそうなとき)
+    g.same = !e.alt && e.side !== 0 ? (g.same || 0) + 1 : 0;
+    if (g.same >= 4) { tip = ['おなじがわ! こうごに', 'warn']; g.same = 0; }
     else if (g.fast >= 3) { tip = ['はやすぎ! ぐいっと', 'warn']; g.fast = 0; }
     else if (g.combo > 0 && g.combo % 10 === 0) tip = [`いいリズム! ${g.combo}`, 'good'];
     if (tip && (tip[0] !== g.lastTip || now - (g.tipAt ?? -9) > 2.5)) showTip(...tip);
@@ -456,6 +582,51 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     el.classList.add('show');
     game.lastTip = text;
     game.tipAt = game.state.t;
+  }
+  function notice(text, cls) {
+    const el = $('noticeK');
+    el.textContent = text;
+    el.className = 'notice ' + cls;
+    void el.offsetWidth;
+    el.classList.add('show');
+  }
+  // レースの盛り上げ: 順位の入れかわり・ラストスパート・水門の扉・鳥の声
+  function updateRace(dt) {
+    const s = game.state;
+    const me = s.runners[0];
+    if (s.phase === 'race' && me.finish === null) {
+      const order = ranking(s);
+      const rank = order.indexOf(0);
+      if (game.lastRank === undefined) game.lastRank = rank;
+      // 入れかわってから 0.4 秒たっても そのままなら知らせる(ならんで押しあうと、行ったり来たりするので)
+      if (rank !== game.lastRank) {
+        game.rankHold = (game.rankHold || 0) + dt;
+        if (game.rankHold > 0.4 && s.t - (game.noticeAt ?? -9) > 1.2) {
+          if (rank < game.lastRank) { notice(`${game.players[order[rank + 1]]?.name ?? ''}を ぬいた! ${rank + 1}位`, 'up'); sfx.pass(); }
+          else { notice(`${game.players[order[rank - 1]]?.name ?? ''}に ぬかれた… ${rank + 1}位`, 'down'); sfx.passed(); }
+          game.lastRank = rank;
+          game.noticeAt = s.t;
+          game.rankHold = 0;
+        }
+      } else game.rankHold = 0;
+      // ラストスパート
+      if (!game.spurt && me.s > LENGTH - 45) {
+        game.spurt = true;
+        splash('ラストスパート!', 'gold');
+        sfx.drums();
+        for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 3; }
+      }
+    }
+    // 水門の扉: いちばん前の子が 20m まで来たら開く
+    const lead = Math.max(...s.runners.map((r) => r.s));
+    for (const d of stage.doors) {
+      const want = lead > LENGTH - 20 ? 1 : 0;
+      if (want && !d.userData.opening) { d.userData.opening = true; if (near(game.runners[0], 40)) sfx.creak(); }
+      d.userData.open += (want - d.userData.open) * Math.min(1, dt * 1.6);
+      d.children[0].rotation.y = -d.userData.side * 1.45 * d.userData.open;
+    }
+    // 森の鳥
+    if ((game.birdT = (game.birdT ?? 2) - dt) <= 0) { game.birdT = 3 + Math.random() * 6; sfx.bird(); }
   }
   function renderHud() {
     const s = game.state;
@@ -554,6 +725,8 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
           for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 2; }
           sfx.cheer(e.slot === 0 ? 0.07 : 0.035);
           spray(tmp.copy(v.holder.position).setY(v.holder.position.y + 0.5), 10, 2);
+          cheerBeavers();
+          if (e.slot === 0 || s.runners.filter((o) => o.finish !== null).length === 1) confetti();
           owl.play('cheer');
           owlCheer = 2.5;
           break;
@@ -702,7 +875,13 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     const portrait = aspect < 1;
     const me = game ? game.state.runners[0] : { s: 0, x: 0, air: 0 };
     let pos, look;
-    if (game && (game.state.phase === 'finished' || mode === 'result')) {
+    if (game && me.finish !== null && game.state.phase !== 'finished' && mode === 'playing') {
+      // 自分がゴールしたあと: いかだの前へ ゆっくりまわりこんで、よろこぶ顔を見る
+      const k = camera.userData.goalK = Math.min(1, (camera.userData.goalK ?? 0) + dt * 0.5);
+      const a = 0.35 + k * Math.PI * 0.85; // うしろ(遊んでいたカメラ)から、前へ
+      pos = coursePoint(me.s - Math.cos(a) * 5.2, me.x + Math.sin(a) * 3.6, 2.5);
+      look = coursePoint(me.s, me.x, 0.9);
+    } else if (game && (game.state.phase === 'finished' || mode === 'result')) {
       const w = game.state.runners[game.state.winner];
       pos = coursePoint(Math.min(w.s, LENGTH + 18) + 6, w.x * 0.5, 2.4);
       look = coursePoint(Math.min(w.s, LENGTH + 18), w.x, 0.8);
@@ -788,6 +967,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
         game.endTimer -= dt;
         if (game.endTimer <= 0) { game.endTimer = null; showResult(); }
       }
+      updateRace(dt);
       game.sprayT = Math.max(0, (game.sprayT || 0) - dt);
     }
     if (game && mode === 'playing') renderHud();
@@ -799,6 +979,8 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       // 水が流れる・うずが回る
       stage.water.map.offset.y -= dt * 0.5;
       updateFoam(dt);
+      updateBeavers(dt);
+      updateConfetti(dt);
       scenery.update(dt, camera);
       for (const a of audience) {
         if (a.until > 0 && (a.until -= dt) <= 0) { a.model.play('idle'); a.model.setFace('normal'); }

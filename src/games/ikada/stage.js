@@ -547,6 +547,37 @@ function buildGoal(g) {
   g.add(gate);
 }
 
+// 水門の扉: 門の柱から まん中まで、板を組んだ扉が左右に1枚ずつ。いちばんの子が近づくと、下流へ ぎいっと開く
+function buildDoors(g) {
+  const hw = halfWidthAt(LENGTH);
+  const head = courseHeading(LENGTH);
+  const plank = toonMaterial(0x9a6a3e), frame = toonMaterial(0x6b4a30);
+  return [-1, 1].map((side) => {
+    const pivot = new THREE.Group();
+    pivot.position.copy(coursePoint(LENGTH, side * (hw + 0.25), 0));
+    pivot.rotation.y = head.yaw + Math.PI;
+    const door = new THREE.Group();
+    const w = hw + 0.2;
+    for (let k = 0; k < 4; k++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w, 0.26, 0.1), plank);
+      b.position.set(-side * w / 2, 0.15 + k * 0.29, 0);
+      door.add(b);
+    }
+    const brace = new THREE.Mesh(new THREE.BoxGeometry(w * 1.05, 0.1, 0.12), frame);
+    brace.rotation.z = side * 0.55;
+    brace.position.set(-side * w / 2, 0.6, 0.04);
+    door.add(brace);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), toonMaterial(0xffd24a));
+    knob.position.set(-side * (w - 0.15), 0.65, 0.08);
+    door.add(knob);
+    door.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    pivot.add(door);
+    pivot.userData = { side, open: 0 };
+    g.add(pivot);
+    return pivot;
+  });
+}
+
 // 観客の席: ゴールのわきの岸(切り株)
 export const SEATS = [
   { s: LENGTH - 6, x: -1, kind: 'risu' },
@@ -587,6 +618,7 @@ export function buildStage(scene) {
   // 動くもの(水面・うず)は、まとめたあとに足す
   const water = buildWater(g);
   const whirls = buildWhirls(g);
+  const doors = buildDoors(g);
   scene.add(g);
-  return { group: g, water, whirls };
+  return { group: g, water, whirls, doors };
 }
