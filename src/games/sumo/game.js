@@ -460,7 +460,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     runners[0].holder.add(marker);
     runners[0].marker = marker;
 
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastR: RULES.r0, shake: 0, hitstop: 0 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastR: RULES.r0, shake: 0, hitstop: 0, slow: 0, focus: null, warned: false, lastTwo: false };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     Object.assign(input, { touch: null, stick: null, target: null, hold: false, holdPointer: null, holdKey: false });
@@ -623,8 +623,24 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       return d;
     }));
   }
+  // 太鼓のどろどろ
+  function taiko() {
+    for (let i = 0; i < 12; i++) voice({ type: 'triangle', pts: [[0, 110], [0.08, 70]], len: 0.12, gain: 0.05 + i * 0.008, at: i * 0.08 });
+    voice({ type: 'triangle', pts: [[0, 140], [0.2, 60]], len: 0.35, gain: 0.16, at: 1.0 });
+  }
+  const rimBase = new THREE.Color(0x6a4426), rimHot = new THREE.Color(0xff5a3a);
   function renderHud() {
     const s = game.state;
+    // 土俵がちぢむ 2 秒前から、ふちが赤く ちかちか。ちぢんでいるあいだも ゆっくり光る
+    const tp = Math.max(0, s.t - RULES.readyTime);
+    const warn = s.phase === 'play' && tp > RULES.shrinkAt - 2.5 && tp < RULES.shrinkAt;
+    if (warn && !game.warned) {
+      game.warned = true;
+      splash('もうすぐ ちぢむ!', 'red small');
+    }
+    const shrinking = s.phase === 'play' && tp >= RULES.shrinkAt && s.radius > RULES.rMin;
+    const glow = warn ? (Math.sin(time * 14) > 0 ? 1 : 0.2) : shrinking ? 0.35 + 0.25 * Math.sin(time * 4) : 0;
+    stage.rim.material.color.copy(rimBase).lerp(rimHot, glow);
     [...$('chipsU').children].forEach((c, slot) => {
       const r = s.runners[slot];
       c.classList.toggle('out', !r.alive);
@@ -665,7 +681,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
           voice({ type: 'triangle', pts: [[0, 1046]], len: 0.25, gain: 0.12, at: 0.12 });
           break;
         case 'shrink':
-          splash('土俵が ちぢむ!', 'red');
+          splash('土俵が ちぢむ!', 'red small');
           sfx.rumble();
           game.shake = 0.25;
           break;
@@ -721,10 +737,23 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
           if (e.slot === 0) splash('おちた…', 'red');
           else if (e.by === 0) splash('おしだし!', 'gold');
           cheer();
+          // スローにして、落ちる子を カメラで追う(勝負が決まる 落ち方は 長めに)
+          const last = aliveSlots(s).length <= 1;
+          game.slow = last ? 1.1 : 0.45;
+          game.focus = { slot: e.slot, t: last ? 1.6 : 0.9 };
+          // のこり2人
+          if (aliveSlots(s).length === 2 && !game.lastTwo) {
+            game.lastTwo = true;
+            setTimeout(() => {
+              if (game.state.phase !== 'play') return;
+              splash('さいごの ふたり!', 'gold small');
+              taiko();
+            }, 900);
+          }
           break;
         }
         case 'finished': {
-          game.endTimer = 3.6;
+          game.endTimer = 5.2; // 落ちるところを スローで見せてから、勝った子
           const w = s.runners[e.winner];
           splash(e.timeUp ? 'そこまで!' : 'しょうぶあり!');
           confetti(w.x, w.z);
@@ -876,6 +905,14 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     const portrait = aspect < 1;
     const s = game?.state;
     let pos, look;
+    // 落ちる子を追う(勝負が決まる 落ち方も、勝った子より先に見せる)
+    if (game?.focus && game.focus.t > 0) {
+      game.focus.t -= dt;
+      const f = game.runners[game.focus.slot].holder.position;
+      pos = new THREE.Vector3(f.x * 0.6, portrait ? 5.5 : 4.2, f.z * 0.6 + (portrait ? 6 : 4.8));
+      look = new THREE.Vector3(f.x, Math.max(WATER_Y, f.y), f.z);
+      return moveCamera(pos, look, dt, portrait, snap);
+    }
     if (s && (s.phase === 'finished' || mode === 'result')) {
       const w = s.runners[s.winner];
       pos = new THREE.Vector3(w.x * 0.6, 3.6, w.z + (portrait ? 6.5 : 5));
@@ -889,8 +926,11 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       pos = new THREE.Vector3(fx, (portrait ? 11.5 : 8) * far, fz + (portrait ? 8.6 : 7.2) * far);
       look = new THREE.Vector3(fx, 0, fz - 0.6);
     }
+    moveCamera(pos, look, dt, portrait, snap);
+  }
+  function moveCamera(pos, look, dt, portrait, snap) {
     camera.fov = portrait ? 58 : 46;
-    camera.aspect = aspect;
+    camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     if (intro < 1) {
       const e = 1 - (1 - intro) ** 3;
@@ -938,7 +978,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
   // ── 1フレーム ─────────────────────────────────────
   let time = 0;
   function frame(rawDt) {
-    const dt = Math.min(rawDt, 0.1);
+    let dt = Math.min(rawDt, 0.1);
     time += dt;
     if (mode === 'playing' && intro >= 1) watchQuality(rawDt);
     if (intro < 1 && !paused) {
@@ -948,6 +988,11 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     // ヒットストップ: 強く当たった一瞬だけ、なにもかも止める
     const stopped = game && game.hitstop > 0;
     if (stopped) { game.hitstop -= rawDt; renderer.render(scene, camera); return; }
+    // 落ちる瞬間は スローに(すべての動きを ゆっくりにする)
+    if (game && game.slow > 0 && !paused) {
+      game.slow -= rawDt;
+      dt *= 0.3;
+    }
     if (game && mode === 'playing' && !paused && intro >= 1) {
       const s = game.state;
       game.acc += dt;
