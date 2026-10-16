@@ -235,6 +235,151 @@ function buildSurroundings(g) {
   g.add(bushes);
 }
 
+// 正面の入り口から、丘のふもとへ下る土の道
+const PATH_W = 1.5;
+function buildPath(g) {
+  const pos = [], idx = [];
+  const z0 = FIELD_R + 0.9, z1 = 42, n = 40;
+  for (let i = 0; i <= n; i++) {
+    const z = z0 + (z1 - z0) * (i / n);
+    const x = Math.sin(z * 0.12) * (z - z0) * 0.12; // ふもとへ向かって ゆるく くねる
+    const w = PATH_W * (1 + (z - z0) * 0.01);
+    for (const sx of [-1, 1]) pos.push(x + sx * w / 2, hillY(x, z) + 0.02, z);
+  }
+  for (let i = 0; i < n; i++) {
+    const a = i * 2;
+    idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, new THREE.MeshToonMaterial({ color: 0xc9a06a, gradientMap: toonGradient }));
+  m.receiveShadow = true;
+  g.add(m);
+}
+const onPath = (x, z) => z > FIELD_R && Math.abs(x - Math.sin(z * 0.12) * (z - FIELD_R - 0.9) * 0.12) < PATH_W * 0.9;
+
+// 入り口の看板「花ぬり陣取り」
+function buildSign(g) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 160;
+  const x = c.getContext('2d');
+  x.fillStyle = '#e9c48c';
+  x.fillRect(0, 0, 512, 160);
+  // 木目
+  for (let i = 0; i < 14; i++) {
+    x.strokeStyle = `rgba(150,100,50,${0.12 + (i % 3) * 0.05})`;
+    x.lineWidth = 2;
+    x.beginPath();
+    x.moveTo(0, 12 + i * 11);
+    x.bezierCurveTo(170, 6 + i * 11, 340, 20 + i * 11, 512, 10 + i * 11);
+    x.stroke();
+  }
+  x.strokeStyle = '#8a5a2e';
+  x.lineWidth = 10;
+  x.strokeRect(5, 5, 502, 150);
+  x.font = '400 74px "Dela Gothic One", sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.lineWidth = 12;
+  x.strokeStyle = '#fff6e4';
+  x.strokeText('花ぬり陣取り', 256, 84);
+  x.fillStyle = '#c8503c';
+  x.fillText('花ぬり陣取り', 256, 84);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sign = new THREE.Group();
+  const board = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.6, 0.08), [
+    toonMaterial(0x9a6a3e), toonMaterial(0x9a6a3e), toonMaterial(0x9a6a3e), toonMaterial(0x9a6a3e),
+    new THREE.MeshToonMaterial({ map: tex, gradientMap: toonGradient }), toonMaterial(0xb8864e),
+  ]);
+  board.position.y = 1.25;
+  sign.add(board);
+  for (const sx of [-0.8, 0.8]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 0.1), toonMaterial(0x8a5a2e));
+    post.position.set(sx, 0.65, -0.06);
+    sign.add(post);
+  }
+  // 看板の上の小さな花かざり
+  const fl = [0xff7a8a, 0xffd24a, 0xffffff, 0x9fd0ff];
+  for (let i = 0; i < 7; i++) {
+    const f = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), toonMaterial(fl[i % 4]));
+    f.position.set(-0.8 + i * 0.27, 1.58, 0);
+    f.scale.set(1, 0.7, 1);
+    sign.add(f);
+  }
+  sign.position.set(1.9, 0, FIELD_R + 1.9);
+  sign.rotation.y = -0.25;
+  g.add(sign);
+}
+
+// 柵のそとの野の花(白・黄・桃・うす紫)
+function buildWildflowers(g) {
+  const rand = makeRand(53);
+  const petal = new THREE.SphereGeometry(0.05, 6, 4).scale(1, 0.3, 0.6);
+  const parts = [];
+  for (let k = 0; k < 5; k++) parts.push(petal.clone().translate(0.05, 0.12, 0).rotateY((k / 5) * Math.PI * 2).toNonIndexed());
+  parts.push(new THREE.CylinderGeometry(0.008, 0.01, 0.12, 4).translate(0, 0.06, 0).toNonIndexed());
+  const pos = [], col = [];
+  parts.forEach((p, i) => {
+    pos.push(...p.attributes.position.array);
+    const c = i < 5 ? [1, 1, 1] : [0.35, 0.6, 0.3];
+    for (let v = 0; v < p.attributes.position.count; v++) col.push(...c);
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const COUNT = 700;
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: toonGradient }), COUNT);
+  const colors = [0xffffff, 0xfff1a8, 0xffb3c6, 0xd8c4ff, 0xffffff];
+  const dummy = new THREE.Object3D();
+  const color = new THREE.Color();
+  let n = 0;
+  for (let tries = 0; n < COUNT && tries < COUNT * 4; tries++) {
+    // 群れて咲く: いくつかの まとまりのまわりに
+    const a = rand() * Math.PI * 2, d = FIELD_R + 1.7 + Math.pow(rand(), 1.6) * 16;
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    if (onPath(x, z)) continue;
+    if (Math.abs(d - (FIELD_R + 2.3)) < 0.6 && SEATS.some((st) => Math.hypot(st.x - x, st.z - z) < 0.7)) continue;
+    const kind = Math.floor((Math.sin(a * 5) * 0.5 + 0.5) * colors.length) % colors.length;
+    dummy.position.set(x, hillY(x, z) - 0.02, z);
+    dummy.rotation.set((rand() - 0.5) * 0.3, rand() * 6, (rand() - 0.5) * 0.3);
+    dummy.scale.setScalar(0.9 + rand() * 0.6);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(n, dummy.matrix);
+    mesh.setColorAt(n, color.setHex(colors[(kind + (rand() < 0.2 ? 1 : 0)) % colors.length]));
+    n++;
+  }
+  mesh.count = n;
+  mesh.receiveShadow = true;
+  mesh.userData.noMerge = true;
+  g.add(mesh);
+}
+
+// 遠くの山なみ(かすんで見える)
+function buildMountains(g) {
+  const rand = makeRand(77);
+  const cols = [0x8fb3a0, 0x7fa592, 0x9cbfb0];
+  for (let i = 0; i < 26; i++) {
+    const a = (i / 26) * Math.PI * 2 + rand() * 0.15;
+    const d = 150 + rand() * 40;
+    const h = 30 + rand() * 35;
+    const m = new THREE.Mesh(new THREE.ConeGeometry(h * (1.1 + rand() * 0.5), h, 7), toonMaterial(cols[i % 3]));
+    m.position.set(Math.cos(a) * d, -45 + h / 2, Math.sin(a) * d);
+    m.rotation.y = rand() * 6;
+    g.add(m);
+    // 雪のぼうし(高い山だけ)
+    if (h > 52) {
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(h * 0.3, h * 0.24, 7), toonMaterial(0xf4f8fa));
+      cap.position.set(m.position.x, -45 + h - h * 0.12 + 0.3, m.position.z);
+      cap.rotation.y = m.rotation.y;
+      g.add(cap);
+    }
+  }
+}
+
 // 観客の席(柵のそとの切り株)
 export const SEATS = [
   { a: -2.2, kind: 'risu' }, { a: -1.6, kind: 'harinezumi' }, { a: -0.9, kind: 'komadori' },
@@ -254,6 +399,10 @@ export function buildStage(scene) {
   buildFence(g);
   buildSurroundings(g);
   buildSeats(g);
+  buildPath(g);
+  buildSign(g);
+  buildWildflowers(g);
+  buildMountains(g);
   const sunflower = buildSunflower(g);
   const windmill = buildWindmill(g);
   mergeStatic(g, (o) => o === sunflower.group || o === sunflower.head || o === windmill);

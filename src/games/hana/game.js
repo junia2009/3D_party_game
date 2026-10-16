@@ -141,104 +141,148 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
   atmosphere.setupShadows([], audience.map((a) => a.model.root));
 
   // ── 花 ─────────────────────────────────────────────
-  // 1りんの形: 5まいの花びら(白)+ まん中(灰色 = プレイヤーの色の濃いところ)。色はインスタンスの色をかける
-  const flowerGeo = (() => {
+  // 色だけでなく、形もプレイヤーごとに変える(色が見分けにくくても、だれの花か分かるように)。
+  // 花びら(白)+ まん中(灰色 = プレイヤーの色の濃いところ)を1つの形にして、インスタンスの色をかける
+  const FLOWER_KINDS = [
+    { n: 5, len: 0.075, wid: 0.66, cup: 0.3 }, // あか: まるい5まい(さくらそう)
+    { n: 9, len: 0.085, wid: 0.3, cup: 0.12, center: 0.05 }, // あお: ほそい花びら(ひなぎく)
+    { n: 6, len: 0.08, wid: 0.42, cup: 0.45, pointed: true }, // きいろ: とがった6まい(ゆり)
+    { n: 4, len: 0.08, wid: 0.85, cup: 0.22 }, // みどり: 大きな4まい(クローバーの花)
+    { n: 8, len: 0.06, wid: 0.45, cup: 0.35, layers: 2 }, // むらさき: 2だんの花びら(アスター)
+  ];
+  function makeFlowerGeo({ n, len, wid, cup, pointed = false, layers = 1, center = 0.042 }) {
     const parts = [];
-    const petal = new THREE.SphereGeometry(0.075, 8, 5);
-    petal.scale(1, 0.32, 0.62);
-    for (let k = 0; k < 5; k++) {
-      const a = (k / 5) * Math.PI * 2;
-      const p = petal.clone();
-      p.rotateZ(0.28); // 少し上を向いて、おわんの形
-      p.translate(0.07, 0, 0);
-      p.rotateY(a);
-      parts.push(p);
+    for (let layer = 0; layer < layers; layer++) {
+      const petal = pointed ? new THREE.ConeGeometry(0.06, 0.15, 6).rotateZ(-Math.PI / 2).translate(0.03, 0, 0) : new THREE.SphereGeometry(0.075, 8, 5);
+      if (pointed) petal.scale(1, 0.3, wid * 1.6);
+      else petal.scale(len / 0.075, 0.32, wid);
+      const sc = 1 - layer * 0.3;
+      for (let k = 0; k < n; k++) {
+        const a = ((k + layer * 0.5) / n) * Math.PI * 2;
+        const p = petal.clone();
+        p.scale(sc, 1, sc);
+        p.rotateZ(cup + layer * 0.3); // 少し上を向いて、おわんの形
+        p.translate(len * 0.95 * sc, layer * 0.018, 0);
+        p.rotateY(a);
+        parts.push({ g: p, petal: true });
+      }
     }
-    const center = new THREE.SphereGeometry(0.045, 8, 5);
-    center.scale(1, 0.55, 1);
-    center.translate(0, 0.02, 0);
-    parts.push(center);
+    const c = new THREE.SphereGeometry(center, 8, 5);
+    c.scale(1, 0.55, 1);
+    c.translate(0, 0.02 + layers * 0.01, 0);
+    parts.push({ g: c, petal: false });
     const pos = [], nor = [], col = [], idx = [];
     let base = 0;
-    parts.forEach((g, pi) => {
-      const ng = g.index ? g : g;
-      const p = ng.attributes.position, n = ng.attributes.normal;
-      const shade = pi === parts.length - 1 ? 0.42 : 1;
+    for (const { g, petal } of parts) {
+      const p = g.attributes.position, nn = g.attributes.normal;
       for (let i = 0; i < p.count; i++) {
         pos.push(p.getX(i), p.getY(i) + 0.17, p.getZ(i));
-        nor.push(n.getX(i), n.getY(i), n.getZ(i));
-        // 花びらは、根もとを少し濃く
+        nor.push(nn.getX(i), nn.getY(i), nn.getZ(i));
+        // 花びらは根もとを少し濃く、先を明るく。まん中は濃い色
         const r = Math.hypot(p.getX(i), p.getZ(i));
-        const s = pi === parts.length - 1 ? shade : 0.82 + Math.min(1, r / 0.14) * 0.18;
+        const s = petal ? 0.8 + Math.min(1, r / 0.14) * 0.22 : 0.4;
         col.push(s, s, s);
       }
-      for (let i = 0; i < ng.index.count; i++) idx.push(ng.index.getX(i) + base);
+      for (let i = 0; i < g.index.count; i++) idx.push(g.index.getX(i) + base);
       base += p.count;
-    });
+    }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     geo.setIndex(idx);
     return geo;
-  })();
+  }
   // くきと葉っぱ(みどり)
-  const leafGeo = (() => {
-    const stem = new THREE.CylinderGeometry(0.012, 0.016, 0.17, 4).translate(0, 0.085, 0).toNonIndexed();
-    const leaf = new THREE.SphereGeometry(0.06, 6, 4).scale(1, 0.18, 0.45);
-    const l1 = leaf.clone().rotateZ(-0.4).translate(0.06, 0.05, 0).toNonIndexed();
-    const l2 = leaf.clone().rotateZ(0.4).translate(-0.06, 0.07, 0).rotateY(1.3).toNonIndexed();
+  const mergeNonIndexed = (list) => {
     const geo = new THREE.BufferGeometry();
-    const all = [stem, l1, l2];
     const pos = [], nor = [];
-    for (const g of all) {
+    for (const g of list) {
       pos.push(...g.attributes.position.array);
       nor.push(...g.attributes.normal.array);
     }
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     return geo;
+  };
+  const leafGeo = (() => {
+    const stem = new THREE.CylinderGeometry(0.012, 0.016, 0.17, 4).translate(0, 0.085, 0).toNonIndexed();
+    const leaf = new THREE.SphereGeometry(0.06, 6, 4).scale(1, 0.18, 0.45);
+    const l1 = leaf.clone().rotateZ(-0.4).translate(0.06, 0.05, 0).toNonIndexed();
+    const l2 = leaf.clone().rotateZ(0.4).translate(-0.06, 0.07, 0).rotateY(1.3).toNonIndexed();
+    return mergeNonIndexed([stem, l1, l2]);
   })();
-  const cells = []; // ます目の番号 → { k, x, z, rot, size, i(インスタンスの番号) }
-  const cellOf = new Int32Array(N * N).fill(-1);
+  // まだ咲いていないところの、小さな芽(ふた葉)
+  const sproutGeo = (() => {
+    const leaf = new THREE.SphereGeometry(0.035, 6, 4).scale(1, 0.25, 0.55);
+    const l1 = leaf.clone().rotateZ(0.5).translate(0.03, 0.045, 0).toNonIndexed();
+    const l2 = leaf.clone().rotateZ(-0.5).translate(-0.03, 0.045, 0).toNonIndexed();
+    const stem = new THREE.CylinderGeometry(0.008, 0.01, 0.05, 4).translate(0, 0.025, 0).toNonIndexed();
+    return mergeNonIndexed([stem, l1, l2]);
+  })();
+  const cells = []; // { k(ます目の番号), x, z, rot, size, tilt }
   {
     let h = 7;
     const rnd = () => (h = (h * 16807) % 2147483647) / 2147483647;
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       if (!inField(i, j)) continue;
-      const k = j * N + i;
-      cellOf[k] = cells.length;
-      cells.push({ k, x: cellX(i) + (rnd() - 0.5) * CELL * 0.45, z: cellX(j) + (rnd() - 0.5) * CELL * 0.45, rot: rnd() * 6, size: 0.9 + rnd() * 0.35, tilt: (rnd() - 0.5) * 0.3 });
+      cells.push({ k: j * N + i, x: cellX(i) + (rnd() - 0.5) * CELL * 0.45, z: cellX(j) + (rnd() - 0.5) * CELL * 0.45, rot: rnd() * 6, size: 0.9 + rnd() * 0.35, tilt: (rnd() - 0.5) * 0.3 });
     }
   }
   const flowerMat = new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: toonGradient });
-  const flowers = new THREE.InstancedMesh(flowerGeo, flowerMat, cells.length);
+  // プレイヤーごとに1つ(形がちがう)。その子の花でないところは大きさ 0
+  const flowers = FLOWER_KINDS.map((k) => new THREE.InstancedMesh(makeFlowerGeo(k), flowerMat, cells.length));
   const stems = new THREE.InstancedMesh(leafGeo, toonMaterial(0x4f9a3c), cells.length);
-  flowers.castShadow = false;
-  flowers.receiveShadow = stems.receiveShadow = true;
-  flowers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  stems.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  flowers.frustumCulled = stems.frustumCulled = false;
-  scene.add(flowers, stems);
-  // プレイヤーの色(ます目ごとに少しだけ明るさを変える)
+  for (const m of [...flowers, stems]) {
+    m.receiveShadow = true;
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.frustumCulled = false;
+    scene.add(m);
+  }
+  const sprouts = new THREE.InstancedMesh(sproutGeo, toonMaterial(0x7cc35a), cells.length);
+  sprouts.receiveShadow = true;
+  sprouts.frustumCulled = false;
+  scene.add(sprouts);
+  const dummy = new THREE.Object3D();
+  cells.forEach((c, ci) => {
+    dummy.position.set(c.x, 0, c.z);
+    dummy.rotation.set(0, c.rot, 0);
+    dummy.scale.setScalar(c.size * 0.9);
+    dummy.updateMatrix();
+    sprouts.setMatrixAt(ci, dummy.matrix);
+  });
+  // プレイヤーの色(ます目ごとに、ほんの少しだけ明るさを変える)
   const tmpC = new THREE.Color();
-  const colorFor = (slot, c) => tmpC.setHex(PLAYER_COLORS[slot].hex).offsetHSL(0, 0, (((c.k * 37) % 9) - 4) * 0.012);
-  // 見えている状態: owner(だれの花か)、t(咲いてからの時間。-1 = 動いていない)、delay(じょうろの波)
+  const colorFor = (slot, c) => tmpC.setHex(PLAYER_COLORS[slot].hex).offsetHSL(0, 0, (((c.k * 37) % 5) - 2) * 0.012);
+  // 見えている状態: shown(だれの花か)、anim(咲いてからの時間)、delay(じょうろの波)、dying(しぼんでいるときの前の持ち主)
   const shown = new Int8Array(cells.length).fill(-1);
   const anim = new Float32Array(cells.length).fill(-1);
   const delay = new Float32Array(cells.length);
-  const dying = new Int8Array(cells.length).fill(-1); // しぼんでいるとき、前の持ち主
-  const dummy = new THREE.Object3D();
-  function setFlower(ci, scale, wob = 0) {
+  const dying = new Int8Array(cells.length).fill(-1);
+  const drawnIn = new Int8Array(cells.length).fill(-1); // いま どの形のメッシュに描いているか
+  const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+  function setFlower(ci, owner, scale, wob = 0) {
     const c = cells[ci];
-    dummy.position.set(c.x, 0.0, c.z);
+    if (drawnIn[ci] >= 0 && drawnIn[ci] !== owner) flowers[drawnIn[ci]].setMatrixAt(ci, ZERO);
+    if (owner < 0 || scale <= 0.001) {
+      if (drawnIn[ci] >= 0) flowers[drawnIn[ci]].setMatrixAt(ci, ZERO);
+      drawnIn[ci] = -1;
+      stems.setMatrixAt(ci, ZERO);
+      return;
+    }
+    dummy.position.set(c.x, 0, c.z);
     dummy.rotation.set(c.tilt + wob, c.rot, wob * 0.5);
-    dummy.scale.setScalar(Math.max(0.0001, scale * c.size));
+    dummy.scale.setScalar(scale * c.size);
     dummy.updateMatrix();
-    flowers.setMatrixAt(ci, dummy.matrix);
+    flowers[owner].setMatrixAt(ci, dummy.matrix);
     stems.setMatrixAt(ci, dummy.matrix);
+    drawnIn[ci] = owner;
   }
-  for (let ci = 0; ci < cells.length; ci++) setFlower(ci, 0);
+  const dirty = () => { for (const m of [...flowers, stems]) m.instanceMatrix.needsUpdate = true; };
+  for (let ci = 0; ci < cells.length; ci++) {
+    for (const m of flowers) m.setMatrixAt(ci, ZERO);
+    stems.setMatrixAt(ci, ZERO);
+  }
   const active = new Set();
   // じょうろの波: 同じフレームに咲いたところは、まん中から順に咲かせる
   let waves = [];
@@ -247,20 +291,22 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     anim.fill(-1);
     dying.fill(-1);
     active.clear();
-    for (let ci = 0; ci < cells.length; ci++) setFlower(ci, 0);
-    flowers.instanceMatrix.needsUpdate = stems.instanceMatrix.needsUpdate = true;
+    for (let ci = 0; ci < cells.length; ci++) setFlower(ci, -1, 0);
+    dirty();
   }
   let petalBudget = 0;
   function syncFlowers(dt) {
     const g = game.state.grid;
     petalBudget = Math.min(petalBudget + dt * 160, 40);
+    const colored = new Set();
     for (let ci = 0; ci < cells.length; ci++) {
       const o = g[cells[ci].k];
       if (o === shown[ci]) continue;
       const was = shown[ci];
       shown[ci] = o;
       if (o >= 0) {
-        flowers.setColorAt(ci, colorFor(o, cells[ci]));
+        flowers[o].setColorAt(ci, colorFor(o, cells[ci]));
+        colored.add(o);
         anim[ci] = 0;
         dying[ci] = -1;
         delay[ci] = 0;
@@ -279,25 +325,29 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
       active.add(ci);
     }
     waves = [];
-    if (flowers.instanceColor) flowers.instanceColor.needsUpdate = true;
+    for (const o of colored) if (flowers[o].instanceColor) flowers[o].instanceColor.needsUpdate = true;
     for (const ci of active) {
-      if (delay[ci] > 0) { delay[ci] -= dt; setFlower(ci, dying[ci] >= 0 ? 1 : 0); continue; }
+      if (delay[ci] > 0) {
+        // 波がとどくまでは、前の花のまま
+        delay[ci] -= dt;
+        continue;
+      }
       anim[ci] += dt;
       const t = anim[ci];
       if (dying[ci] >= 0) {
         // しぼむ
         const k = Math.min(1, t / 0.25);
-        setFlower(ci, 1 - k, k * 0.8);
-        if (k >= 1) { active.delete(ci); dying[ci] = -1; setFlower(ci, 0); }
+        setFlower(ci, dying[ci], 1 - k, k * 0.8);
+        if (k >= 1) { active.delete(ci); dying[ci] = -1; setFlower(ci, -1, 0); }
       } else {
         // ぽん!と大きめに咲いて、ゆれながら落ちつく
         const k = Math.min(1, t / 0.45);
         const s = k < 0.4 ? (k / 0.4) * 1.3 : 1.3 - 0.3 * Math.sin(((k - 0.4) / 0.6) * Math.PI * 0.5);
-        setFlower(ci, s, Math.sin(t * 25) * 0.25 * (1 - k));
-        if (k >= 1) { active.delete(ci); setFlower(ci, 1); }
+        setFlower(ci, shown[ci], s, Math.sin(t * 25) * 0.25 * (1 - k));
+        if (k >= 1) { active.delete(ci); setFlower(ci, shown[ci], 1); }
       }
     }
-    flowers.instanceMatrix.needsUpdate = stems.instanceMatrix.needsUpdate = true;
+    dirty();
   }
 
   // ── 舞う花びら(演出なので Math.random でよい) ─────────────
@@ -898,12 +948,26 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     void el.offsetWidth;
     el.classList.add('show');
   }
+  // 札と結果に出す、その子の花の形(画面の花と同じ数・形の花びら)
+  function flowerSvg(slot) {
+    const k = FLOWER_KINDS[slot], col = css(PLAYER_COLORS[slot].hex);
+    const rx = k.pointed ? 2.2 : 4.2 * k.wid + 0.6, ry = k.pointed ? 4.6 : 4.4;
+    let petals = '';
+    for (let layer = 0; layer < (k.layers || 1); layer++) {
+      const sc = 1 - layer * 0.35;
+      for (let i = 0; i < k.n; i++) {
+        const a = ((i + layer * 0.5) / k.n) * 360;
+        petals += `<ellipse cx="10" cy="${10 - 4.6 * sc}" rx="${rx * sc}" ry="${ry * sc}" transform="rotate(${a} 10 10)" fill="${col}" stroke="rgba(0,0,0,.25)" stroke-width=".6"/>`;
+      }
+    }
+    return `<svg class="fl" viewBox="0 0 20 20" aria-hidden="true">${petals}<circle cx="10" cy="10" r="2.6" fill="${col}" stroke="rgba(0,0,0,.45)" stroke-width="1.6"/></svg>`;
+  }
   function buildScores() {
     $('scoresH').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
       d.className = 'chip' + (slot === 0 ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
-      d.innerHTML = `<i></i><b>0</b><small>%</small>`;
+      d.innerHTML = `${flowerSvg(slot)}<b>0</b><small>%</small>`;
       d.title = p.name;
       return d;
     }));
@@ -1053,7 +1117,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
       const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
       const def = CHARACTERS.find((c) => c.key === p.character);
       const extra = [r.cans ? `じょうろ${r.cans}` : '', r.bees ? `ハチ${r.bees}` : ''].filter(Boolean).join('・');
-      li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
+      li.innerHTML = `<span class="no">${i + 1}</span>${flowerSvg(slot).replace('class="fl"', 'class="fl dot"')}` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${pct(share(s, slot))}%<small>${extra}</small></span>`;
       return li;
     }));
