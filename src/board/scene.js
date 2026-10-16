@@ -31,6 +31,13 @@ const BADGE = {
   slide: { color: '#ff7a3a', mark: '≫' },
 };
 
+// 表彰台の広場(スタートのマスの奥 5m)。まわりには木を置かない
+let PODIUM_AT = { x: 0, z: 0 };
+export function podiumSpot(st) {
+  const q = st.squares[st.start];
+  return { x: q.x, z: q.z - 5 };
+}
+
 // 島の形: 道(ステージの x, z)を囲む、少しくずれただ円
 function islandShape(st) {
   let rx = 0, rz = 0;
@@ -176,7 +183,7 @@ function buildSeasonProps(g, st, rand, near, isle) {
     for (let i = 0; i < tries; i++) {
       const a = rand() * Math.PI * 2, r = 0.2 + rand() * 0.68;
       const x = Math.cos(a) * isle.rx * r, z = Math.sin(a) * isle.rz * r;
-      if (near(x, z, 1.9) || Math.hypot(x, z) < 5.5) continue;
+      if (near(x, z, 1.9) || Math.hypot(x, z) < 5.5 || Math.hypot(x - PODIUM_AT.x, z - PODIUM_AT.z) < 4.5) continue;
       if (areaAt(st, x, z) === area) return [x, z];
     }
     return null;
@@ -325,6 +332,7 @@ function createDrifters(scene, st, isle) {
 }
 
 export function buildBoardScene(scene, st) {
+  PODIUM_AT = podiumSpot(st);
   const g = new THREE.Group();
   const rand = makeRand(2024);
   const isle = islandShape(st);
@@ -506,6 +514,7 @@ export function buildBoardScene(scene, st) {
     const x = Math.cos(a) * isle.rx * r, z = Math.sin(a) * isle.rz * r;
     if (near(x, z, 2.4)) continue;
     if (Math.hypot(x, z) < 6.5) continue; // まん中は大木のため
+    if (Math.hypot(x - PODIUM_AT.x, z - PODIUM_AT.z) < 5.5) continue; // 表彰台の広場
     // 道のすぐ手前(+z)は、カメラが道を見るとき木がかくすので、あける(2〜6m 手前まで)
     if (near(x, z - 2.5, 2.4) || near(x, z - 5, 2.4)) continue;
     const area = areaAt(st, x, z);

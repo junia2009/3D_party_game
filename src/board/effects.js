@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { toonMaterial } from '../runtime/models.js';
 import { acornGeometry } from '../games/daruma/trees.js';
+import { podiumTexture } from '../title/island.js';
 
 export function createEffects(scene) {
   const live = []; // { update(dt) → まだ続くなら true }
@@ -242,6 +243,62 @@ export function createEffects(scene) {
     } });
   }
 
+  // ── 表彰台(タイトルの島と同じ、木の段の台。ふだんは地面の下) ─────────────
+  const podium = (() => {
+    const g = new THREE.Group();
+    const steps = [
+      { n: 2, x: -1.25, h: 0.75, medal: '#d9dde3' },
+      { n: 1, x: 0, h: 1.15, medal: '#f2c14e' },
+      { n: 3, x: 1.25, h: 0.55, medal: '#d08a52' },
+    ];
+    const side = toonMaterial(0xc99a62), topMat = toonMaterial(0xe2bd85);
+    for (const s of steps) {
+      const front = toonMaterial(0xffffff);
+      front.map = podiumTexture(s.n, s.medal);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(1.2, s.h, 1.05), [side, side, topMat, side, front, side]);
+      b.position.set(s.x, s.h / 2, 0);
+      g.add(b);
+    }
+    g.visible = false;
+    scene.add(g);
+    return { g, tops: { 1: new THREE.Vector3(0, 1.15, 0), 2: new THREE.Vector3(-1.25, 0.75, 0), 3: new THREE.Vector3(1.25, 0.55, 0) }, t: 0, rise: false };
+  })();
+  function raisePodium(at) {
+    podium.g.position.copy(at);
+    podium.baseY = at.y;
+    podium.g.visible = true;
+    podium.rise = true;
+    podium.t = 0;
+    sparkle(at.clone().setY(0.5), 20, 3);
+  }
+  // 台の上の位置(世界の座標)
+  const podiumTop = (rank) => podium.tops[rank].clone().add(podium.g.position).setY(podium.tops[rank].y + (podium.baseY ?? 0));
+
+  // ── 紙吹雪 ────────────────────────────────────
+  const confettiGeo = new THREE.PlaneGeometry(0.16, 0.1);
+  const confettiMats = [0xff5a4e, 0xffd23c, 0x3d8bff, 0x34c47c, 0x9b6bff, 0xff8ad8].map((c) => new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide }));
+  function confetti(at, n = 120) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(confettiGeo, confettiMats[i % confettiMats.length]);
+      m.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 2, 4 + Math.random() * 2, (Math.random() - 0.5) * 2));
+      scene.add(m);
+      const v = new THREE.Vector3((Math.random() - 0.5) * 6, 2 + Math.random() * 4, (Math.random() - 0.5) * 6);
+      const spin = new THREE.Vector3(Math.random() * 10, Math.random() * 10, Math.random() * 10);
+      let t = 0;
+      add({ update(dt) {
+        t += dt;
+        v.y -= 3 * dt;
+        v.multiplyScalar(Math.exp(-dt * 1.2));
+        m.position.addScaledVector(v, dt);
+        m.position.x += Math.sin(t * 5 + i) * dt * 0.8;
+        m.rotation.x += spin.x * dt;
+        m.rotation.y += spin.y * dt;
+        if (t > 5) { scene.remove(m); return false; }
+        return true;
+      } });
+    }
+  }
+
   return {
     // 先生の目印を、先生の足もとへ
     markOwl(pos) { marker.position.set(pos.x, 0, pos.z); },
@@ -252,7 +309,17 @@ export function createEffects(scene) {
     acornRain,
     whirlwind,
     snowball,
+    raisePodium,
+    podiumTop,
+    confetti,
+    hidePodium() { podium.g.visible = false; },
     update(dt) {
+      if (podium.rise) {
+        podium.t += dt;
+        const k = Math.min(1, podium.t / 0.9);
+        podium.g.position.y = podium.baseY - 1.4 * (1 - k) ** 3;
+        if (k >= 1) podium.rise = false;
+      }
       markerT += dt;
       ring.scale.setScalar(1 + Math.sin(markerT * 3) * 0.08);
       beam.material.opacity = 0.75 + Math.sin(markerT * 2) * 0.2;

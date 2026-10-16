@@ -122,7 +122,7 @@ function waterfallMaterial() {
 }
 
 // ── 表彰台 ──────────────────────────────────────────
-function podiumTexture(n, medal) {
+export function podiumTexture(n, medal) {
   const [c, g] = canvas(128, 128);
   g.fillStyle = '#e9c98f';
   g.fillRect(0, 0, 128, 128);

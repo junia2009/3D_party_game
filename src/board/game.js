@@ -15,7 +15,7 @@ import { createAtmosphere } from '../games/daruma/atmosphere.js';
 import { BONUSES, ITEMS, RULES, act, createTournament, currentSlot, ranking } from './rules.js';
 import { PERSONALITIES, cpuAct, createCpu } from './cpu.js';
 import { STAGES } from './stages/index.js';
-import { buildBoardScene } from './scene.js';
+import { buildBoardScene, podiumSpot } from './scene.js';
 import { createEffects } from './effects.js';
 import { simulate } from './simulate.js';
 
@@ -248,6 +248,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       players.push({ character: key, cpu: kinds[Math.floor(nextRandom(pick) * kinds.length)], name: CHARACTERS.find((c) => c.key === key).name });
     }
     if (game) for (const p of game.pieces) scene.remove(p.holder);
+    fx.hidePodium();
     const s = createTournament(players, seed, { turns: opts.turns, stage: opts.stage });
     const pieces = await Promise.all(players.map(async (p, i) => {
       const model = await createModel(p.character);
@@ -274,6 +275,12 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     drive(id); // 進行(非同期でずっと回る。新しい大会が始まったら止まる)
   }
 
+  // 先生を、どこかの場所へ飛ばす(表彰式など、マスではないところ)
+  function flyOwlTo(to) {
+    owl.play('flap', { fade: 0.1 });
+    const from = owl.root.position.clone();
+    owl.root.userData.flight = { from, to: to.clone(), t: 0, time: 2.2, arc: 4 + from.distanceTo(to) * 0.12 };
+  }
   function placeOwl(sq, snap = false) {
     const to = view.squarePos(sq, new THREE.Vector3());
     to.x += 0.9; // マスのとなり(コマとかさならないように)
@@ -542,10 +549,19 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           await explain({ color: '#ffd24a', mark: '★', title: '競技の結果', text: e.ranking.map((i, k) => `${k + 1}位 ${name(i)}(+${RULES.minigamePrize[k]})`).join('・'), sec: 3.4 });
           break;
         case 'bonus':
+          if (!game.bonusIntro) {
+            game.bonusIntro = true;
+            camOver();
+            splash('大会 おしまい!', 'gold');
+            await sleep(1.8 / speed());
+            await explain({ color: '#ffd24a', mark: '★', title: 'ボーナスメダルの発表', text: 'さいごに、ボーナスメダルを 3つ 発表します!', sec: 2.8 });
+          }
           camOver();
           await explain({ color: '#ffd24a', mark: '★', title: `ボーナスメダル: ${e.name}`, text: bonusText(e.key), sec: 2.8 });
           if (e.who.length) {
-            for (const i of e.who) pop('メダル +1', i, 'gold');
+            if (e.who.length === 1) camOn(e.who[0]);
+            await sleep(0.6 / speed());
+            for (const i of e.who) { pop('メダル +1', i, 'gold'); react(i, 'cheer', 'happy', 2); }
             splash(`${e.who.map(name).join('・')}!`, 'gold');
             sfx.medal();
           } else splash('該当なし');
@@ -592,6 +608,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       if (ev[0]?.type === 'invalid') console.warn('できない操作', pend, action, ev[0]);
       await show(ev);
     }
+    if (live()) await ceremony(live);
     if (live()) showResult();
   }
 
@@ -703,6 +720,53 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     return { type: 'duelResult', winner: res.ranking[0] === 0 ? 0 : other };
   }
 
+  // 表彰式: 台がせり上がって、3位・2位・1位の順に跳び乗る。1位に金どんぐりメダル、紙吹雪
+  async function ceremony(live) {
+    const s = game.s;
+    const order = ranking(s);
+    const ps = podiumSpot(st); // スタートの広場の奥(島の内がわ。まわりに木はない)
+    const at = new THREE.Vector3(ps.x, 0, ps.z);
+    cam.mode = 'podium';
+    cam.podium = at.clone();
+    cam.podiumNear = false;
+    splash('表彰式', 'gold');
+    await sleep(1.4);
+    fx.raisePodium(at);
+    // みんな台のまわりへ(1〜3位は台の前、4位・5位は台の両わき)
+    order.forEach((slot, rank) => {
+      const p = game.pieces[slot];
+      const spots = [[-0.6, 1.6], [0.6, 1.6], [1.8, 1.6], [-2.6, 0.2], [2.6, 0.2]];
+      const [x, z] = spots[rank];
+      const to = new THREE.Vector3(at.x + x, 0, at.z + z);
+      p.anim = { from: p.holder.position.clone(), to, t: 0, time: 1.2, hop: true, resolve: () => {} };
+      p.podium = true;
+    });
+    await sleep(1.6);
+    for (const rank of [3, 2, 1]) {
+      if (!live()) return;
+      const slot = order[rank - 1];
+      if (slot === undefined) continue;
+      const p = game.pieces[slot];
+      const top = fx.podiumTop(rank);
+      await new Promise((resolve) => { p.anim = { from: p.holder.position.clone(), to: top, t: 0, time: 0.6, hop: true, resolve }; });
+      p.face = 0;
+      react(slot, rank === 1 ? 'cheer' : 'wave', 'happy', 99);
+      splash(`${rank}位 ${name(slot)}`, rank === 1 ? 'gold' : '');
+      sfx.gain();
+      await sleep(1.6);
+    }
+    // 1位に、先生から金どんぐりメダル。先生は台のうしろへ飛んでくる
+    const w = order[0];
+    flyOwlTo(at.clone().add(new THREE.Vector3(0.8, 2.2, -1.2)));
+    cam.podiumNear = true;
+    await sleep(2.6);
+    await fx.giveMedal(owl.root.position.clone().setY(owl.root.position.y + 1.5), game.pieces[w].holder.position);
+    sfx.medal();
+    fx.confetti(at.clone().setY(1), 180);
+    splash(w === 0 ? 'あなたの優勝!' : `${name(w)}の優勝!`, 'gold');
+    await sleep(3.2);
+  }
+
   function showResult() {
     const s = game.s;
     const order = ranking(s);
@@ -742,6 +806,12 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     if (cam.mode === 'overview' || !game) {
       pos = new THREE.Vector3(0, portrait ? 74 : 40, portrait ? 52 : 36);
       look = new THREE.Vector3(0, 0, portrait ? 3 : 1);
+    } else if (cam.mode === 'podium') {
+      // 表彰台を、正面の少し上から
+      // 1位を発表したら、1位に寄る
+      const near = cam.podiumNear;
+      pos = cam.podium.clone().add(near ? new THREE.Vector3(0, portrait ? 4.2 : 3.4, portrait ? 7.5 : 6) : new THREE.Vector3(0, portrait ? 7 : 5, portrait ? 12 : 9));
+      look = cam.podium.clone().add(new THREE.Vector3(0, near ? 2.0 : 1.0, 0));
     } else if (cam.mode === 'area') {
       // エリアぜんたい(ハプニングがみんなに起きるとき)
       pos = cam.area.clone().add(new THREE.Vector3(0, portrait ? 30 : 20, portrait ? 22 : 17));
@@ -790,6 +860,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           // 止まってしばらくしたら、カメラ(手前)のほうを向く
           p.still = (p.still || 0) + dt;
           if (p.still > 0.8) p.face = 0;
+          if (p.podium) p.face = 0;
         }
         // サイコロへの頭突き(ぴょんと跳ぶ)
         let jump = 0;
@@ -797,14 +868,14 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           p.jumpT += dt;
           jump = Math.sin(Math.min(1, p.jumpT / 0.42) * Math.PI) * 1.3;
         }
-        if (!p.anim) p.holder.position.y = spotOf(i).y + jump;
+        if (!p.anim && !p.podium) p.holder.position.y = spotOf(i).y + jump;
         p.holder.rotation.y += (p.face - p.holder.rotation.y) * Math.min(1, dt * 8);
         const s = game.s;
         const busy = p.anim && p.anim.hop;
         let clip = 'idle', face = 'normal';
         if (p.react && (p.react.t -= dt) > 0) { clip = p.react.clip; face = p.react.face; } else p.react = null;
         if (busy) clip = 'run';
-        if (s.phase === 'finished') { clip = ranking(s)[0] === i ? 'cheer' : 'wave'; face = ranking(s)[0] === i ? 'happy' : 'normal'; }
+        if (s.phase === 'finished' && !p.react) { clip = ranking(s)[0] === i ? 'cheer' : 'wave'; face = ranking(s)[0] === i ? 'happy' : 'normal'; }
         p.model.play(clip);
         p.model.setFace(face);
         p.model.update(dt);
@@ -880,6 +951,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     setFast: (on) => { fast = on; },
     tick: (sec) => { for (let i = 0; i < sec * 60; i++) frame(1 / 60, false); },
     show: (events) => show(events), // できごとを直接見せる(演出の確認用)
+    // 表彰式だけを見せる(確認用。進行は止める)
+    ceremony: () => { runId++; dice.g.visible = false; $('actsB').replaceChildren(); say(''); return ceremony(() => true).then(showResult); },
   };
 
   updateCamera(0, true);
