@@ -731,6 +731,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     owl.update(dt);
     medal.position.copy(owl.root.position).add(new THREE.Vector3(0, 2.5, 0));
     medal.rotation.y += dt * 2.4;
+    view.update(dt);
     atmosphere.update(dt);
     updateCamera(dt);
     if (draw) renderer.render(scene, camera);
