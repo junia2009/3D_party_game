@@ -914,9 +914,13 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   // 島ぜんたいを見せるのは、開会式・ターンのはじめ・競技の前など、みんなに関わるときだけ
   let freeCamera = false;
   const cam = { mode: 'overview', slot: 0, look: new THREE.Vector3(), pos: new THREE.Vector3() };
-  function camOn(slot) { cam.mode = 'slot'; cam.slot = slot; }
-  function camOver() { cam.mode = 'overview'; }
-  function camOwl() { cam.mode = 'owl'; }
+  function camOn(slot) {
+    if (cam.mode !== 'slot' || cam.slot !== slot) cam.glide = true;
+    cam.mode = 'slot';
+    cam.slot = slot;
+  }
+  function camOver() { cam.mode = 'overview'; cam.glide = true; }
+  function camOwl() { cam.mode = 'owl'; cam.glide = true; }
   function camArea(c) { cam.mode = 'area'; cam.area = c.clone(); }
   function updateCamera(dt, snap = false) {
     if (freeCamera) return;
@@ -946,7 +950,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       look = cam.area.clone();
     } else {
       const target = cam.mode === 'owl' ? owl.root.position : game.pieces[cam.slot].holder.position;
-      focus.lerp(target, snap ? 1 : Math.min(1, dt * (3 + Math.min(6, focus.distanceTo(target) / 4))));
+      // 別の子へ切りかわったときは、ゆっくり移る(glide)。追いついたら、あとはぴったりついていく
+      const d = focus.distanceTo(target);
+      if (cam.glide && d < 1.2) cam.glide = false;
+      const rate = cam.glide ? 2.2 + Math.min(4, d / 6) : 10;
+      focus.lerp(target, snap ? 1 : 1 - Math.exp(-dt * rate));
       pos = focus.clone().add(new THREE.Vector3(0, portrait ? 12 : 9, portrait ? 8.5 : 7.5)); // 少し高めから(手前の木ごしにならないように)
       look = focus.clone().add(new THREE.Vector3(0, 0.8, portrait ? -1 : 0));
     }
@@ -959,8 +967,12 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       return;
     }
     // ゆっくり動かす(はやくのときは少しだけ速く)。遠くへ移るときは、はなれているほど速く追う
+    // 子や先生を追っているときは、カメラは注目点にぴったり(ゆるさは注目点の動きのほうでつける)。
+    // 全体・エリア・表彰台へ切りかわるときは、ゆっくり
+    const follow = cam.mode === 'slot' || cam.mode === 'owl';
     const far = Math.min(1, camera.position.distanceTo(pos) / 30);
-    const k = snap ? 1 : 1 - Math.exp(-dt * ((fast ? 2.6 : 1.5) + far * 2.5));
+    const rate = follow && !cam.glide ? 12 : (fast ? 2.6 : 1.5) + far * 2.5;
+    const k = snap ? 1 : 1 - Math.exp(-dt * rate);
     camera.position.lerp(pos, k);
     cam.look.lerp(look, k);
     camera.lookAt(cam.look);
