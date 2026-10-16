@@ -8,7 +8,7 @@ import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
-import { KINDS, RULES, STEP, createGame, ranking, stackTop, step, swingX } from './rules.js';
+import { KINDS, RULES, STEP, createGame, ranking, stackTop, step, swingX, tryPlace } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { BRANCH_Y, SEATS, STUMP_H, buildStage, pieceMeshes, waitSpot } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -143,6 +143,27 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     hook.position.copy(bottom);
   }
 
+  // ── 落ちる場所の目安(山のてっぺんに落ちる影)。乗らない所では赤くなる ──────
+  const aimShadow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.5, 28),
+    new THREE.MeshBasicMaterial({ color: 0x1f2a33, transparent: true, opacity: 0.4, depthWrite: false }),
+  );
+  aimShadow.rotation.x = -Math.PI / 2;
+  aimShadow.renderOrder = 2;
+  aimShadow.visible = false;
+  scene.add(aimShadow);
+  // まっすぐ下への点線(ゆれているものから、影まで)
+  const GUIDE_N = 9;
+  const guideMat = new THREE.PointsMaterial({ color: 0xffffff, size: 5, sizeAttenuation: false, transparent: true, opacity: 0.85, depthWrite: false });
+  const guide = new THREE.Points(new THREE.BufferGeometry().setFromPoints(Array.from({ length: GUIDE_N }, (_, i) => new THREE.Vector3(0, -(i + 0.5) / GUIDE_N, 0))), guideMat);
+  guide.renderOrder = 3;
+  guide.visible = false;
+  // 影のふち(白い輪): 地面の色に負けないように
+  const aimRing = new THREE.Mesh(new THREE.RingGeometry(0.44, 0.5, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false }));
+  aimShadow.add(aimRing);
+  scene.add(guide);
+  const HANG_GAP = 1.9; // 山のてっぺんから、ゆれるものまでの高さ
+
   // ── 山の見た目 ─────────────────────────────────────
   // state の stack と同じ並びで、ものを置く。くずれるときは、落ちる段から上を飛ばす
   let pieces = []; // { obj, kind }(stack と同じ番号)
@@ -242,7 +263,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     runners[0].holder.add(marker);
     runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null, lastTick: null, camY: 3 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null, lastTick: null };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     tapped = false;
@@ -356,6 +377,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       switch (e.type) {
         case 'start':
           splash('はじめ!');
+          $('howtoT').classList.remove('show');
           sfx.whistle();
           owl.play('flap', { fade: 0.1 });
           break;
@@ -378,7 +400,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
         case 'land':
           syncStack(s);
           sfx.land(e.height, s.stack[s.stack.length - 1].kind);
-          if (e.margin < 0.06) { splash('ぐらぐら…!', 'red'); sfx.close(); react('cheer', 'surprised', 1.2); } else if (e.height % 5 === 0) { splash(`${e.height}だん!`, 'gold'); react('cheer', 'happy'); }
+          if (e.margin < 0.06) { splash('ぐらぐら…!', 'red'); sfx.close(); react('cheer', 'surprised', 1.2); } else if (e.height % 5 === 0) { splash(`${e.height}だん!`, 'gold'); react('cheer', 'happy'); game.showAll = 1.8; }
           break;
         case 'collapse':
           syncStack(s);
@@ -446,7 +468,8 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     const s = game.state;
     const top = new THREE.Vector3(0, BRANCH_Y, 0);
     // ゆれているもの: つるの先で、ルールの swingX にぴったり合わせる(落とした位置とずれないように)
-    const hy = Math.max(STUMP_H + stackTop(s) + 2.4, game.camY + 1.2);
+    const topY = STUMP_H + stackTop(s);
+    const hy = topY + HANG_GAP;
     if (hanging) {
       hanging.t += dt;
       const enter = s.stage === 'enter' ? Math.min(1, s.stageT / RULES.enterTime) : 1;
@@ -454,10 +477,26 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       hanging.obj.position.set(x, hy + (1 - enter) * 4, 0);
       hanging.obj.rotation.z = Math.cos(s.swing.phase + s.swing.w * s.stageT) * -0.25;
       top.x = x * 0.25;
+      top.y = Math.max(BRANCH_Y, hy + 5); // 山が枝より高くなったら、つるは画面の上の外から
       placeVine(top, hanging.obj.position.clone().add(new THREE.Vector3(0, KINDS[hanging.kind].h + 0.08, 0)));
       vine.visible = hook.visible = true;
+      // 影と点線: ねらっているあいだだけ。山に乗らないところは赤
+      const aiming = s.stage === 'aim' && s.cur !== null;
+      aimShadow.visible = guide.visible = aiming && enter >= 1;
+      if (aimShadow.visible) {
+        const r = tryPlace(s.stack, hanging.kind, x);
+        const w = KINDS[hanging.kind].w;
+        aimShadow.position.set(x, topY + 0.015, 0);
+        aimShadow.scale.set(w, w * 0.6, 1);
+        aimShadow.material.color.setHex(r.miss ? 0xe8344a : r.ok ? 0x1f2a33 : 0xd98a12);
+        aimShadow.material.opacity = r.miss ? 0.6 : 0.4;
+        aimRing.material.color.setHex(r.miss ? 0xffb0b0 : 0xffffff);
+        guide.position.set(x, hy, 0);
+        guide.scale.set(1, hy - topY - 0.05, 1);
+        guideMat.color.setHex(r.miss ? 0xff8a8a : 0xffffff);
+      }
     } else {
-      vine.visible = hook.visible = false;
+      vine.visible = hook.visible = aimShadow.visible = guide.visible = false;
     }
     // 落ちているもの: まっすぐ下へ(ルールの fallTime で、山のてっぺんへ)
     if (falling) {
@@ -498,22 +537,44 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
   }
 
   let freeCamera = false;
+  // 山のてっぺんと、ゆれるものが、画面いっぱいに入るように。距離は ゆれのはば と 高さの両方から決める
+  const look = new THREE.Vector3(0, 2.4, 0);
+  const cam = { d: 9, cy: 2.4 };
   function updateCamera(dt, snap = false) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    // 山のてっぺんが、画面のまん中より少し下に来るように、高さを上げていく
-    const s = game?.state;
-    const topY = STUMP_H + (s ? stackTop(s) : 0);
-    game && (game.camY += (Math.max(2.4, topY + 0.8) - game.camY) * Math.min(1, dt * 1.5));
-    const y = game ? game.camY : 2.4;
-    const shake = game?.shake ? (Math.random() - 0.5) * game.shake * 0.3 : 0;
-    if (game?.shake) game.shake = Math.max(0, game.shake - dt);
-    const pos = new THREE.Vector3(shake, y + (portrait ? 1.6 : 1.0), portrait ? 11 : 8.5);
-    const look = new THREE.Vector3(0, y + (portrait ? 0.4 : 0.3), 0);
-    camera.fov = portrait ? 60 : 46;
+    camera.fov = portrait ? 52 : 42;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
+    const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    const tanH = tanV * aspect;
+    const s = game?.state;
+    const topY = STUMP_H + (s ? stackTop(s) : 0);
+    // 入れたいはんい: よこは ゆれのはば+もののはば、たては 山の少し下から ゆれるものの上まで
+    const kind = s?.piece?.kind;
+    const halfW = (s ? s.swing.A : 1) + (kind ? KINDS[kind].w / 2 : 0.5) + 0.45;
+    // 下は 文字やバーがかぶるので、山のてっぺんが画面のまん中より少し下に来るように
+    // 5だんごとに、少しのあいだ 山ぜんたいを見せる
+    if (game?.showAll > 0) game.showAll = Math.max(0, game.showAll - dt);
+    const lo = game?.showAll > 0 ? STUMP_H - 0.6 : Math.max(STUMP_H - 0.6, topY - 1.4);
+    const hi = topY + HANG_GAP + 1.0;
+    let d = Math.max(halfW / tanH, ((hi - lo) / 2) / tanV * (game?.showAll > 0 ? 1.18 : 1.05), 5);
+    // 自分の番でねらっているときは、少し寄る
+    const mine = s && s.phase === 'play' && s.cur === 0 && s.stage === 'aim';
+    if (mine) d *= 0.93;
+    // はじまる前・おわったあとは、切り株とみんなが入るくらい引く
+    if (!s || s.phase !== 'play') d = Math.max(d, portrait ? 11 : 8.5);
+    const cy = (lo + hi) / 2 + (s && s.phase !== 'play' ? -0.6 : 0);
+    const k = snap ? 1 : 1 - Math.exp(-dt * 3);
+    cam.d += (d - cam.d) * k;
+    cam.cy += (cy - cam.cy) * k;
+    const shake = game?.shake ? (Math.random() - 0.5) * game.shake * 0.3 : 0;
+    if (game?.shake) game.shake = Math.max(0, game.shake - dt);
+    // 少し上から見下ろす(てっぺんの面が見えるように)。高くなるほど水平に近づけて、見上げる感じに
+    const h = s ? s.stack.length : 0;
+    const pos = new THREE.Vector3(shake, cam.cy + cam.d * (0.16 - Math.min(0.12, h * 0.01)), cam.d);
+    look.set(0, cam.cy, 0);
     if (intro < 1) {
       const e = 1 - (1 - intro) ** 3;
       const sky = new THREE.Vector3(8, 22, 24);
@@ -521,10 +582,8 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       camera.lookAt(look);
       return;
     }
-    const k = snap ? 1 : 1 - Math.exp(-dt * 5);
-    camera.position.lerp(pos, k);
-    camera.userData.look = camera.userData.look ? camera.userData.look.lerp(look, k) : look.clone();
-    camera.lookAt(camera.userData.look);
+    camera.position.copy(pos);
+    camera.lookAt(look);
   }
 
   // ── 画質(ほかの競技と同じ考え方) ──────────────────────
@@ -605,6 +664,8 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     start: (key = picked) => { picked = key; return startGame(); },
     camera, renderer, scene,
     freeCamera: (on) => { freeCamera = on; },
+    snap: () => { updateCamera(0, true); renderer.render(scene, camera); },
+    sync: () => syncStack(game.state),
     setTime: (key) => atmosphere.apply(key),
     tick: (sec) => { for (let i = 0; i < sec * 60; i++) frame(1 / 60, false); },
     advance: (sec) => {
