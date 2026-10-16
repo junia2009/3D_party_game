@@ -12,7 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonGradient, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, ranking, step } from './rules.js';
-import { LENGTH, LOGS, LOG_R, TUNNEL, currentAt, logX } from './course.js';
+import { FALLS, LENGTH, LOGS, LOG_R, TUNNEL, WHIRLS, currentAt, logX } from './course.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, buildStage, coursePoint, courseHeading, seatPoint } from './stage.js';
 import { PADDLE_TIP, makePaddle, makeRaft, wakeTexture } from './raft.js';
@@ -150,6 +150,37 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     scene.add(g);
     return { lg, g };
   });
+
+  // ── うずのあわ: 白いつぶが らせんに まわりながら、まん中へ吸いこまれる ─────────
+  const FOAM_N = 36;
+  const foam = WHIRLS.map((w, wi) => {
+    const m = new THREE.InstancedMesh(new THREE.CircleGeometry(0.09, 8), new THREE.MeshBasicMaterial({ color: 0xf4fbff, transparent: true, opacity: 0.85, depthWrite: false }), FOAM_N);
+    m.frustumCulled = false;
+    scene.add(m);
+    const bits = Array.from({ length: FOAM_N }, (_, k) => ({ a: (k / FOAM_N) * Math.PI * 6, r: w.R * (0.25 + (k % 12) / 12 * 0.75), sz: 0.6 + (k % 5) * 0.2 }));
+    return { w, m, bits, center: coursePoint(w.s, w.x, 0.05), spin: 1 };
+  });
+  const foamDummy = new THREE.Object3D();
+  function updateFoam(dt) {
+    const s = game?.state;
+    foam.forEach((f, wi) => {
+      // だれかが入っていると、はげしく回る
+      const busy = s && s.runners.some((r) => r.whirl === wi);
+      f.spin += ((busy ? 2.2 : 1) - f.spin) * Math.min(1, dt * 2);
+      stage.whirls[wi].rotation.z += dt * 1.6 * f.spin;
+      f.bits.forEach((b, k) => {
+        b.a += dt * (1.2 + (f.w.R - b.r) * 0.9) * f.spin;
+        b.r -= dt * 0.35 * f.spin;
+        if (b.r < 0.2) b.r = f.w.R * (0.85 + (k % 3) * 0.05);
+        foamDummy.position.set(f.center.x + Math.cos(b.a) * b.r, f.center.y - (1 - b.r / f.w.R) * 0.02, f.center.z + Math.sin(b.a) * b.r);
+        foamDummy.rotation.set(-Math.PI / 2, 0, 0);
+        foamDummy.scale.setScalar(b.sz * Math.min(1, b.r / 0.6));
+        foamDummy.updateMatrix();
+        f.m.setMatrixAt(k, foamDummy.matrix);
+      });
+      f.m.instanceMatrix.needsUpdate = true;
+    });
+  }
 
   // ── しぶき(水のつぶ) ──────────────────────────────────
   const dropGeo = new THREE.SphereGeometry(0.06, 6, 4);
@@ -377,6 +408,21 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       return d;
     }));
   }
+  // 3D の場所に、文字をぽんと出す(ガツン!・ドン!)
+  const popV = new THREE.Vector3();
+  function pop(text, pos, cls = '') {
+    popV.copy(pos).project(camera);
+    if (popV.z > 1) return; // カメラのうしろ
+    const el = document.createElement('div');
+    el.className = 'pop ' + cls;
+    el.textContent = text;
+    el.style.left = `${((popV.x + 1) / 2) * 100}%`;
+    el.style.top = `${((1 - popV.y) / 2) * 100}%`;
+    $('popsK').append(el);
+    setTimeout(() => el.remove(), 900);
+  }
+  const near = (v, d = 16) => v.holder.position.distanceTo(camera.position) < d;
+
   // こぐリズム: 左右のランプ・こうごの数・ひとかきの強さ。コツを ことばで教える
   function rhythm(e) {
     const g = game;
@@ -400,15 +446,16 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     if (!e.alt && e.side !== 0) tip = ['おなじがわ! こうごに', 'warn'];
     else if (g.fast >= 3) { tip = ['はやすぎ! ぐいっと', 'warn']; g.fast = 0; }
     else if (g.combo > 0 && g.combo % 10 === 0) tip = [`いいリズム! ${g.combo}`, 'good'];
-    if (tip && (tip[0] !== g.lastTip || now - (g.tipAt ?? -9) > 2.5)) {
-      const el = $('tipK');
-      el.textContent = tip[0];
-      el.className = 'rtip ' + tip[1];
-      void el.offsetWidth;
-      el.classList.add('show');
-      g.lastTip = tip[0];
-      g.tipAt = now;
-    }
+    if (tip && (tip[0] !== g.lastTip || now - (g.tipAt ?? -9) > 2.5)) showTip(...tip);
+  }
+  function showTip(text, cls) {
+    const el = $('tipK');
+    el.textContent = text;
+    el.className = 'rtip ' + cls;
+    void el.offsetWidth;
+    el.classList.add('show');
+    game.lastTip = text;
+    game.tipAt = game.state.t;
   }
   function renderHud() {
     const s = game.state;
@@ -455,16 +502,38 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
         case 'crash': {
           const v = game.runners[e.slot];
           v.spinDir = Math.sign(s.runners[e.slot].yawV) || 1;
-          spray(tmp.copy(v.holder.position).setY(v.holder.position.y + 0.3), 14, 2.5);
-          if (e.slot === 0) { sfx.crash(); splash(e.kind === 'log' ? 'ゴツン!' : 'ガツン!', 'red'); game.shake = 0.35; }
+          // ぶつかったところ(いかだと岩のあいだ)に、しぶきと波紋。いかだは大きくゆれる
+          const hitAt = coursePoint(e.s, e.x, 0.25).lerp(v.holder.position, 0.5);
+          hitAt.y = v.holder.position.y + 0.3;
+          spray(hitAt, e.slot === 0 ? 22 : 12, 2.8, 1.2);
+          ripple(tmp.copy(hitAt).setY(v.holder.position.y), 2.2);
+          v.roll = (v.roll || 0) + v.spinDir * 0.35;
+          v.pitch = -0.2;
+          if (e.slot === 0 || near(v, 12)) pop(e.kind === 'log' ? 'ゴツン!' : 'ガツン!', tmp.copy(hitAt).setY(hitAt.y + 0.8), 'bang');
+          if (e.slot === 0) { sfx.crash(); game.shake = 0.4; }
           break;
         }
         case 'bump':
-          if (e.a === 0 || e.b === 0) { sfx.bump(); game.shake = 0.15; }
-          spray(tmp.copy(game.runners[e.a].holder.position).lerp(game.runners[e.b].holder.position, 0.5).setY(game.runners[e.a].holder.position.y + 0.2), 6, 1.5);
+        {
+          const A = game.runners[e.a], B = game.runners[e.b];
+          const mid = tmp.copy(A.holder.position).lerp(B.holder.position, 0.5);
+          mid.y = A.holder.position.y + 0.25;
+          spray(mid, 6 + Math.round(e.hard * 3), 1.6);
+          ripple(mid.clone().setY(A.holder.position.y), 1.4);
+          // 当てられたがわへ ぐらっと(横の向きで、反対に)
+          const side = Math.sign(s.runners[e.b].x - s.runners[e.a].x) || 1;
+          A.roll = (A.roll || 0) - side * 0.18 * Math.min(2, e.hard);
+          B.roll = (B.roll || 0) + side * 0.3 * Math.min(2, e.hard);
+          A.surprise = B.surprise = 0.6;
+          if (e.a === 0 || e.b === 0 || near(A, 10)) pop('ドン!', mid.clone().setY(mid.y + 0.9), 'don');
+          if (e.a === 0 || e.b === 0) { sfx.bump(); game.shake = 0.2 + Math.min(0.2, e.hard * 0.08); }
+        }
           break;
         case 'whirlIn':
-          if (e.slot === 0) { sfx.whirl(); splash('うずだ! こいで!', 'red'); }
+          if (e.slot === 0) { sfx.whirl(); splash('うずだ!', 'red'); showTip('れんだで ぬけだせ!', 'warn'); }
+          break;
+        case 'whirlOut':
+          if (e.slot === 0) showTip('ぬけた!', 'good');
           break;
         case 'fall':
           if (e.slot === 0) { sfx.fall(); }
@@ -561,6 +630,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       const v = game.runners[i];
       v.time += dt;
       v.strokeT += dt;
+      v.whirlT = r.whirl >= 0 ? (v.whirlT || 0) + dt : 0;
       // 滝: 落ちるあいだ、少し浮いて前へ傾く
       v.air += ((r.air > 0 ? 1 : 0) - v.air) * (1 - Math.exp(-dt * 14));
       const hop = r.air > 0 ? Math.sin((1 - r.air / RULES.fallTime) * Math.PI) * 0.5 : 0;
@@ -570,12 +640,19 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       // ぶつかったら くるっと1回転
       const spin = r.spin > 0 ? (1 - r.spin / RULES.spinTime) * Math.PI * 2 * v.spinDir : 0;
       v.holder.rotation.set(0, head.yaw - r.yaw + spin, 0);
-      v.body.rotation.set(head.slope * 0.8 - v.air * 0.25 + Math.sin(v.time * 1.9 + i) * 0.03, 0, Math.sin(v.time * 2.4 + i) * 0.04 + (r.whirl >= 0 ? 0.08 : 0));
+      // ゆれ: ぶつかった・当てられたときの ぐらっ(ばねのように もどる)、うずの中は まん中へ かたむく
+      v.roll = (v.roll || 0) * Math.exp(-dt * 3);
+      v.pitch = (v.pitch || 0) * Math.exp(-dt * 4);
+      v.surprise = Math.max(0, (v.surprise || 0) - dt);
+      const wob = Math.sin(v.time * 14) * v.roll;
+      v.body.rotation.set(head.slope * 0.8 - v.air * 0.25 + v.pitch + Math.sin(v.time * 1.9 + i) * 0.03, 0, Math.sin(v.time * 2.4 + i) * 0.04 + wob + (r.whirl >= 0 ? 0.14 : 0));
       // 旗がゆれる
       v.raft.flag.rotation.y = Math.PI / 2 + Math.sin(v.time * 6 + i) * 0.25;
       let clip = 'idle', face = 'normal';
       if (r.finish !== null) { clip = ranking(s)[0] === i ? 'cheer' : 'wave'; face = 'happy'; }
-      else if (r.spin > 0 || r.whirl >= 0) face = 'surprised';
+      else if (r.spin > 0) { clip = 'dizzy'; face = 'surprised'; }
+      else if (r.whirl >= 0) { clip = r.whirl >= 0 && v.whirlT > 1.2 ? 'dizzy' : 'idle'; face = 'surprised'; }
+      else if (v.surprise > 0) face = 'surprised';
       else if (r.air > 0) face = 'happy';
       v.model.play(clip);
       v.model.setFace(face);
@@ -633,9 +710,16 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       // うしろから追いかける。木の根のトンネルの中は低く
       const inTunnel = me.s > TUNNEL.from - 6 && me.s < TUNNEL.to + 2;
       const tun = camera.userData.tun = (camera.userData.tun ?? 0) + ((inTunnel ? 1 : 0) - (camera.userData.tun ?? 0)) * Math.min(1, dt * 2);
-      const back = (portrait ? 6.2 : 5.2) - tun * 1.2, up = (portrait ? 3.4 : 2.6) - tun * 1.4;
-      pos = coursePoint(me.s - back, me.x * 0.6, up);
-      look = coursePoint(me.s + (portrait ? 7 : 8), me.x * 0.4, 0.5);
+      // 滝: 落ち口に近づくと、カメラは高く上がって 下の滝つぼを見下ろす。落ちるあいだは 上に残って見送り、落ちたら追いつく
+      const f = FALLS.find((q) => me.s > q.s - 9 && me.s < q.s + 6);
+      const fk = f ? (me.s < f.s ? Math.min(1, (me.s - (f.s - 9)) / 5) : Math.max(0, 1 - (me.s - f.s) / 6)) : 0;
+      const fall = camera.userData.fall = (camera.userData.fall ?? 0) + (fk - (camera.userData.fall ?? 0)) * Math.min(1, dt * 3);
+      const back = (portrait ? 6.2 : 5.2) - tun * 1.2 + fall * 1.2, up = (portrait ? 3.4 : 2.6) - tun * 1.4 + fall * 1.6;
+      // 落ちたあとは、カメラの道のりを少し おくらせる(上から見送る)
+      const camS = f && me.s > f.s ? Math.max(f.s - back, me.s - back - (1 - Math.min(1, (me.s - f.s) / 5)) * 2) : me.s - back;
+      pos = coursePoint(camS, me.x * 0.6, up);
+      if (f && me.s > f.s - back) pos.y = Math.max(pos.y, coursePoint(f.s - 0.5, 0, 0).y + up * 0.8); // 落ち口より下へは まだ下りない
+      look = coursePoint(me.s + (portrait ? 7 : 8) * (1 - fall * 0.35), me.x * 0.4, 0.5 - fall * 0.8);
     }
     if (game?.shake > 0) {
       game.shake = Math.max(0, game.shake - dt);
@@ -714,7 +798,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     if (!paused) {
       // 水が流れる・うずが回る
       stage.water.map.offset.y -= dt * 0.5;
-      for (const w of stage.whirls) w.rotation.z += dt * 1.6;
+      updateFoam(dt);
       scenery.update(dt, camera);
       for (const a of audience) {
         if (a.until > 0 && (a.until -= dt) <= 0) { a.model.play('idle'); a.model.setFace('normal'); }
