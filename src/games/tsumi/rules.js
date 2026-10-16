@@ -22,19 +22,20 @@ export const RULES = {
   settleTime: 0.8, // 乗ってから、次の番まで
   collapseTime: 2.6, // くずれてから、次の番まで
   base: { w: 2.6, grip: 1 }, // 切り株の上
+  forgive: 0.03, // 見た目より少しだけ甘く(ぎりぎりで落ちると、ずるく感じる)
   swingA: [0.9, 0.035, 1.45], // ゆれのはば: はじめ・1段ごとに足す・いちばん大きく
-  swingW: [1.7, 0.08, 0.035, 4.2], // ゆれの速さ(角速度): はじめ・1段ごと・1回投げるごと・いちばん速く
+  swingW: [1.7, 0.08, 0.05, 4.2], // ゆれの速さ(角速度): はじめ・1段ごと・1回投げるごと・いちばん速く
   dropMax: 160, // 投げた回数の上限(ここまで来たら、残っている子でおしまい)
 };
 
 // 積むもの。weight はくじで出る重み
 export const KINDS = {
-  acorn: { name: 'どんぐり', w: 0.5, h: 0.55, grip: 0.62, weight: 26 },
-  walnut: { name: 'クルミ', w: 0.56, h: 0.5, grip: 0.72, weight: 14 },
-  pinecone: { name: 'まつぼっくり', w: 0.56, h: 0.72, grip: 0.58, weight: 14 },
-  mushroom: { name: 'キノコ', w: 0.92, h: 0.5, grip: 0.9, weight: 16 },
+  acorn: { name: 'どんぐり', w: 0.5, h: 0.55, grip: 0.88, weight: 26 },
+  walnut: { name: 'クルミ', w: 0.56, h: 0.5, grip: 0.92, weight: 14 },
+  pinecone: { name: 'まつぼっくり', w: 0.56, h: 0.72, grip: 0.82, weight: 14 },
+  mushroom: { name: 'キノコ', w: 0.92, h: 0.5, grip: 1.0, weight: 16 },
   leaf: { name: '葉っぱ', w: 1.15, h: 0.12, grip: 1.0, weight: 16 },
-  twig: { name: '小枝', w: 1.4, h: 0.16, grip: 0.85, weight: 14 },
+  twig: { name: '小枝', w: 1.4, h: 0.16, grip: 1.0, weight: 14 },
 };
 
 function pickKind(s) {
@@ -107,7 +108,7 @@ export function tryPlace(stack, kind, x) {
     let m = 0, mx = 0;
     for (let j = i; j < all.length; j++) { m += mass[j]; mx += mass[j] * all[j].x; }
     const com = mx / m;
-    const room = (sup.w / 2) * sup.grip - Math.abs(com - sup.x);
+    const room = (sup.w / 2) * sup.grip + RULES.forgive - Math.abs(com - sup.x);
     if (room < margin) margin = room;
     if (room < 0 && fallFrom === null) fallFrom = i;
   }

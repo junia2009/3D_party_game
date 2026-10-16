@@ -83,7 +83,7 @@ test('重心で見る: 下の段がずれていても、上で反対へもどせ
   const k = (kind, x, y) => ({ kind, x, y, w: KINDS[kind].w, h: KINDS[kind].h, grip: KINDS[kind].grip });
   // 小枝の上のキノコは右へずれている(ぎりぎり立つ)
   const stack = [k('twig', 0, 0), k('mushroom', 0.55, 0.16)];
-  const worse = tryPlace(stack, 'mushroom', 0.9);
+  const worse = tryPlace(stack, 'mushroom', 1.0);
   assert.ok(!worse.ok, 'さらに右へのせると、2つの重心が小枝からはみ出して、くずれる');
   assert.equal(worse.fallFrom, 1, '小枝の上から落ちる');
   assert.ok(tryPlace(stack, 'mushroom', 0.25).ok, '左へもどすようにのせれば立つ');
