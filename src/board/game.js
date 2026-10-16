@@ -16,6 +16,7 @@ import { BONUSES, ITEMS, RULES, act, createTournament, currentSlot, ranking } fr
 import { PERSONALITIES, cpuAct, createCpu } from './cpu.js';
 import { STAGES } from './stages/index.js';
 import { buildBoardScene } from './scene.js';
+import { createEffects } from './effects.js';
 import { simulate } from './simulate.js';
 
 const $ = (id) => document.getElementById(id);
@@ -31,6 +32,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   atmosphere.sun.target.position.set(0, 0, 0);
   let st = STAGES.shiki;
   const view = buildBoardScene(scene, st);
+  const fx = createEffects(scene);
 
   // ── 音(短いものだけ) ──────────────────────────────
   let audio = null;
@@ -274,9 +276,13 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
 
   function placeOwl(sq, snap = false) {
     const to = view.squarePos(sq, new THREE.Vector3());
-    owl.root.userData.to = to;
-    if (snap) owl.root.position.copy(to);
+    to.x += 0.9; // マスのとなり(コマとかさならないように)
+    to.z -= 0.6;
+    if (snap) { owl.root.position.copy(to); owl.root.userData.flight = null; return; }
+    const from = owl.root.position.clone();
+    owl.root.userData.flight = { from, to, t: 0, time: 2.4, arc: 6 + from.distanceTo(to) * 0.15 };
   }
+
 
   function setMode(m) {
     mode = m;
@@ -352,6 +358,31 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     await Promise.race([sleep(sec / speed()), new Promise((r) => { infoSkip = r; })]);
     infoSkip = null;
     el.hidden = true;
+  }
+
+  // ハプニングの演出。春と冬はみんなに起きるので、そのエリアを引いて見せる
+  function areaCenter(area) {
+    const qs = st.squares.filter((q) => q.area === area && !q.path);
+    return new THREE.Vector3(qs.reduce((a, q) => a + q.x, 0) / qs.length, 0, qs.reduce((a, q) => a + q.z, 0) / qs.length);
+  }
+  function playHappen(e) {
+    const me = game.pieces[e.slot].holder.position;
+    if (e.area === 'spring') {
+      const c = areaCenter('spring');
+      camArea(c);
+      fx.rain(c, 10, 2.6);
+    } else if (e.area === 'summer') {
+      camOn(e.slot);
+      fx.acornRain(me, 3.2, 26);
+    } else if (e.area === 'autumn') {
+      camOn(e.slot);
+      const p = game.pieces[e.slot];
+      fx.whirlwind(() => p.holder.position, 2.4);
+    } else if (e.area === 'winter') {
+      const qs = st.squares.filter((q) => q.area === 'winter' && !q.path);
+      camArea(areaCenter('winter'));
+      fx.snowball(qs.map((q) => new THREE.Vector3(q.x, 0, q.z)), 2.6);
+    }
   }
 
   // ── できごとを見せる ──────────────────────────────
@@ -444,18 +475,22 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           await sleep(0.9 / speed());
           break;
         case 'medal':
+          camOn(e.slot);
+          owl.play('flap', { fade: 0.1 });
+          await fx.giveMedal(owl.root.position.clone().setY(owl.root.position.y + 1.5), game.pieces[e.slot].holder.position);
           react(e.slot, 'cheer', 'happy', 2.4);
           sfx.medal();
-          splash(`${name(e.slot)} メダルゲット!`, 'gold');
+          splash('メダルゲット!', 'gold');
           pop('メダル +1', e.slot, 'gold');
           renderCards();
           await sleep(2.2 / speed());
           break;
         case 'owlMove': {
           // 先生が飛んでいくのを、カメラが追いかける
+          owl.play('flap', { fade: 0.1 });
           placeOwl(e.to);
           camOwl();
-          await explain({ color: '#ffd24a', mark: '★', title: 'ホーホー先生', text: '先生は 新しいマスへ とんでいった。そこで メダルが買える', sec: 3.0 });
+          await explain({ color: '#ffd24a', mark: '★', title: 'ホーホー先生', text: '先生は 新しいマスへ とんでいった。そこで メダルが買える', sec: 3.4 });
           break;
         }
         case 'owlPoor':
@@ -463,10 +498,13 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           break;
         case 'getItem':
         case 'buyItem':
+          fx.showItem(e.item, game.pieces[e.slot].holder.position);
+          react(e.slot, 'cheer', 'happy', 1.4);
           renderCards();
           await explain({ color: '#34c47c', mark: '?', title: `${ITEMS[e.item].name}を ${e.type === 'buyItem' ? '買った' : 'もらった'}`, text: ITEM_INFO[e.item], who: e.slot, sec: 2.4 });
           break;
         case 'useItem':
+          fx.showItem(e.item, game.pieces[e.slot].holder.position);
           renderCards();
           await explain({ color: '#34c47c', mark: '?', title: `${ITEMS[e.item].name}を つかった!`, text: ITEM_INFO[e.item], who: e.slot, sec: 2.2 });
           break;
@@ -475,8 +513,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           sfx.happen();
           const h = HAPPEN_INFO[e.area];
           splash(h.title + '!', 'red');
+          playHappen(e);
           await explain({ color: '#9b6bff', mark: '!', title: `ハプニング: ${h.title}`, text: h.text, sec: 3.0 });
-          if (e.area === 'spring' || e.area === 'winter') camOver(); // みんなに起きるので、全体を見せる
           break;
         }
         case 'duel':
@@ -692,6 +730,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   function camOn(slot) { cam.mode = 'slot'; cam.slot = slot; }
   function camOver() { cam.mode = 'overview'; }
   function camOwl() { cam.mode = 'owl'; }
+  function camArea(c) { cam.mode = 'area'; cam.area = c.clone(); }
   function updateCamera(dt, snap = false) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
@@ -703,10 +742,14 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     if (cam.mode === 'overview' || !game) {
       pos = new THREE.Vector3(0, portrait ? 74 : 40, portrait ? 52 : 36);
       look = new THREE.Vector3(0, 0, portrait ? 3 : 1);
+    } else if (cam.mode === 'area') {
+      // エリアぜんたい(ハプニングがみんなに起きるとき)
+      pos = cam.area.clone().add(new THREE.Vector3(0, portrait ? 30 : 20, portrait ? 22 : 17));
+      look = cam.area.clone();
     } else {
       const target = cam.mode === 'owl' ? owl.root.position : game.pieces[cam.slot].holder.position;
-      focus.lerp(target, snap ? 1 : Math.min(1, dt * 3));
-      pos = focus.clone().add(new THREE.Vector3(0, portrait ? 9 : 7, portrait ? 10 : 8.5));
+      focus.lerp(target, snap ? 1 : Math.min(1, dt * (3 + Math.min(6, focus.distanceTo(target) / 4))));
+      pos = focus.clone().add(new THREE.Vector3(0, portrait ? 12 : 9, portrait ? 8.5 : 7.5)); // 少し高めから(手前の木ごしにならないように)
       look = focus.clone().add(new THREE.Vector3(0, 0.8, portrait ? -1 : 0));
     }
     if (intro < 1) {
@@ -717,8 +760,9 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       cam.look.copy(look);
       return;
     }
-    // ゆっくり動かす(はやくのときは少しだけ速く)
-    const k = snap ? 1 : 1 - Math.exp(-dt * (fast ? 2.6 : 1.5));
+    // ゆっくり動かす(はやくのときは少しだけ速く)。遠くへ移るときは、はなれているほど速く追う
+    const far = Math.min(1, camera.position.distanceTo(pos) / 30);
+    const k = snap ? 1 : 1 - Math.exp(-dt * ((fast ? 2.6 : 1.5) + far * 2.5));
     camera.position.lerp(pos, k);
     cam.look.lerp(look, k);
     camera.lookAt(cam.look);
@@ -800,13 +844,25 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         if (dice.state !== 'hit') dice.acorn.scale.setScalar(7);
       }
     }
-    // 先生: いまのマスへ飛んでいく。頭の上でメダルが回る
-    const to = owl.root.userData.to;
-    if (to) owl.root.position.lerp(tmp.copy(to).setY(to.y + (owl.root.position.distanceTo(to) > 0.3 ? 2 : 0)), Math.min(1, dt * 2.5));
-    owl.root.rotation.y += dt * 0.3;
+    // 先生: いまのマスへ、弧をえがいて飛んでいく。頭の上でメダルが回る。足もとに金の光の柱
+    const fl = owl.root.userData.flight;
+    if (fl) {
+      fl.t += dt;
+      const k = Math.min(1, fl.t / fl.time);
+      const e2 = k * k * (3 - 2 * k);
+      owl.root.position.lerpVectors(fl.from, fl.to, e2);
+      owl.root.position.y += Math.sin(k * Math.PI) * fl.arc;
+      const dx = fl.to.x - fl.from.x, dz = fl.to.z - fl.from.z;
+      if (dx * dx + dz * dz > 0.01) owl.root.rotation.y = Math.atan2(dx, dz);
+      if (k >= 1) { owl.root.userData.flight = null; owl.play('idle'); }
+    } else {
+      owl.root.rotation.y += (0 - owl.root.rotation.y) * Math.min(1, dt * 3); // 着いたら、手前を向く
+    }
     owl.update(dt);
-    medal.position.copy(owl.root.position).add(new THREE.Vector3(0, 2.5, 0));
+    medal.position.copy(owl.root.position).add(tmp.set(0, 2.5, 0));
     medal.rotation.y += dt * 2.4;
+    fx.markOwl(owl.root.position);
+    fx.update(dt);
     view.update(dt);
     atmosphere.update(dt);
     updateCamera(dt);
@@ -823,6 +879,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     freeCamera: (on) => { freeCamera = on; },
     setFast: (on) => { fast = on; },
     tick: (sec) => { for (let i = 0; i < sec * 60; i++) frame(1 / 60, false); },
+    show: (events) => show(events), // できごとを直接見せる(演出の確認用)
   };
 
   updateCamera(0, true);

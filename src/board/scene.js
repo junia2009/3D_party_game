@@ -506,6 +506,8 @@ export function buildBoardScene(scene, st) {
     const x = Math.cos(a) * isle.rx * r, z = Math.sin(a) * isle.rz * r;
     if (near(x, z, 2.4)) continue;
     if (Math.hypot(x, z) < 6.5) continue; // まん中は大木のため
+    // 道のすぐ手前(+z)は、カメラが道を見るとき木がかくすので、あける(2〜6m 手前まで)
+    if (near(x, z - 2.5, 2.4) || near(x, z - 5, 2.4)) continue;
     const area = areaAt(st, x, z);
     const h = 2.4 + rand() * 1.8;
     if (area === 'winter') {
