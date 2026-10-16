@@ -36,6 +36,7 @@ function infoHtml(c, i) {
       <div><dt>とくい</dt><dd>${c.role}</dd></div>
       <div><dt>せいかく</dt><dd>${c.personality}</dd></div>
       <div><dt>見分け方</dt><dd>${c.marks.join('・')}</dd></div>
+      ${(c.facts || []).map(([dt, dd]) => `<div><dt>${dt}</dt><dd>${dd}</dd></div>`).join('')}
     </dl>
     <div class="z-stats">${stats}</div>
     </div><span class="z-folio">- ${c.guest ? 'ゲスト' : i + 1} -</span>`;
