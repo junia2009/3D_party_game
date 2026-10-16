@@ -325,6 +325,24 @@
     box-shadow: 0 3px 0 rgba(31,42,51,.18); font: 800 clamp(13px, 3.8vw, 17px) var(--font-body); font-variant-numeric: tabular-nums; transition: transform .2s;
   }
   #hudC .timer { width: 2.7em; font-size: 18px; padding: 6px 0; }
+  /* 切り株ずもう: 右下に「ためる」ボタン(まわりの輪が たまり具合) */
+  #hudU .chip { font-size: clamp(11px, 3.2vw, 15px); padding: 3px 7px 3px 3px; white-space: nowrap; }
+  #hudU .chip b:empty { display: none; }
+  #hudU .chip.power { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
+  #hudU .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
+  .tame {
+    pointer-events: auto; position: absolute; right: max(18px, env(safe-area-inset-right, 0px));
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); width: 112px; height: 112px; border-radius: 50%; border: 0;
+    --k: 0; background: radial-gradient(circle, var(--accent) 60%, transparent 61%),
+      conic-gradient(#ffd24a calc(var(--k) * 360deg), rgba(255,255,255,.55) 0);
+    color: #fff; font: 800 18px/1.15 var(--font-body); box-shadow: 0 7px 0 rgba(31,42,51,.25); touch-action: none; cursor: pointer;
+  }
+  .tame small { display: block; font-size: 10px; font-weight: 700; opacity: .9; }
+  .tame.down { transform: translateY(5px) scale(.96); box-shadow: 0 2px 0 rgba(31,42,51,.25); }
+  .tame.full { animation: tamefull .25s infinite; }
+  .tame:disabled { opacity: .4; }
+  @keyframes tamefull { 50% { filter: brightness(1.25); } }
+  .pop.don { color: #ff8a6a; font-size: 34px; -webkit-text-stroke: 6px #6a2a1c; }
   /* どんぐり早うち: まん中に先生の合図。合図の瞬間に画面が光る */
   #hudW .chip { font-size: clamp(11px, 3.2vw, 15px); padding: 3px 7px 3px 3px; min-width: 2.2em; }
   #hudW .chip b { min-width: 2.6em; }
@@ -973,6 +991,11 @@
       <span class="name">どんぐり早うち</span>
       <span class="meta"><span>30〜60びょう</span></span>
     </button>
+    <button class="card" type="button" data-open="sumo">
+      <span class="thumb"><img src="./assets/thumbs/sumo.jpg" alt="" width="640" height="360"><span class="ribbon">第9競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">切り株ずもう</span>
+      <span class="meta"><span>30〜60びょう</span></span>
+    </button>
   </div>
 </section>
 
@@ -1063,6 +1086,18 @@
   <div class="pops" id="popsW"></div>
   <div class="splash" id="splashW"></div>
   <p class="howto" id="howtoW">黄色い どんぐりの旗で タップ!<br>赤い旗・にせものには つられない</p>
+</div>
+
+<div class="hud" id="hudU" hidden>
+  <div class="top">
+    <div class="scores" id="chipsU" aria-label="のこっている子"></div>
+    <button class="pausebtn" id="pauseBtnU" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsU"></div>
+  <div class="splash" id="splashU"></div>
+  <p class="howto" id="howtoU">ゆびを おいて ずらすと あるく<br>「ためる」を はなすと とっしん!</p>
+  <div class="stick" id="stickU" hidden><i></i></div>
+  <button class="tame" id="tameU" type="button">ためる<small>はなすと とっしん</small></button>
 </div>
 
 <div class="hud" id="hudS" hidden>

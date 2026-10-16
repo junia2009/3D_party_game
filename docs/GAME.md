@@ -60,3 +60,4 @@
 | いかだレース | 作成中 | [minigames/ikada.md](minigames/ikada.md) |
 | 花ぬり陣取り | 作成中 | [minigames/hana.md](minigames/hana.md) |
 | どんぐり早うち | 作成中 | [minigames/hayauchi.md](minigames/hayauchi.md) |
+| 切り株ずもう | 作成中 | [minigames/sumo.md](minigames/sumo.md) |
