@@ -1,7 +1,8 @@
 // まつぼっくり的あて のルール。THREE にも DOM にも触らない(あとでサーバーでも同じものを回す)。
 //
 // 森の池のほとりの桟橋に5人がならび、池の向こうに出てくる「自分の色の的」へ、まつぼっくりを投げる。
-// - ひっぱってはなす(ぱちんこ)。ひっぱる向きで左右、ひっぱる長さで遠さが決まる。
+// - ひっぱってはなす(ぱちんこ)。低く速く、ほぼまっすぐ飛ぶ(山なりで遠さを読まなくてよい)。
+//   ひっぱる向きで左右、下へひっぱる長さで上下の角度(長いほど上・遠く)が決まる。
 // - 的は子ごとにある(取り合いにしない)。出てくる場所と時間はみんな同じ(自分から見た位置が同じ)ので、公平。
 // - 的の種類: ハスの葉の的(1点)・切り株の的(2点)・つるされた的(2点、ゆれる)・
 //   金の的(5点、トンボが運ぶ。小さくて動く)・ハチの巣(当てると 3点へって、少しのあいだ投げられない)。
@@ -20,15 +21,15 @@ export const RULES = {
   readyTime: 3,
   timeLimit: 45,
   g: 9.8,
-  angle: (38 * Math.PI) / 180, // 投げる角度(上向き)
-  vMin: 6, // いちばん弱く投げたときの速さ(m/秒)→ 4m くらい
-  vMax: 15.5, // いちばん強く → 24m くらい
+  speed: 24, // 投げる速さ(m/秒)。いつも同じ。速いので、ほぼまっすぐ飛ぶ
+  pitchMin: -0.12, // いちばん少し引いたときの角度(ラジアン。少し下向き → 手前のハスの葉)
+  pitchMax: 0.38, // いちばん引いたときの角度(上向き → 綱の的・向こう岸)
   yawMax: 0.6, // 左右にねらえる角度(ラジアン)
   h0: 1.1, // 手をはなす高さ
   d0: 0.4, // 手をはなす前後の位置
   reload: 0.55, // つぎを投げられるまで
   pineR: 0.16, // まつぼっくりの半径
-  windMax: 1.4, // 横風のいちばん強いとき(m/秒²)
+  windMax: 2.6, // 横風のいちばん強いとき(m/秒²)。速く飛ぶので、遠くで 1m くらい流される
   windEvery: [6, 10], // 風が変わる間隔
   stun: 1.6, // ハチの巣に当てたとき、投げられない時間
   hivePenalty: 3,
@@ -123,13 +124,13 @@ function spawn(s) {
   s.targets.push(tg);
 }
 
-// 投げ方(左右・強さ)から、はじめの速さを出す
+// 投げ方から、はじめの速さを出す。aim.power(0〜1)は上下の角度、aim.yaw は左右の角度
 export function launch(aim) {
   const power = Math.max(0, Math.min(1, aim.power));
   const yaw = Math.max(-RULES.yawMax, Math.min(RULES.yawMax, aim.yaw));
-  const v = RULES.vMin + (RULES.vMax - RULES.vMin) * power;
-  const vh = v * Math.cos(RULES.angle);
-  return { x: 0, d: RULES.d0, y: RULES.h0, vx: vh * Math.sin(yaw), vd: vh * Math.cos(yaw), vy: v * Math.sin(RULES.angle) };
+  const pitch = RULES.pitchMin + (RULES.pitchMax - RULES.pitchMin) * power;
+  const vh = RULES.speed * Math.cos(pitch);
+  return { x: 0, d: RULES.d0, y: RULES.h0, vx: vh * Math.sin(yaw), vd: vh * Math.cos(yaw), vy: RULES.speed * Math.sin(pitch) };
 }
 
 // 1刻み進める(重さと横風)

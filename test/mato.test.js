@@ -100,7 +100,7 @@ test('ねらいの計算(aimFor)どおりに投げると、止まっている的
   }
 });
 
-test('ひっぱる強さで遠くへ、向きで左右へ飛ぶ', () => {
+test('下へひっぱるほど上へ(遠くへ)、向きで左右へ飛ぶ', () => {
   const land = (aim) => {
     const p = launch(aim);
     while (p.y > 0) fly(p, 0);
@@ -114,14 +114,15 @@ test('ひっぱる強さで遠くへ、向きで左右へ飛ぶ', () => {
 });
 
 test('風で横へ流される(遠いほど大きく)。風を入れて計算すれば当たる', () => {
-  const near = pass({ yaw: 0, power: 0.2 }, 6, 1.2), far = pass({ yaw: 0, power: 0.9 }, 18, 1.2);
-  assert.ok(near.x > 0.1 && far.x > near.x * 2, `流される: 近く ${near.x.toFixed(2)} / 遠く ${far.x.toFixed(2)}`);
+  const W = RULES.windMax;
+  const near = pass({ yaw: 0, power: 0.2 }, 6, W), far = pass({ yaw: 0, power: 0.9 }, 20, W);
+  assert.ok(near.x > 0.05 && far.x > near.x * 3, `流される: 近く ${near.x.toFixed(2)} / 遠く ${far.x.toFixed(2)}`);
   const s = quiet();
-  s.wind = s.windTo = 1.2;
-  put(s, 'stump', 0, 18, 1);
-  step(s, only(0, { throw: aimFor({ x: 0, d: 18, y: 1 }, 0) }));
+  s.wind = s.windTo = W;
+  put(s, 'stump', 0, 20, 1);
+  step(s, only(0, { throw: aimFor({ x: 0, d: 20, y: 1 }, 0) }));
   assert.ok(!settle(s).some((e) => e.type === 'hit'), '風を入れないと外れる');
-  step(s, only(0, { throw: aimFor({ x: 0, d: 18, y: 1 }, 1.2) }));
+  step(s, only(0, { throw: aimFor({ x: 0, d: 20, y: 1 }, W) }));
   assert.ok(settle(s).some((e) => e.type === 'hit'), '風を入れると当たる');
 });
 

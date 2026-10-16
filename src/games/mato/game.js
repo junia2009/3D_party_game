@@ -2,7 +2,8 @@
 // ルールは rules.js、CPU は cpu.js。ここは state を読んで描くだけ(state を書くのは rules.step だけ)。
 //
 // 操作: 画面のどこかに指をおいて、下へひっぱって、はなす(ぱちんこ)。
-//   ひっぱる長さ → 強さ(遠く)、左へひっぱる → 右へ飛ぶ。ひっぱっているあいだ、飛ぶ道すじ(風なし)が見える。
+//   下へ長く引くほど上(遠く)へ、左へひっぱる → 右へ飛ぶ。低く速く、ほぼまっすぐ飛ぶ。
+//   ひっぱっているあいだ、飛ぶ道すじ(風なし)が見える。
 //   PC: ← → でねらいを動かし、スペースを長押しで強さをためて、はなすと投げる。
 
 import * as THREE from 'three';
@@ -413,7 +414,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
   document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true); });
 
   // ── 入力: ひっぱって、はなす ─────────────────────────
-  // power: 下へひっぱった長さ(画面の高さの 30% で最大)/ yaw: 左へひっぱると右へ飛ぶ
+  // power: 下へひっぱった長さ(画面の高さの 30% で最大)→ 上下の角度 / yaw: 左へひっぱると右へ飛ぶ
   const aim = { active: false, id: null, x0: 0, y0: 0, x: 0, y: 0, yaw: 0, power: 0, pending: null, pendingT: 0, key: false, keyYaw: 0 };
   function aimFrom(x, y) {
     const pull = Math.max(0, y - aim.y0) / (innerHeight * 0.3);
@@ -508,7 +509,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
         dots[n].position.set(ox + p.x, p.y, -p.d);
         dots[n].visible = true;
         n++;
-        next += 0.07;
+        next += 0.04; // 速く飛ぶので、点はこまかく
       }
     }
     for (let i = n; i < DOTS; i++) dots[i].visible = false;
