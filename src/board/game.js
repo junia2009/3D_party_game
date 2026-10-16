@@ -51,16 +51,109 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     o.start(t);
     o.stop(t + len + 0.02);
   }
+  // 雑音(雨・風・葉っぱの音に使う)
+  let noise = null;
+  function hiss({ type = 'bandpass', f0, f1 = f0, q = 1, len, gain = 0.1, at = 0, attack = 0.01 }) {
+    if (!audio) return;
+    if (!noise) {
+      noise = audio.createBuffer(1, audio.sampleRate, audio.sampleRate);
+      const d = noise.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const t0 = audio.currentTime + at;
+    const src = audio.createBufferSource();
+    src.buffer = noise;
+    src.loop = true;
+    const f = audio.createBiquadFilter();
+    f.type = type;
+    f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t0);
+    f.frequency.exponentialRampToValueAtTime(f1, t0 + len);
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain, t0 + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
+    src.connect(f).connect(g).connect(audio.destination);
+    src.start(t0, Math.random() * 0.5);
+    src.stop(t0 + len + 0.05);
+  }
+  const SEASON_STEP = { spring: 1, summer: 0.9, autumn: 0.8, winter: 1.2 }; // 季節で、歩く音の高さを少し変える
   const sfx = {
-    hop: (i) => voice({ type: 'triangle', pts: [[0, 520 + (i % 5) * 40], [0.08, 700 + (i % 5) * 40]], len: 0.1, gain: 0.05 }),
+    // 一歩: ぴょこ(季節で音色が少しちがう。冬はさく、秋はかさっ)
+    hop: (i, area) => {
+      const k = SEASON_STEP[area] || 1;
+      voice({ type: 'triangle', pts: [[0, (520 + (i % 5) * 40) * k], [0.08, (700 + (i % 5) * 40) * k]], len: 0.1, gain: 0.05 });
+      if (area === 'autumn') hiss({ f0: 3000, len: 0.08, gain: 0.03 });
+      if (area === 'winter') hiss({ type: 'highpass', f0: 4000, len: 0.06, gain: 0.025 });
+    },
     tick: () => voice({ type: 'square', pts: [[0, 1400]], len: 0.03, gain: 0.02 }),
-    stop: () => { voice({ type: 'triangle', pts: [[0, 880], [0.1, 1320]], len: 0.2, gain: 0.1 }); },
+    // サイコロを割る: ぽかっ + ぱりん
+    stop: () => {
+      voice({ type: 'triangle', pts: [[0, 260], [0.06, 140]], len: 0.1, gain: 0.12 });
+      hiss({ type: 'highpass', f0: 2500, len: 0.12, gain: 0.08, attack: 0.002 });
+      voice({ type: 'triangle', pts: [[0, 880], [0.1, 1320]], len: 0.25, gain: 0.08, at: 0.05 });
+    },
     gain: () => [1047, 1319].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.12, gain: 0.07, at: i * 0.06 })),
     lose: () => voice({ type: 'square', pts: [[0, 400], [0.25, 180]], len: 0.3, gain: 0.05 }),
     medal: () => [784, 988, 1175, 1568, 2093].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.3, gain: 0.09, at: i * 0.1 })),
     banner: () => voice({ type: 'sine', pts: [[0, 660], [0.12, 990]], len: 0.16, gain: 0.06 }),
     happen: () => [523, 466, 523, 698].forEach((f, i) => voice({ type: 'square', pts: [[0, f]], len: 0.12, gain: 0.04, at: i * 0.09 })),
+    // 番のはじめ: ぽろん
+    turn: () => [659, 880].forEach((f, i) => voice({ type: 'sine', pts: [[0, f]], len: 0.2, gain: 0.06, at: i * 0.08 })),
+    // 先生: 羽ばたき(ばさっばさっ)とホーホー
+    flap: () => { for (let i = 0; i < 4; i++) hiss({ type: 'lowpass', f0: 900, f1: 300, len: 0.14, gain: 0.07, at: i * 0.22 }); },
+    owl: () => [[440, 0], [392, 0.32]].forEach(([f, at]) => voice({ type: 'sine', pts: [[0, f], [0.15, f * 0.92]], len: 0.28, gain: 0.07, at })),
+    item: () => [1319, 1760, 2093].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.15, gain: 0.06, at: i * 0.05 })),
+    slide: () => hiss({ f0: 600, f1: 2400, q: 1.5, len: 0.9, gain: 0.07, attack: 0.1 }),
+    // ハプニングの音
+    rain: () => hiss({ type: 'highpass', f0: 2500, len: 2.6, gain: 0.06, attack: 0.4 }),
+    acornRain: () => { for (let i = 0; i < 14; i++) voice({ type: 'triangle', pts: [[0, 700 + Math.random() * 500], [0.04, 500]], len: 0.06, gain: 0.05, at: 0.4 + Math.random() * 1.4 }); },
+    whirl: () => hiss({ f0: 300, f1: 1800, q: 2, len: 2.2, gain: 0.08, attack: 0.5 }),
+    snowball: () => { hiss({ type: 'lowpass', f0: 300, len: 2.6, gain: 0.1, attack: 0.3 }); voice({ type: 'sine', pts: [[0, 70], [2.4, 55]], len: 2.6, gain: 0.08 }); },
+    duel: () => [392, 392, 523].forEach((f, i) => voice({ type: 'square', pts: [[0, f]], len: i === 2 ? 0.4 : 0.12, gain: 0.05, at: i * 0.16 })),
+    // 表彰式: ドラムロールと、ファンファーレ
+    roll: (sec) => { for (let i = 0; i < sec * 14; i++) hiss({ type: 'bandpass', f0: 180, q: 0.8, len: 0.05, gain: 0.05 + (i / (sec * 14)) * 0.05, at: i / 14 }); },
+    fanfare: () => [523, 659, 784, 1047, 784, 1047].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: i === 5 ? 0.8 : 0.18, gain: 0.1, at: i * 0.15 })),
+    cheer: () => { for (let i = 0; i < 5; i++) hiss({ f0: 700 + i * 180, f1: 900 + i * 150, q: 4, len: 1.6, gain: 0.05, at: i * 0.05, attack: 0.15 }); },
   };
+
+  // まわりの音: 季節ごと(春は小鳥、夏はセミ、秋は風と葉っぱ、冬は静かな風)。手番の子のいるエリアで変わる
+  let amb = null;
+  function startAmbience() {
+    if (!audio || amb) return;
+    if (!noise) hiss({ f0: 100, len: 0.01, gain: 0.0001 });
+    const src = audio.createBufferSource();
+    src.buffer = noise;
+    src.loop = true;
+    const f = audio.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 500;
+    f.Q.value = 0.6;
+    const g = audio.createGain();
+    g.gain.value = 0;
+    src.connect(f).connect(g).connect(audio.destination);
+    src.start();
+    amb = { src, f, g, next: 2, area: 'spring' };
+  }
+  function stopAmbience() {
+    if (!amb) return;
+    amb.src.stop();
+    amb = null;
+  }
+  function updateAmbience(dt, area) {
+    if (!amb) return;
+    amb.area = area;
+    const wind = { spring: [0.012, 500], summer: [0.008, 700], autumn: [0.03, 450], winter: [0.03, 320] }[area] || [0.01, 500];
+    amb.g.gain.value += (wind[0] - amb.g.gain.value) * Math.min(1, dt);
+    amb.f.frequency.value += (wind[1] - amb.f.frequency.value) * Math.min(1, dt);
+    amb.next -= dt;
+    if (amb.next > 0) return;
+    amb.next = 2.5 + Math.random() * 4;
+    if (area === 'spring') { const f = 2600 + Math.random() * 1200; for (let i = 0; i < 3; i++) voice({ type: 'sine', pts: [[0, f], [0.05, f * 1.25], [0.09, f * 0.95]], len: 0.1, gain: 0.025, at: i * 0.13 }); }
+    if (area === 'summer') voice({ type: 'sawtooth', pts: [[0, 4200], [1.4, 4000]], len: 1.6, gain: 0.008 });
+    if (area === 'autumn') hiss({ f0: 2500, f1: 1500, len: 0.6, gain: 0.03, attack: 0.1 });
+    if (area === 'winter') voice({ type: 'sine', pts: [[0, 2093]], len: 0.6, gain: 0.015 });
+  }
 
   // ── 読みこみ ──────────────────────────────────────
   await preload([...CHARACTERS.map((c) => c.key), 'hoho']);
@@ -156,10 +249,14 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   // コマを sq へ(はねる / すべる)。おわったら resolve
   function movePiece(i, sq, { hop = true, time = 0.24 } = {}) {
     const p = game.pieces[i];
-    const from = p.holder.position.clone();
     p.sq = sq;
-    const to = spotOf(i);
-    return new Promise((resolve) => { p.anim = { from, to, t: 0, time, hop, resolve }; });
+    return animTo(p, spotOf(i), { hop, time });
+  }
+  // コマを to へ動かす。動いているとちゅうに次の動きが来たら、前の動きは「おわった」ことにする(待っている側が止まらないように)
+  function animTo(p, to, { hop = true, time = 0.24 } = {}) {
+    p.anim?.resolve();
+    const from = p.holder.position.clone();
+    return new Promise((resolve) => { p.anim = { from, to: to.clone(), t: 0, time, hop, resolve }; });
   }
   function settlePieces() {
     game.pieces.forEach((p, i) => { if (!p.anim) p.holder.position.copy(spotOf(i)); });
@@ -302,6 +399,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     $('restart').hidden = m !== 'idle';
     $('pauseReselect').hidden = false;
     $('again').hidden = $('reselect').hidden = false;
+    if (m === 'playing') startAmbience();
+    if (m === 'idle') stopAmbience();
   }
   function leave(to) {
     runId++; // 進行を止める
@@ -378,17 +477,21 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       const c = areaCenter('spring');
       camArea(c);
       fx.rain(c, 10, 2.6);
+      sfx.rain();
     } else if (e.area === 'summer') {
       camOn(e.slot);
       fx.acornRain(me, 3.2, 26);
+      sfx.acornRain();
     } else if (e.area === 'autumn') {
       camOn(e.slot);
       const p = game.pieces[e.slot];
       fx.whirlwind(() => p.holder.position, 2.4);
+      sfx.whirl();
     } else if (e.area === 'winter') {
       const qs = st.squares.filter((q) => q.area === 'winter' && !q.path);
       camArea(areaCenter('winter'));
       fx.snowball(qs.map((q) => new THREE.Vector3(q.x, 0, q.z)), 2.6);
+      sfx.snowball();
     }
   }
 
@@ -424,6 +527,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           // 同じマスにいる子の並びを、手番の子が手前になるように動かしなおす
           game.pieces.forEach((p, i) => { if (!p.anim && p.sq === game.pieces[e.slot].sq) movePiece(i, p.sq, { hop: false, time: 0.4 }); });
           splash(`${name(e.slot)}の番`);
+          sfx.turn();
           await sleep(1.6 / speed());
           break;
         case 'dice':
@@ -434,7 +538,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           break;
         case 'step':
           camOn(e.slot);
-          sfx.hop(e.left);
+          sfx.hop(e.left, st.squares[e.to].area);
           // 頭の上に、のこりのマス
           if (e.left > 0) { dice.slot = e.slot; dice.state = 'count'; dice.g.visible = true; dice.acorn.visible = false; dice.draw(e.left); } else dice.g.visible = false;
           await movePiece(e.slot, e.to, { time: 0.34 / speed() });
@@ -453,6 +557,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         case 'slide':
         case 'iceSlide':
           camOn(e.slot);
+          sfx.slide();
           await movePiece(e.slot, e.to, { hop: false, time: 1.1 / speed() });
           settlePieces();
           break;
@@ -495,6 +600,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         case 'owlMove': {
           // 先生が飛んでいくのを、カメラが追いかける
           owl.play('flap', { fade: 0.1 });
+          sfx.flap();
+          sfx.owl();
           placeOwl(e.to);
           camOwl();
           await explain({ color: '#ffd24a', mark: '★', title: 'ホーホー先生', text: '先生は 新しいマスへ とんでいった。そこで メダルが買える', sec: 3.4 });
@@ -505,12 +612,14 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           break;
         case 'getItem':
         case 'buyItem':
+          sfx.item();
           fx.showItem(e.item, game.pieces[e.slot].holder.position);
           react(e.slot, 'cheer', 'happy', 1.4);
           renderCards();
           await explain({ color: '#34c47c', mark: '?', title: `${ITEMS[e.item].name}を ${e.type === 'buyItem' ? '買った' : 'もらった'}`, text: ITEM_INFO[e.item], who: e.slot, sec: 2.4 });
           break;
         case 'useItem':
+          sfx.item();
           fx.showItem(e.item, game.pieces[e.slot].holder.position);
           renderCards();
           await explain({ color: '#34c47c', mark: '?', title: `${ITEMS[e.item].name}を つかった!`, text: ITEM_INFO[e.item], who: e.slot, sec: 2.2 });
@@ -526,6 +635,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         }
         case 'duel':
           camOver();
+          sfx.duel();
           await explain({ color: '#ff9a2a', mark: 'VS', title: `対決! ${name(e.a)} vs ${name(e.b)}`, text: `どんぐり ${e.stake}こを かけて、「${GAME_NAMES[e.game]}」で勝負!`, sec: 3.0 });
           break;
         case 'duelEnd':
@@ -697,6 +807,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     const lineup = game.players.map((p) => ({ character: p.character, cpu: p.cpu, name: p.name }));
     active = false;
     $('hudB').hidden = true;
+    stopAmbience();
     const res = await playMinigame(pend.game, lineup, picked);
     active = true;
     setMode('playing');
@@ -714,6 +825,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     const lineup = [0, other].map((i) => ({ character: game.players[i].character, cpu: game.players[i].cpu, name: game.players[i].name }));
     active = false;
     $('hudB').hidden = true;
+    stopAmbience();
     const res = await playMinigame(key, lineup, picked);
     active = true;
     setMode('playing');
@@ -730,6 +842,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     cam.podium = at.clone();
     cam.podiumNear = false;
     splash('表彰式', 'gold');
+    sfx.fanfare();
     await sleep(1.4);
     fx.raisePodium(at);
     // みんな台のまわりへ(1〜3位は台の前、4位・5位は台の両わき)
@@ -738,17 +851,18 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       const spots = [[-0.6, 1.6], [0.6, 1.6], [1.8, 1.6], [-2.6, 0.2], [2.6, 0.2]];
       const [x, z] = spots[rank];
       const to = new THREE.Vector3(at.x + x, 0, at.z + z);
-      p.anim = { from: p.holder.position.clone(), to, t: 0, time: 1.2, hop: true, resolve: () => {} };
+      animTo(p, to, { time: 1.2 });
       p.podium = true;
     });
     await sleep(1.6);
     for (const rank of [3, 2, 1]) {
       if (!live()) return;
+      if (rank === 1) { sfx.roll(1.4); await sleep(1.5); }
       const slot = order[rank - 1];
       if (slot === undefined) continue;
       const p = game.pieces[slot];
       const top = fx.podiumTop(rank);
-      await new Promise((resolve) => { p.anim = { from: p.holder.position.clone(), to: top, t: 0, time: 0.6, hop: true, resolve }; });
+      await animTo(p, top, { time: 0.6 });
       p.face = 0;
       react(slot, rank === 1 ? 'cheer' : 'wave', 'happy', 99);
       splash(`${rank}位 ${name(slot)}`, rank === 1 ? 'gold' : '');
@@ -758,11 +872,14 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     // 1位に、先生から金どんぐりメダル。先生は台のうしろへ飛んでくる
     const w = order[0];
     flyOwlTo(at.clone().add(new THREE.Vector3(0.8, 2.2, -1.2)));
+    sfx.flap();
     cam.podiumNear = true;
     await sleep(2.6);
     await fx.giveMedal(owl.root.position.clone().setY(owl.root.position.y + 1.5), game.pieces[w].holder.position);
     sfx.medal();
     fx.confetti(at.clone().setY(1), 180);
+    sfx.fanfare();
+    sfx.cheer();
     splash(w === 0 ? 'あなたの優勝!' : `${name(w)}の優勝!`, 'gold');
     await sleep(3.2);
   }
@@ -935,6 +1052,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     fx.markOwl(owl.root.position);
     fx.update(dt);
     view.update(dt);
+    if (game && !paused) updateAmbience(dt, st.squares[game.pieces[cam.slot]?.sq ?? 0]?.area || 'spring');
     atmosphere.update(dt);
     updateCamera(dt);
     if (draw) renderer.render(scene, camera);
