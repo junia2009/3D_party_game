@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MOSS, RULES, STEP, aliveSlots, createGame, radiusAt, ranking, step } from '../src/games/sumo/rules.js';
+import { BANDS, MOSS, RULES, STEP, aliveSlots, createGame, pieceAt, ranking, solidAt, step } from '../src/games/sumo/rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from '../src/games/sumo/cpu.js';
 
 const PLAYERS = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}` }));
@@ -55,20 +55,45 @@ test('同じシードなら、同じ試合になる', () => {
   assert.deepEqual(ranking(run(7).s), ranking(run(7).s));
 });
 
-test('ふちから出ると落ちる。土俵は だんだん ちぢむ', () => {
+test('ふちから出ると落ちる', () => {
   const s = ready();
   const r = s.runners[0];
-  r.x = s.radius + 0.3; r.z = 0;
+  r.x = RULES.r0 + 0.3; r.z = 0;
   const ev = step(s, idle(s));
   assert.ok(ev.some((e) => e.type === 'fall' && e.slot === 0));
   assert.equal(r.alive, false);
   assert.equal(s.phase, 'finished');
   assert.equal(s.winner, 1);
-  assert.equal(radiusAt(0), RULES.r0);
-  assert.ok(radiusAt(RULES.shrinkAt + RULES.shrinkTime / 2) < RULES.r0);
-  assert.equal(radiusAt(999), RULES.rMin);
 });
 
+test('土俵は 外の輪から かけらごとに くずれる。ぐらぐらしてから くずれて、上の子は落ちる。まん中は のこる', () => {
+  const s = ready();
+  const cracked = [];
+  let fell = null;
+  // 自分を いちばん外の輪の、さいしょに くずれる かけらの上に立たせておく
+  const first = s.pieces[s.order[0]];
+  const mid = (first.a0 + first.a1) / 2, rr = (first.outer + first.inner) / 2;
+  const r = s.runners[0];
+  r.x = Math.cos(mid) * rr; r.z = Math.sin(mid) * rr;
+  s.runners[1].x = 0; s.runners[1].z = 0.5;
+  for (let i = 0; i < 120 / STEP && s.phase === 'play'; i++) {
+    for (const e of step(s, idle(s))) {
+      if (e.type === 'crack') cracked.push(s.pieces[e.id]);
+      if (e.type === 'fall' && e.slot === 0) fell = s.t - 3;
+    }
+    if (s.phase !== 'play') break;
+  }
+  // さいしょは いちばん外の輪。外の輪が ぜんぶ くずれてから 次の輪
+  assert.equal(cracked[0].id, first.id);
+  let band = 0;
+  for (const p of cracked) { assert.ok(p.band >= band); band = p.band; }
+  assert.equal(cracked.slice(0, BANDS[0].n).every((p) => p.band === 0), true);
+  // ぐらぐら(crumbleWarn 秒)のあと くずれて、上の子は落ちる
+  assert.ok(fell !== null && Math.abs(fell - (RULES.crumbleAt + RULES.crumbleWarn)) < 0.1, `落ちた ${fell}`);
+  // まん中は ずっと のこる
+  assert.ok(solidAt(s, 0, 0) && solidAt(s, RULES.core - 0.1, 0));
+  assert.equal(pieceAt(s, 0, 0), null);
+});
 test('ためて はなすと とっしん。ためるほど速い。ためているあいだは ゆっくり', () => {
   const dashSpeed = (holdSec) => {
     const s = ready();

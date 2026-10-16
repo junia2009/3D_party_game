@@ -4,7 +4,8 @@
 // - 動く: 行き先を指す(どこでもスティック)。
 // - ぶっとばしタックル: ためて(hold)はなすと、向いているほうへ とっしん。ためるほど強い。
 //   とっしんのあとは すきだらけ(少しのあいだ 軽くなって、おされやすい)。ためているあいだは ゆっくりしか動けない。
-// - ちぢむ土俵: しばらくすると、切り株のふちが けずれて だんだん小さくなる。
+// - くずれる土俵: しばらくすると、切り株が 外がわから かけらごとに くずれて 湖へ落ちる。
+//   くずれる前の かけらは ぐらぐら ひびが入る。上に のっていた子は いっしょに落ちる。まん中は くずれない。
 // - どんぐりパワー: ときどき金どんぐりが出る。とると しばらく体が大きく重くなる。
 // - すべる場所: こけの ところは つるっとすべって 止まれない。
 //
@@ -20,10 +21,11 @@ export const RULES = {
   readyTime: 3,
   timeLimit: 70, // これをこえたら、まん中に近い順
   r0: 5.0, // はじめの土俵の半径
-  rMin: 2.0, // さいごの半径
-  shrinkAt: 10, // ちぢみはじめる(はじまってから)
-  shrinkTime: 35, // r0 → rMin にかける時間
-  edge: 0.1, // 中心がふちから これだけ出たら落ちる
+  core: 2.0, // まん中の、くずれない ところの半径
+  crumbleAt: 10, // くずれはじめる(はじまってから)
+  crumbleEvery: 1.1, // かけらが ひとつずつ くずれる間隔
+  crumbleWarn: 1.4, // くずれる前に、ぐらぐら ひびが入っている時間
+  edge: 0.1, // 中心が 足場から これだけ出たら落ちる
   maxSpeed: 3.0,
   accel: 13,
   drag: 2.4, // 止まろうとするときの減り(ふつうの地面)
@@ -60,6 +62,13 @@ export const MOSS = [
   { x: 2.4, z: -1.4 }, { x: -2.0, z: 2.2 }, { x: -2.8, z: -1.9 }, { x: 0.8, z: 3.2 },
 ];
 
+// くずれる 足場: 外から 3 本の輪。それぞれ 扇形の かけらに わかれている
+export const BANDS = [
+  { outer: 5.0, inner: 4.0, n: 12 },
+  { outer: 4.0, inner: 3.0, n: 10 },
+  { outer: 3.0, inner: 2.0, n: 8 },
+];
+
 export function startPos(slot, n) {
   const a = -Math.PI / 2 + (slot / n) * Math.PI * 2;
   return { x: Math.cos(a) * 2.6, z: Math.sin(a) * 2.6 + 0.0001 };
@@ -70,8 +79,10 @@ export function createGame(players, seed) {
     t: 0,
     rng: seedFrom(`${seed}:sumo`),
     phase: 'ready', // ready → play → finished
-    radius: RULES.r0,
+    radius: RULES.r0, // いちばん外の、まだ のこっている かけらの ふち
     shrinking: false,
+    pieces: [], // { id, band, k, a0, a1, outer, inner, state: 0 のこっている / 1 ぐらぐら / 2 くずれた, t }
+    nextCrumble: RULES.crumbleAt,
     winner: null,
     out: [], // 落ちた順
     items: [], // { id, x, z, life }
@@ -88,18 +99,56 @@ export function createGame(players, seed) {
     }),
   };
   s.timeOfDay = TIMES_OF_DAY[Math.floor(nextRandom(s) * TIMES_OF_DAY.length)];
+  // かけら: 輪ごとに 切れめの位置を少しずらす。くずれる順は くじ(外の輪から)
+  s.bandOff = BANDS.map(() => nextRandom(s) * Math.PI * 2);
+  s.order = [];
+  BANDS.forEach((b, bi) => {
+    const ids = [];
+    for (let k = 0; k < b.n; k++) {
+      const w = (Math.PI * 2) / b.n;
+      const a0 = s.bandOff[bi] + k * w;
+      ids.push(s.pieces.length);
+      s.pieces.push({ id: s.pieces.length, band: bi, k, a0, a1: a0 + w, outer: b.outer, inner: b.inner, state: 0, t: 0 });
+    }
+    for (let i = ids.length - 1; i > 0; i--) {
+      const j = Math.floor(nextRandom(s) * (i + 1));
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+    }
+    s.order.push(...ids);
+  });
   return s;
 }
 
+// (x, z) の下の かけら(まん中・外なら null)
+export function pieceAt(s, x, z) {
+  const d = Math.hypot(x, z);
+  if (d <= RULES.core || d > RULES.r0) return null;
+  const bi = BANDS.findIndex((b) => d <= b.outer && d > b.inner);
+  const b = BANDS[bi];
+  const w = (Math.PI * 2) / b.n;
+  let a = Math.atan2(z, x) - s.bandOff[bi];
+  a = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const k = Math.min(b.n - 1, Math.floor(a / w));
+  let base = 0;
+  for (let i = 0; i < bi; i++) base += BANDS[i].n;
+  return s.pieces[base + k];
+}
+// (x, z) に 足場があるか
+export function solidAt(s, x, z) {
+  const d = Math.hypot(x, z);
+  if (d > RULES.r0) return false;
+  if (d <= RULES.core) return true;
+  return pieceAt(s, x, z).state !== 2;
+}
+// (x, z) が ぐらぐらの かけらの上か
+export const shakyAt = (s, x, z) => pieceAt(s, x, z)?.state === 1;
+
 export const playTime = (s) => Math.max(0, s.t - RULES.readyTime);
 export const timeLeft = (s) => Math.max(0, RULES.timeLimit - playTime(s));
-export const radiusAt = (tPlay) => {
-  const k = Math.min(1, Math.max(0, (tPlay - RULES.shrinkAt) / RULES.shrinkTime));
-  return RULES.r0 + (RULES.rMin - RULES.r0) * k;
-};
 export const bodyR = (r) => (r.power > 0 ? RULES.powerR : RULES.bodyR);
 const mass = (r) => (r.power > 0 ? RULES.powerMass : 1) * (r.dash > 0 ? 2 : 1) * (r.recover > 0 ? 0.7 : 1);
-export const onMoss = (s, x, z) => MOSS.some((m) => Math.hypot(m.x, m.z) + RULES.mossR * 0.3 < s.radius && Math.hypot(x - m.x, z - m.z) < RULES.mossR);
+export const mossAlive = (s, m) => solidAt(s, m.x, m.z);
+export const onMoss = (s, x, z) => MOSS.some((m) => Math.hypot(x - m.x, z - m.z) < RULES.mossR && mossAlive(s, m) && solidAt(s, x, z));
 export const aliveSlots = (s) => s.runners.map((r, i) => (r.alive ? i : -1)).filter((i) => i >= 0);
 
 export function step(s, inputs) {
@@ -114,13 +163,24 @@ export function step(s, inputs) {
   const play = s.phase === 'play';
   const tp = playTime(s);
 
-  // ── 土俵がちぢむ ──
+  // ── 土俵が 外から くずれる ──
   if (play) {
-    s.radius = radiusAt(tp);
-    if (!s.shrinking && tp >= RULES.shrinkAt) {
-      s.shrinking = true;
-      ev.push({ type: 'shrink' });
+    if (tp >= s.nextCrumble && s.order.length) {
+      s.nextCrumble += RULES.crumbleEvery;
+      const p = s.pieces[s.order.shift()];
+      p.state = 1;
+      p.t = RULES.crumbleWarn;
+      if (!s.shrinking) { s.shrinking = true; ev.push({ type: 'shrink' }); }
+      ev.push({ type: 'crack', id: p.id });
     }
+    for (const p of s.pieces) {
+      if (p.state !== 1) continue;
+      p.t -= dt;
+      if (p.t <= 0) { p.state = 2; ev.push({ type: 'crumble', id: p.id }); }
+    }
+    // いちばん外の、まだ のこっている かけらの ふち
+    s.radius = RULES.core;
+    for (const p of s.pieces) if (p.state !== 2) s.radius = Math.max(s.radius, p.outer);
   }
 
   // ── どんぐりパワー ──
@@ -129,15 +189,21 @@ export function step(s, inputs) {
     if (s.nextItem <= 0) {
       s.nextItem = randRange(s, RULES.itemEvery[0], RULES.itemEvery[1]);
       if (!s.items.length) {
-        const a = nextRandom(s) * Math.PI * 2, d = Math.sqrt(nextRandom(s)) * Math.max(0.5, s.radius - 1.0);
-        const it = { id: s.nextId++, x: Math.cos(a) * d, z: Math.sin(a) * d, life: RULES.itemLife };
+        // ぐらぐら・くずれた ところには 出さない
+        let x = 0, z = 0;
+        for (let k = 0; k < 8; k++) {
+          const a = nextRandom(s) * Math.PI * 2, d = Math.sqrt(nextRandom(s)) * Math.max(0.5, s.radius - 0.8);
+          x = Math.cos(a) * d; z = Math.sin(a) * d;
+          if (solidAt(s, x, z) && !shakyAt(s, x, z)) break;
+        }
+        const it = { id: s.nextId++, x, z, life: RULES.itemLife };
         s.items.push(it);
         ev.push({ type: 'item', ...it });
       }
     }
     for (const it of s.items) {
       it.life -= dt;
-      if (it.life <= 0 || Math.hypot(it.x, it.z) > s.radius - 0.2) { it.life = 0; ev.push({ type: 'itemGone', id: it.id }); }
+      if (it.life <= 0 || !solidAt(s, it.x, it.z)) { it.life = 0; ev.push({ type: 'itemGone', id: it.id }); }
     }
     s.items = s.items.filter((it) => it.life > 0);
   }
@@ -255,7 +321,10 @@ export function step(s, inputs) {
     const fell = [];
     s.runners.forEach((r, slot) => {
       if (!r.alive) return;
-      if (Math.hypot(r.x, r.z) <= s.radius + RULES.edge) return;
+      // 中心の すこし内がわ(edge)に 足場があれば だいじょうぶ
+      const d = Math.hypot(r.x, r.z) || 1;
+      const k = Math.max(0, d - RULES.edge) / d;
+      if (solidAt(s, r.x * k, r.z * k)) return;
       r.alive = false;
       const by = r.lastHit !== null && s.t - r.lastHitT < 2 ? r.lastHit : null;
       if (by !== null) s.runners[by].pushes++;

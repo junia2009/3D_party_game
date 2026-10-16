@@ -207,39 +207,35 @@ function buildShore(g) {
   }
 }
 
-// 切り株(土俵)。大きさは画面側で s.radius に合わせて変える
+// 切り株(土俵)。まん中は くずれない丸、そのまわりは 外から くずれる かけら(buildPieces)
+const H = -WATER_Y + 1.6; // 水の下まで
+const ringMap = ringTexture();
+const topMat = new THREE.MeshToonMaterial({ map: ringMap, gradientMap: toonGradient });
+// ぐらぐらしている かけらの上の面(画面側で 赤く ちかちか させる)
+export const shakyMat = new THREE.MeshToonMaterial({ map: ringMap, gradientMap: toonGradient, color: 0xffffff });
+const barkMat = barkMaterial(0x8a5a3a, 2, 1);
+const rootMat = barkMaterial(0x7a4e32, 1, 2);
+// 上の面の絵は、切り株ぜんたいで1枚(年輪が かけらを またいで つながる)
+const topUV = {
+  generateTopUV(geo, v, a, b, c) {
+    const R = RULES.r0 * 2;
+    return [a, b, c].map((i) => new THREE.Vector2(v[i * 3] / R + 0.5, v[i * 3 + 1] / R + 0.5));
+  },
+  generateSideWallUV(geo, v, a, b, c, d) {
+    return [a, b, c, d].map((i, k) => new THREE.Vector2(Math.atan2(v[i * 3 + 1], v[i * 3]) * 4, k < 2 ? 0 : 1));
+  },
+};
 function buildStump() {
   const stump = new THREE.Group();
-  const top = new THREE.Mesh(new THREE.CircleGeometry(1, 72).rotateX(-Math.PI / 2), new THREE.MeshToonMaterial({ map: ringTexture(), gradientMap: toonGradient }));
-  top.receiveShadow = true;
-  const H = -WATER_Y + 1.6; // 水の下まで
-  const side = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.06, H, 48, 1, true), barkMaterial(0x8a5a3a, 6, 1));
-  side.position.y = -H / 2;
-  side.receiveShadow = true;
-  // ふちの皮(少し もりあがった輪)
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 6, 64).rotateX(Math.PI / 2), toonMaterial(0x6a4426));
-  rim.position.y = -0.01;
-  stump.add(top, side, rim);
-  // 根: 切り株のすそから 水の中へ のびる(土俵といっしょに細くなる)
-  const rootMat = barkMaterial(0x7a4e32, 1, 2);
-  const rand = makeRand(61);
-  for (let k = 0; k < 9; k++) {
-    const a = (k / 9) * Math.PI * 2 + rand() * 0.3;
-    const pts = [
-      new THREE.Vector3(Math.cos(a) * 0.96, -0.25, Math.sin(a) * 0.96),
-      new THREE.Vector3(Math.cos(a) * 1.12, WATER_Y + 0.25, Math.sin(a) * 1.12),
-      new THREE.Vector3(Math.cos(a + 0.05) * 1.3, WATER_Y - 0.15, Math.sin(a + 0.05) * 1.3),
-      new THREE.Vector3(Math.cos(a + 0.1) * 1.38, WATER_Y - 0.3, Math.sin(a + 0.1) * 1.38),
-    ];
-    const root = new THREE.Mesh(taperedTube(pts, 0.08 + rand() * 0.03, 0.025, 7), rootMat);
-    stump.add(root);
-  }
-  // 水ぎわの あわ(画面側で ゆらす)
-  const foam = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.16, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }));
-  foam.position.y = WATER_Y + 0.02;
-  foam.renderOrder = 2;
-  stump.add(foam);
-  // こけ(すべる場所)。ちぢむと外のものは見えなくなる(画面側で)
+  // まん中の 丸(くずれない)
+  const coreShape = new THREE.Shape();
+  coreShape.absarc(0, 0, RULES.core, 0, Math.PI * 2, false);
+  const coreGeo = new THREE.ExtrudeGeometry(coreShape, { depth: H, bevelEnabled: false, curveSegments: 40, UVGenerator: topUV });
+  coreGeo.rotateX(Math.PI / 2);
+  const core = new THREE.Mesh(coreGeo, [topMat, barkMat]);
+  core.receiveShadow = core.castShadow = true;
+  stump.add(core);
+  // こけ(すべる場所)。くずれた かけらの上のものは 画面側で消す
   const mossTex = (() => {
     const c = document.createElement('canvas');
     c.width = c.height = 128;
@@ -255,7 +251,6 @@ function buildStump() {
       x.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 2 + rand() * 5, 0, Math.PI * 2);
       x.fill();
     }
-    // しめった つや(白い点)
     for (let i = 0; i < 30; i++) {
       x.fillStyle = 'rgba(230,255,220,0.5)';
       x.fillRect(30 + rand() * 68, 30 + rand() * 68, 2, 2);
@@ -266,12 +261,47 @@ function buildStump() {
   })();
   const mosses = MOSS.map((m) => {
     const mesh = new THREE.Mesh(new THREE.CircleGeometry(RULES.mossR * 1.05, 24).rotateX(-Math.PI / 2), new THREE.MeshToonMaterial({ map: mossTex, transparent: true, depthWrite: false, gradientMap: toonGradient }));
-    mesh.position.set(m.x, 0.01, m.z);
+    mesh.position.set(m.x, 0.012, m.z);
     mesh.renderOrder = 1;
     mesh.receiveShadow = true;
     return mesh;
   });
-  return { stump, top, side, rim, mosses, foam };
+  // 水ぎわの あわ(画面側で、のこっている いちばん外のふちに 合わせる)
+  const foam = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.06, 72).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }));
+  foam.position.y = WATER_Y + 0.02;
+  foam.renderOrder = 2;
+  return { stump, core, mosses, foam };
+}
+
+// くずれる かけら(state.pieces に合わせて、試合ごとに作る)。いちばん外の かけらには 根が ついている
+export function buildPieces(s, parent) {
+  const rand = makeRand(61);
+  return s.pieces.map((p) => {
+    const sh = new THREE.Shape();
+    const gap = 0.012; // かけらの あいだの すきま(割れめ)
+    sh.absarc(0, 0, p.outer, p.a0 + gap / p.outer, p.a1 - gap / p.outer, false);
+    sh.absarc(0, 0, p.inner + 0.01, p.a1 - gap / p.inner, p.a0 + gap / p.inner, true);
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: H, bevelEnabled: false, curveSegments: 10, UVGenerator: topUV });
+    geo.rotateX(Math.PI / 2);
+    const mesh = new THREE.Mesh(geo, [topMat, barkMat]);
+    mesh.castShadow = mesh.receiveShadow = true;
+    const mid = (p.a0 + p.a1) / 2;
+    if (p.band === 0) {
+      const a = mid + (rand() - 0.5) * 0.2, R = p.outer;
+      const pts = [
+        new THREE.Vector3(Math.cos(a) * (R - 0.15), -0.25, Math.sin(a) * (R - 0.15)),
+        new THREE.Vector3(Math.cos(a) * (R + 0.45), WATER_Y + 0.25, Math.sin(a) * (R + 0.45)),
+        new THREE.Vector3(Math.cos(a + 0.03) * (R + 1.2), WATER_Y - 0.15, Math.sin(a + 0.03) * (R + 1.2)),
+        new THREE.Vector3(Math.cos(a + 0.05) * (R + 1.6), WATER_Y - 0.3, Math.sin(a + 0.05) * (R + 1.6)),
+      ];
+      const root = new THREE.Mesh(taperedTube(pts, 0.14 + rand() * 0.05, 0.04, 7), rootMat);
+      root.castShadow = true;
+      mesh.add(root);
+    }
+    mesh.userData = { piece: p, mid, home: new THREE.Vector3(), fall: null };
+    parent.add(mesh);
+    return mesh;
+  });
 }
 
 // 観客の乗る 大きな蓮の葉(ぷかぷか動かすので、まとめない)
@@ -305,7 +335,7 @@ export function buildStage(scene) {
   mergeStatic(g, (o) => o.name === 'water');
   scene.add(g);
   const s = buildStump();
-  scene.add(s.stump);
+  scene.add(s.stump, s.foam);
   for (const m of s.mosses) scene.add(m);
   const pads = buildPads(scene);
   return { group: g, water: g.getObjectByName('water'), pads, ...s };

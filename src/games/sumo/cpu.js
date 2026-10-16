@@ -10,7 +10,7 @@
 // 乱数は CPU ごとに持つ(シードはゲームのシードと席から作る)。
 
 import { nextRandom, randRange, seedFrom } from '../../rng.js';
-import { RULES, onMoss } from './rules.js';
+import { RULES, onMoss, shakyAt, solidAt } from './rules.js';
 
 export const PERSONALITIES = {
   cautious: { label: 'しんちょう', react: [0.35, 0.5], aim: 0.35, margin: 1.2, aggro: 0.4, dashAt: 1.5, charge: [0.3, 0.55], dodge: 0.55 },
@@ -20,6 +20,15 @@ export const PERSONALITIES = {
 
 export function createCpu(personality, seed, slot) {
   return { personality, rng: seedFrom(`${seed}:sumo-cpu:${slot}`), think: 0, target: null, hold: false, want: 0.5, victim: null, rest: 0, pushT: 0 };
+}
+
+// 行き先が くずれた・ぐらぐらの ところなら、まん中のほうへ よせる
+function safe(s, t) {
+  for (let k = 0; k < 6; k++) {
+    if (solidAt(s, t.x, t.z) && !shakyAt(s, t.x, t.z)) return t;
+    t = { x: t.x * 0.75, z: t.z * 0.75 };
+  }
+  return { x: 0, z: 0 };
 }
 
 export function cpuInput(cpu, s, slot) {
@@ -49,8 +58,8 @@ export function cpuInput(cpu, s, slot) {
   cpu.think = randRange(cpu, p.react[0], p.react[1]);
   const jitter = () => randRange(cpu, -p.aim, p.aim);
 
-  // ① ふちが近い: まん中へ
-  if (dMe > R - p.margin) {
+  // ① ふちが近い・足もとが ぐらぐら: まん中へ
+  if (dMe > R - p.margin || shakyAt(s, me.x, me.z) || !solidAt(s, me.x * 0.75, me.z * 0.75)) {
     cpu.target = { x: (me.x / dMe) * (R * 0.2) + jitter(), z: (me.z / dMe) * (R * 0.2) + jitter() };
     return { ...cpu.target, hold: false };
   }
@@ -64,7 +73,7 @@ export function cpuInput(cpu, s, slot) {
       // 進む向きの よこ(まん中に近いほう)へ
       const sx = -o.vz, sz = o.vx, sl = Math.hypot(sx, sz) || 1;
       const side = (me.x + sx / sl) ** 2 + (me.z + sz / sl) ** 2 < (me.x - sx / sl) ** 2 + (me.z - sz / sl) ** 2 ? 1 : -1;
-      cpu.target = { x: me.x + (sx / sl) * side * 1.5, z: me.z + (sz / sl) * side * 1.5 };
+      cpu.target = safe(s, { x: me.x + (sx / sl) * side * 1.5, z: me.z + (sz / sl) * side * 1.5 });
       cpu.think = 0.35;
       return { ...cpu.target, hold: false };
     }
@@ -93,7 +102,7 @@ export function cpuInput(cpu, s, slot) {
     cpu.pushT = 0;
     // ようすを見る: まん中あたりを うろうろ
     const a = nextRandom(cpu) * Math.PI * 2, d = nextRandom(cpu) * R * 0.35;
-    cpu.target = { x: Math.cos(a) * d, z: Math.sin(a) * d };
+    cpu.target = safe(s, { x: Math.cos(a) * d, z: Math.sin(a) * d });
     cpu.victim = null;
     return { ...cpu.target, hold: false };
   }
@@ -121,7 +130,7 @@ export function cpuInput(cpu, s, slot) {
     // 内がわへ まわりこむ(こけは さける)
     let tx = behind.x + jitter(), tz = behind.z + jitter();
     if (onMoss(s, tx, tz)) { tx *= 0.7; tz *= 0.7; }
-    cpu.target = { x: tx, z: tz };
+    cpu.target = safe(s, { x: tx, z: tz });
   }
   return { ...cpu.target, hold: false };
 }

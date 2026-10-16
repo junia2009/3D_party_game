@@ -11,9 +11,9 @@ import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
-import { MOSS, RULES, STEP, aliveSlots, bodyR, createGame, ranking, step } from './rules.js';
+import { MOSS, RULES, STEP, aliveSlots, bodyR, createGame, mossAlive, ranking, step } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
-import { SEATS, WATER_Y, buildStage } from './stage.js';
+import { SEATS, WATER_Y, buildPieces, buildStage, shakyMat } from './stage.js';
 import { createAtmosphere, windify } from '../daruma/atmosphere.js';
 import { acornGeometry } from '../daruma/trees.js';
 
@@ -96,8 +96,10 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     kiran(vol = 1) { [1318, 1760, 2093, 2637].forEach((f, i) => voice({ pts: [[0, f]], len: 0.35, gain: 0.06 * vol, at: i * 0.06 })); },
     // ポン: 出てくる
     pon() { voice({ pts: [[0, 520], [0.06, 880]], len: 0.12, gain: 0.07 }); },
-    // ゴゴゴ: 土俵が ちぢむ
-    rumble() { noise({ len: 1.2, gain: 0.15, freq: [200, 80], type: 'lowpass', attack: 0.2 }); },
+    // ゴゴゴ: 土俵が くずれる
+    rumble(vol = 1) { noise({ len: 1.2, gain: 0.15 * vol, freq: [200, 80], type: 'lowpass', attack: 0.2 }); },
+    // ミシミシ: ひびが入る
+    crack(vol = 1) { for (let i = 0; i < 4; i++) noise({ len: 0.05, gain: 0.12 * vol, freq: [2500 + Math.random() * 1500, 1200], q: 3, at: i * 0.07 + Math.random() * 0.03 }); },
     // ポチャ: ふちの木くずが落ちる
     plop(vol = 1) { voice({ pts: [[0, 900], [0.06, 400]], len: 0.08, gain: 0.04 * vol }); },
   };
@@ -229,13 +231,15 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
   // ふちから落ちる 木くず
   const chipGeo = new THREE.BoxGeometry(0.22, 0.12, 0.16);
   const chipMat = toonMaterial(0x8a5a3a);
-  function crumb(r) {
-    const a = Math.random() * Math.PI * 2;
+  function crumb(x, z) {
+    const d = Math.hypot(x, z) || 1;
     const m = new THREE.Mesh(chipGeo, chipMat);
-    m.position.set(Math.cos(a) * (r + 0.1), -0.05, Math.sin(a) * (r + 0.1));
+    m.position.set(x, 0.05, z);
     scene.add(m);
-    fx.push({ obj: m, t: 0, life: 1.2, vel: new THREE.Vector3(Math.cos(a) * 0.8, 0.8, Math.sin(a) * 0.8), spin: new THREE.Vector3(5, 3, 4), kind: 'crumb' });
+    fx.push({ obj: m, t: 0, life: 1.4, vel: new THREE.Vector3((x / d) * 1.2 + (Math.random() - 0.5), 1.2 + Math.random(), (z / d) * 1.2 + (Math.random() - 0.5)), spin: new THREE.Vector3(5, 3, 4), kind: 'crumb' });
   }
+  const pieceMeshes = [];
+  const H_SINK = 4;
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
   function confetti(x, z) {
     const colors = [...PLAYER_COLORS.map((c) => c.hex), 0xffd24a, 0xffffff];
@@ -343,7 +347,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     });
     // あわ
     stage.foam.material.opacity = 0.45 + Math.sin(time * 2.2) * 0.15;
-    stage.foam.scale.setScalar(1 + Math.sin(time * 1.6) * 0.02);
+    stage.foam.scale.setScalar((game ? game.state.radius : RULES.r0) * (1 + Math.sin(time * 1.6) * 0.01));
     // トンボ: 湖の上を 8の字に
     for (const d of dragonflies) {
       const u = d.userData, t = time * u.sp + u.ph;
@@ -460,6 +464,9 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     runners[0].holder.add(marker);
     runners[0].marker = marker;
 
+    // くずれる かけら(試合ごとに 切れめが ちがう)
+    for (const m of pieceMeshes.splice(0)) { stage.stump.remove(m); m.geometry.dispose(); }
+    pieceMeshes.push(...buildPieces(state, stage.stump));
     game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastR: RULES.r0, shake: 0, hitstop: 0, slow: 0, focus: null, warned: false, lastTwo: false };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
@@ -469,7 +476,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     intro = fromSky ? 0 : 1;
     $('howtoU').classList.add('show');
     if (!fromSky) splash('はっけよい…');
-    updateStump();
+    updateStump(0);
     updateCamera(0, true);
   }
 
@@ -628,19 +635,15 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     for (let i = 0; i < 12; i++) voice({ type: 'triangle', pts: [[0, 110], [0.08, 70]], len: 0.12, gain: 0.05 + i * 0.008, at: i * 0.08 });
     voice({ type: 'triangle', pts: [[0, 140], [0.2, 60]], len: 0.35, gain: 0.16, at: 1.0 });
   }
-  const rimBase = new THREE.Color(0x6a4426), rimHot = new THREE.Color(0xff5a3a);
   function renderHud() {
     const s = game.state;
-    // 土俵がちぢむ 2 秒前から、ふちが赤く ちかちか。ちぢんでいるあいだも ゆっくり光る
+    // 土俵が くずれはじめる 2.5 秒前に 知らせる
     const tp = Math.max(0, s.t - RULES.readyTime);
-    const warn = s.phase === 'play' && tp > RULES.shrinkAt - 2.5 && tp < RULES.shrinkAt;
-    if (warn && !game.warned) {
+    if (s.phase === 'play' && tp > RULES.crumbleAt - 2.5 && !game.warned) {
       game.warned = true;
-      splash('もうすぐ ちぢむ!', 'red small');
+      splash('もうすぐ くずれる!', 'red small');
+      sfx.rumble();
     }
-    const shrinking = s.phase === 'play' && tp >= RULES.shrinkAt && s.radius > RULES.rMin;
-    const glow = warn ? (Math.sin(time * 14) > 0 ? 1 : 0.2) : shrinking ? 0.35 + 0.25 * Math.sin(time * 4) : 0;
-    stage.rim.material.color.copy(rimBase).lerp(rimHot, glow);
     [...$('chipsU').children].forEach((c, slot) => {
       const r = s.runners[slot];
       c.classList.toggle('out', !r.alive);
@@ -681,10 +684,28 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
           voice({ type: 'triangle', pts: [[0, 1046]], len: 0.25, gain: 0.12, at: 0.12 });
           break;
         case 'shrink':
-          splash('土俵が ちぢむ!', 'red small');
-          sfx.rumble();
+          splash('土俵が くずれる!', 'red small');
           game.shake = 0.25;
           break;
+        case 'crack': {
+          // ぐらぐら: 上の面が赤く ちかちか、ひびから 土ぼこり
+          const m = pieceMeshes[e.id];
+          m.material = [shakyMat, m.material[1]];
+          const p = m.userData.piece, rr = (p.outer + p.inner) / 2;
+          puff(Math.cos(m.userData.mid) * rr, Math.sin(m.userData.mid) * rr, 3);
+          sfx.crack(volFor(Math.cos(m.userData.mid) * rr, Math.sin(m.userData.mid) * rr));
+          break;
+        }
+        case 'crumble': {
+          // くずれる: 外へ かたむきながら 湖へ
+          const m = pieceMeshes[e.id];
+          m.userData.fall = { t: 0, vy: 0, splashed: false };
+          const p = m.userData.piece, rr = (p.outer + p.inner) / 2;
+          const x = Math.cos(m.userData.mid) * rr, z = Math.sin(m.userData.mid) * rr;
+          for (let k = 0; k < 3; k++) crumb(x, z);
+          sfx.rumble(0.6 * volFor(x, z));
+          break;
+        }
         case 'item':
           addItem(e);
           break;
@@ -886,16 +907,39 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       if (v.marker) v.marker.position.set(0, 2.0 * v.size * v.scale + 0.08 * Math.sin(performance.now() / 180), 0);
     });
   }
-  // 切り株の大きさを土俵に合わせる。ちぢむときは ふちから木くずが落ちる
-  function updateStump() {
-    const R = game ? game.state.radius : RULES.r0;
-    stage.stump.scale.set(R, 1, R);
-    MOSS.forEach((m, k) => { stage.mosses[k].visible = Math.hypot(m.x, m.z) + RULES.mossR * 0.3 < R; });
-    if (game && game.lastR - R > 0.04) {
-      game.lastR = R;
-      crumb(R);
-      if (Math.random() < 0.3) sfx.plop(0.6);
+  // かけら: ぐらぐら(だんだん大きく ふるえる)→ くずれて 外へ かたむきながら 湖へ ざぶん
+  function updateStump(dt) {
+    if (!game) return;
+    const s = game.state;
+    shakyMat.color.setHex(Math.sin(time * 16) > 0 ? 0xff8a70 : 0xffffff);
+    for (const m of pieceMeshes) {
+      const p = m.userData.piece, u = m.userData;
+      if (p.state === 1) {
+        const k = 1 - p.t / RULES.crumbleWarn; // 0 → 1
+        const a = 0.01 + k * 0.05;
+        m.position.set((Math.random() - 0.5) * a, (Math.random() - 0.5) * a * 0.5, (Math.random() - 0.5) * a);
+        if (Math.random() < dt * 6 * k) {
+          const rr = p.outer - Math.random() * 0.3;
+          crumb(Math.cos(u.mid) * rr, Math.sin(u.mid) * rr);
+        }
+      } else if (u.fall) {
+        const f = u.fall;
+        f.t += dt;
+        f.vy -= dt * 9;
+        const out = Math.min(1, f.t * 1.5);
+        m.position.set(Math.cos(u.mid) * out * 0.6, m.position.y + f.vy * dt, Math.sin(u.mid) * out * 0.6);
+        // 外がわへ たおれる(中心の まわりではなく、かけらの 内がわのふちを じくに 回したように)
+        m.rotation.set(Math.sin(u.mid) * f.t * 0.9, 0, -Math.cos(u.mid) * f.t * 0.9);
+        if (!f.splashed && m.position.y < WATER_Y + 0.3) {
+          f.splashed = true;
+          const rr = (p.outer + p.inner) / 2;
+          splashAt(Math.cos(u.mid) * rr, Math.sin(u.mid) * rr, 0.9);
+          sfx.splash(0.5 * volFor(Math.cos(u.mid) * rr, Math.sin(u.mid) * rr));
+        }
+        if (m.position.y < -H_SINK) m.visible = false;
+      }
     }
+    MOSS.forEach((m, k) => { stage.mosses[k].visible = mossAlive(s, m); });
   }
 
   let freeCamera = false;
@@ -1013,7 +1057,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     if (game && !paused) {
       updateRunners(dt);
       updateItems(dt);
-      updateStump();
+      updateStump(dt);
       updateFx(dt);
     }
     if (!paused) {
