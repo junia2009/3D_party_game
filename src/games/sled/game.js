@@ -573,7 +573,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     const el = $('rankS');
     if (el.dataset.rank !== String(rank)) {
       el.dataset.rank = String(rank);
-      el.innerHTML = `${RANK[rank]}<small>い</small>`;
+      el.innerHTML = `${RANK[rank]}<small>位</small>`;
       el.classList.remove('up');
       void el.offsetWidth;
       el.classList.add('up');
@@ -629,7 +629,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
           const r = game.runners[e.slot];
           if (e.slot === 0) {
             const rank = ranking(s).indexOf(0);
-            splash(`ゴール! ${rank + 1}い`, rank === 0 ? 'gold' : '');
+            splash(`ゴール! ${rank + 1}位`, rank === 0 ? 'gold' : '');
             sfx.fanfare();
           }
           for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 2; }
