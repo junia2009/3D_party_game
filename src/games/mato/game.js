@@ -9,12 +9,12 @@ import * as THREE from 'three';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { nextRandom, seedFrom } from '../../rng.js';
-import { RULES, STEP, createGame, launch, fly, ranking, step, timeLeft } from './rules.js';
+import { RULES, STEP, VINES, VINE_Y, createGame, launch, fly, ranking, step, timeLeft } from './rules.js';
 import { createTargets } from './targets.js';
 import { makeBasket, makeSling } from './sling.js';
 import { createPond } from './pond.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
-import { buildStage } from './stage.js';
+import { SEATS, SEAT_TOP, buildStage, groundY } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 
 const $ = (id) => document.getElementById(id);
@@ -204,7 +204,31 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     if (amb.bird <= 0) { sfx.bird(); amb.bird = 4 + Math.random() * 7; }
   }
 
-  await preload(CHARACTERS.map((c) => c.key));
+  // ── 読みこみ: 審判の先生(手前のつるの綱の右はし)と、向こう岸の観客 ─────────
+  await preload([...CHARACTERS.map((c) => c.key), 'hoho', ...new Set(SEATS.map((s) => s.kind))]);
+  const owl = await createModel('hoho');
+  owl.root.position.set(4.2, VINE_Y + 0.3, -VINES[0]);
+  owl.root.rotation.y = 0.25; // 桟橋のほうを向く
+  owl.play('idle');
+  owl.setFace('normal');
+  scene.add(owl.root);
+  const audience = await Promise.all(SEATS.map(async (seat) => {
+    const m = await createModel(seat.kind);
+    m.root.position.set(seat.x, groundY(seat.x, seat.z) + SEAT_TOP, seat.z);
+    m.root.rotation.y = Math.atan2(-seat.x, -seat.z); // 桟橋のほうを向く
+    m.play('idle');
+    m.actions.idle.time = Math.random() * 2;
+    m.setFace('normal');
+    scene.add(m.root);
+    return { seat, model: m, until: 0 };
+  }));
+  atmosphere.setupShadows([stage.group, owl.root], [stage.group]);
+  atmosphere.setupShadows([], audience.map((a) => a.model.root));
+  // 観客がよろこぶ(金の的・れんぞく・おわり)
+  function cheer(sec = 1.6) {
+    for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = sec * (0.8 + Math.random() * 0.4); }
+  }
+  function owlFlap() { owl.play('flap', { fade: 0.1 }); }
 
   // ── まつぼっくり ──────────────────────────────────────
   const pineGeo = (() => {
@@ -563,6 +587,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
         case 'start':
           splash('はじめ!');
           sfx.whistle();
+          owlFlap();
           break;
         case 'throw': {
           const v = game.runners[e.slot];
@@ -576,8 +601,8 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
             const at = new THREE.Vector3(STAND[0] + e.x, e.y, -e.d);
             targets.hit(e.id, at);
             pop(`+${e.points + e.bonus}`, at.clone().setY(at.y + 0.6), e.kind === 'gold' ? 'gold me' : 'me');
-            if (e.kind === 'gold') { sfx.gold(); splash('金の的!', 'gold'); } else sfx.hit(e.combo);
-            if (e.combo === 3 || e.combo === 6) { splash(e.combo === 6 ? '6れんぞく! +2' : '3れんぞく! +1', 'gold'); sfx.combo(e.combo === 6); }
+            if (e.kind === 'gold') { sfx.gold(); splash('金の的!', 'gold'); cheer(); } else sfx.hit(e.combo);
+            if (e.combo === 3 || e.combo === 6) { splash(e.combo === 6 ? '6れんぞく! +2' : '3れんぞく! +1', 'gold'); sfx.combo(e.combo === 6); cheer(1.2); }
           } else {
             const v = game.runners[e.slot];
             pop(`+${e.points + e.bonus}`, tmp.copy(v.holder.position).setY(2.2));
@@ -604,6 +629,8 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
         case 'finished':
           splash('そこまで!');
           sfx.whistle();
+          owlFlap();
+          cheer(3);
           game.endTimer = 2.2;
           break;
       }
@@ -780,7 +807,15 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
       updateShots(dt);
       updateFx(dt);
     }
-    if (!paused) pond.update(dt, game ? game.state.wind : 0, splashAt);
+    if (!paused) {
+      pond.update(dt, game ? game.state.wind : 0, splashAt);
+      for (const a of audience) {
+        if (a.until > 0 && (a.until -= dt) <= 0) { a.model.play('idle'); a.model.setFace('normal'); }
+        a.model.update(dt);
+      }
+      owl.update(dt);
+      if (owl.current === 'flap' && owl.actions.flap.time > 1.2) owl.play('idle');
+    }
     atmosphere.update(dt);
     updateCamera(dt);
     if (draw) renderer.render(scene, camera);

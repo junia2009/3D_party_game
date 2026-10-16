@@ -186,6 +186,119 @@ function buildFarShore(g) {
   }
 }
 
+// 観客席: 向こう岸の左右の土手(的が出るまん中はあける)。切り株に座る
+export const SEATS = [
+  { x: -8.6, z: -20.5, kind: 'risu' },
+  { x: -10.8, z: -18.6, kind: 'harinezumi' },
+  { x: -6.6, z: -22.4, kind: 'komadori' },
+  { x: 8.4, z: -20.8, kind: 'komadori' },
+  { x: 10.6, z: -18.8, kind: 'risu' },
+  { x: 6.9, z: -22.6, kind: 'harinezumi' },
+];
+export const SEAT_TOP = 0.42;
+const SIGN = { x: 0, z: -24 }; // 木の看板(向こう岸のまん中、切り株の的より上に見える)
+function buildSeats(g) {
+  const bark = toonMaterial(0x8a5a32), ring = toonMaterial(0xe0b77c);
+  for (const s of SEATS) {
+    const y = groundY(s.x, s.z);
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 0.6, 12), bark);
+    st.position.set(s.x, y + SEAT_TOP - 0.3, s.z);
+    const top = new THREE.Mesh(new THREE.CircleGeometry(0.38, 12), ring);
+    top.rotation.x = -Math.PI / 2;
+    top.position.set(s.x, y + SEAT_TOP + 0.005, s.z);
+    g.add(st, top);
+  }
+}
+
+// 向こう岸の飾り: 花の群れ・しげみ・キノコ・木の看板
+function signTexture() {
+  const cv = document.createElement('canvas');
+  cv.width = 512;
+  cv.height = 160;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#7a4a24';
+  x.beginPath();
+  x.roundRect(4, 4, 504, 152, 30);
+  x.fill();
+  x.fillStyle = '#c98f55';
+  x.beginPath();
+  x.roundRect(16, 16, 480, 128, 22);
+  x.fill();
+  x.font = '400 56px "Dela Gothic One", sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.lineWidth = 10;
+  x.strokeStyle = '#4a2a12';
+  x.strokeText('まつぼっくり的あて', 256, 84);
+  x.fillStyle = '#fff6e0';
+  x.fillText('まつぼっくり的あて', 256, 84);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function buildDecor(g) {
+  const rand = makeRand(64);
+  // 花の群れ(岸ぞい)
+  const petals = [0xff8ad8, 0xffd23c, 0xffffff, 0xb08aff, 0xff6a5a].map((h) => toonMaterial(h));
+  const stem = toonMaterial(0x4f8a3a);
+  const flowerGeo = new THREE.SphereGeometry(0.07, 6, 5);
+  for (let k = 0; k < 26; k++) {
+    const a = rand() * Math.PI * 2;
+    const q = 1.08 + rand() * 0.35;
+    const cx = POND.cx + Math.cos(a) * POND.rx * q, cz = POND.cz + Math.sin(a) * POND.rz * q;
+    if (cz > -3) continue;
+    const mat = petals[k % petals.length];
+    for (let i = 0; i < 6; i++) {
+      const x = cx + (rand() - 0.5) * 1.2, z = cz + (rand() - 0.5) * 1.2;
+      const y = groundY(x, z);
+      const h = 0.15 + rand() * 0.2;
+      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, h, 3), stem);
+      s.position.set(x, y + h / 2, z);
+      const f = new THREE.Mesh(flowerGeo, mat);
+      f.position.set(x, y + h, z);
+      g.add(s, f);
+    }
+  }
+  // しげみ
+  const bush = foliageClump(rand, { detail: 1, balls: 4, bottom: 0x2f6b35, top: 0x7fc25a });
+  const bushMat = new THREE.MeshToonMaterial({ vertexColors: true });
+  for (let i = 0; i < 18; i++) {
+    const a = rand() * Math.PI * 2;
+    const q = 1.15 + rand() * 0.3;
+    const x = POND.cx + Math.cos(a) * POND.rx * q, z = POND.cz + Math.sin(a) * POND.rz * q;
+    if (z > -4 || Math.abs(x) < 6) continue; // 向こう岸のまん中(切り株の的のところ)はあける
+    const b = new THREE.Mesh(bush, bushMat);
+    b.scale.setScalar(0.9 + rand() * 0.8);
+    b.position.set(x, groundY(x, z) + 0.2, z);
+    g.add(b);
+  }
+  // キノコ
+  const cap = toonMaterial(0xe8402f), dot = toonMaterial(0xffffff), mstem = toonMaterial(0xfff1d6);
+  for (let i = 0; i < 14; i++) {
+    const x = (rand() - 0.5) * 26, z = -18 - rand() * 6;
+    const y = groundY(x, z), s = 0.12 + rand() * 0.12;
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.35, s * 0.45, s * 1.2, 6), mstem);
+    st.position.set(x, y + s * 0.6, z);
+    const c = new THREE.Mesh(new THREE.SphereGeometry(s, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), cap);
+    c.position.set(x, y + s * 1.1, z);
+    const d = new THREE.Mesh(new THREE.SphereGeometry(s * 0.18, 5, 4), dot);
+    d.position.set(x + s * 0.4, y + s * 1.5, z + s * 0.3);
+    g.add(st, c, d);
+  }
+  // 木の看板
+  const wood = toonMaterial(0x8a5a32);
+  const sx = SIGN.x, sz = SIGN.z, sy = groundY(sx, sz);
+  for (const ox of [-1.3, 1.3]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 3.0, 8), wood);
+    post.position.set(sx + ox, sy + 1.5, sz);
+    g.add(post);
+  }
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.0), new THREE.MeshToonMaterial({ map: signTexture() }));
+  board.position.set(sx, sy + 2.5, sz + 0.12);
+  board.userData.noMerge = true;
+  g.add(board);
+}
+
 function buildForest(g) {
   const rand = makeRand(303);
   const spots = [];
@@ -194,6 +307,8 @@ function buildForest(g) {
     if (pondQ(x, z) < 1.25) continue;
     if (z > -4 && Math.abs(x) < 10 && z < 14) continue; // 桟橋のうしろ(カメラのまわり)はあける
     if (Math.abs(Math.abs(x) - VINE_X) < 3 && z < -7 && z > -18) continue; // 綱の木のまわり
+    if (Math.abs(x - SIGN.x) < 5 && z > SIGN.z - 3 && z < -17) continue; // 看板のまわりと、看板の手前
+    if (SEATS.some((s) => Math.hypot(x - s.x, z - s.z) < 2.5)) continue; // 観客席のまわり
     spots.push({ x, y: groundY(x, z), z, h: 4.5 + rand() * 4, kind: rand() < 0.3 ? 'pine' : 'broad' });
   }
   buildForestTrees(g, spots);
@@ -206,6 +321,8 @@ export function buildStage(scene) {
   buildLilies(g);
   buildVines(g);
   buildFarShore(g);
+  buildSeats(g);
+  buildDecor(g);
   buildForest(g);
   mergeStatic(g);
   scene.add(g);
