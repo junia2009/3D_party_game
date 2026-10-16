@@ -200,7 +200,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   let opts = { turns: 10, stage: 'shiki' };
   let intro = 1;
   const INTRO_TIME = 3.2;
-  let focus = new THREE.Vector3(), overview = true;
+  const focus = new THREE.Vector3();
   let runId = 0;
 
   async function startTournament({ fromSky = false } = {}) {
@@ -233,7 +233,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     placeOwl(s.owl, true);
     setMode('playing');
     intro = fromSky ? 0 : 1;
-    overview = true;
+    camOn(0);
+    focus.copy(game.pieces[0].holder.position);
     renderCards();
     const id = ++runId;
     drive(id); // 進行(非同期でずっと回る。新しい大会が始まったら止まる)
@@ -277,135 +278,213 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   $('resultMenu').addEventListener('click', mine(() => leave('menu')));
   $('fastB').addEventListener('pointerdown', () => { fast = !fast; $('fastB').classList.toggle('on', fast); });
 
+  // ── 説明カード: 止まったマス・起きたことを、ことばで説明する ─────────────
+  // 画面の下に「札の色・名前・何が起きるか」。時間がたつか、タップで次へ
+  const KIND_INFO = {
+    blue: { color: '#3d8bff', mark: '+', title: '青マス', text: (sp) => `どんぐりが ${RULES.blue * (sp ? 2 : 1)}こ ふえる` },
+    red: { color: '#e8402f', mark: '−', title: '赤マス', text: (sp) => `どんぐりが ${RULES.red * (sp ? 2 : 1)}こ へる` },
+    item: { color: '#34c47c', mark: '?', title: 'どうぐマス', text: () => 'どうぐを 1つ もらえる(3つまで持てる)' },
+    happen: { color: '#9b6bff', mark: '!', title: 'ハプニングマス', text: () => 'その季節の できごとが おきる!' },
+    duel: { color: '#ff9a2a', mark: 'VS', title: '対決マス', text: () => 'だれか1人と、どんぐりを かけて 1対1 で勝負!' },
+    shop: { color: '#ffc23c', mark: '店', title: 'どうぐ屋', text: () => 'お店の前で ひとやすみ' },
+    start: { color: '#fff6e0', mark: 'S', title: 'スタート', text: () => 'なにも おきない' },
+    slide: { color: '#ff7a3a', mark: '≫', title: 'すべり台', text: () => '落ち葉のすべり台で、先のマスまで 一気にすべる!' },
+    ice: { color: '#8fd3ff', mark: '❄', title: 'つるつる氷', text: () => '氷の上では 止まれない! もう少し すべる' },
+  };
+  const HAPPEN_INFO = {
+    spring: { title: '春の雨', text: '池があふれた! 春にいる子は みんな 3マス もどる' },
+    summer: { title: 'どんぐりの雨', text: '大木がゆれた! 止まった子は どんぐり +10、近くの子も +3' },
+    autumn: { title: 'つむじ風', text: '風にとばされて、盤のどこかへ!' },
+    winter: { title: '雪玉ころころ', text: '大きな雪玉! 冬にいる子は みんな どんぐり -5' },
+  };
+  const ITEM_INFO = {
+    dice2: 'サイコロを 2つ ふれる',
+    dice3: 'サイコロを 3つ ふれる',
+    swap: 'だれか1人と、いる場所を 入れかえる',
+    whistle: 'ホーホー先生を、自分の すこし先へ よぶ',
+    bag: 'どんぐりが 10こ ふえる',
+  };
+  let infoSkip = null;
+  $('infoB').addEventListener('pointerdown', () => infoSkip?.());
+  async function explain({ color = '#fff6e0', mark = '', title, text, who = null, sec = 2.4 }) {
+    const el = $('infoB');
+    el.querySelector('i').style.background = color;
+    el.querySelector('i').textContent = mark;
+    el.querySelector('b').textContent = (who !== null ? `${name(who)}: ` : '') + title;
+    el.querySelector('p').textContent = text;
+    el.hidden = false;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    sfx.banner();
+    await Promise.race([sleep(sec / speed()), new Promise((r) => { infoSkip = r; })]);
+    infoSkip = null;
+    el.hidden = true;
+  }
+
   // ── できごとを見せる ──────────────────────────────
   async function show(events) {
     const s = game.s;
     for (const e of events) {
       switch (e.type) {
         case 'orderRoll':
+          camOn(e.slot);
           showDice(e.slot, e.value);
-          await sleep(0.8 / speed());
+          say(`${name(e.slot)}: ${e.value}`);
+          await sleep(1.4 / speed());
           break;
         case 'order':
           renderCards();
-          splash(`${name(e.order[0])} から!`);
-          await sleep(1.4 / speed());
+          say('');
+          camOver();
+          await explain({ color: '#ffd24a', mark: '1', title: 'じゅんばん', text: e.order.map((i, k) => `${k + 1}${name(i)}`).join(' → ') + '(サイコロの大きい順)', sec: 3.6 });
           break;
         case 'turn':
-          overview = true;
+          camOver();
           renderCards();
-          splash(`ターン ${e.turn}`, e.spurt ? 'gold' : '');
-          await sleep(1.1 / speed());
+          splash(`ターン ${e.turn} / ${s.turns}`, e.spurt ? 'gold' : '');
+          await sleep(2.0 / speed());
           break;
         case 'spurt':
-          splash('ラストスパート! 青も赤も2倍', 'gold');
-          await sleep(1.6 / speed());
+          await explain({ color: '#ffd24a', mark: '!', title: 'ラストスパート!', text: 'のこり3ターン。青マス・赤マスの どんぐりが 2倍!', sec: 3.2 });
           break;
         case 'player':
-          overview = false;
+          camOn(e.slot);
           renderCards();
-          say(`${name(e.slot)}の番`);
-          await sleep(0.4 / speed());
+          splash(`${name(e.slot)}の番`);
+          await sleep(1.6 / speed());
           break;
         case 'dice':
           // 止めたサイコロに、ほんとうの目を出す(2つ・3つのときは合計)
-          showDice(e.slot, e.total, e.values.length > 1 ? e.values.join('+') : '');
-          await sleep(0.7 / speed());
+          showDice(e.slot, e.total, e.values.length > 1 ? e.values.join(' + ') + ` = ${e.total}` : '');
+          await sleep(1.3 / speed());
+          say(`${e.total} マス すすむ`);
           break;
         case 'step':
+          camOn(e.slot);
           sfx.hop(e.left);
-          await movePiece(e.slot, e.to, { time: 0.22 / speed() });
+          await movePiece(e.slot, e.to, { time: 0.34 / speed() });
           settlePieces();
+          if (e.left === 0) say('');
           break;
+        case 'land': {
+          camOn(e.slot);
+          const q = st.squares[e.sq];
+          const info = q.ice ? KIND_INFO.ice : KIND_INFO[e.kind];
+          if (info && e.kind !== 'happen') await explain({ ...info, text: info.text(s.turns - s.turn < RULES.spurtTurns), who: e.slot });
+          break;
+        }
         case 'slide':
         case 'iceSlide':
-          splash(e.type === 'slide' ? 'すべり台!' : 'つるつる!');
-          await movePiece(e.slot, e.to, { hop: false, time: 0.8 / speed() });
+          camOn(e.slot);
+          await movePiece(e.slot, e.to, { hop: false, time: 1.1 / speed() });
           settlePieces();
           break;
         case 'pushBack':
         case 'blown':
-        case 'swap': {
-          if (e.type === 'swap') {
-            const a = game.pieces[e.slot], b = game.pieces[e.target];
-            const sa = b.sq, sb = a.sq;
-            await Promise.all([movePiece(e.slot, sa, { time: 0.6 / speed() }), movePiece(e.target, sb, { time: 0.6 / speed() })]);
-          } else await movePiece(e.slot, e.to, { time: 0.6 / speed() });
+          camOn(e.slot);
+          await movePiece(e.slot, e.to, { time: (e.type === 'blown' ? 1.4 : 0.9) / speed() });
           settlePieces();
+          await sleep(0.4 / speed());
+          break;
+        case 'swap': {
+          camOver();
+          const a = game.pieces[e.slot], b = game.pieces[e.target];
+          const sa = b.sq, sb = a.sq;
+          await Promise.all([movePiece(e.slot, sa, { time: 1.0 / speed() }), movePiece(e.target, sb, { time: 1.0 / speed() })]);
+          settlePieces();
+          await explain({ color: '#34c47c', mark: '⇄', title: 'いれかえ!', text: `${name(e.slot)}と ${name(e.target)}が 入れかわった`, sec: 2 });
+          camOn(e.slot);
           break;
         }
         case 'acorns':
+          camOn(e.slot);
           if (e.delta > 0) sfx.gain(); else if (e.delta < 0) sfx.lose();
           pop(`${e.delta >= 0 ? '+' : ''}${e.delta}`, e.slot, e.delta >= 0 ? (e.slot === 0 ? 'me' : '') : 'red');
           renderCards();
-          await sleep(0.45 / speed());
+          await sleep(0.9 / speed());
           break;
         case 'medal':
           sfx.medal();
           splash(`${name(e.slot)} メダルゲット!`, 'gold');
+          pop('メダル +1', e.slot, 'gold');
           renderCards();
-          await sleep(1.6 / speed());
+          await sleep(2.2 / speed());
           break;
-        case 'owlMove':
-          splash('先生が飛んでいく!');
+        case 'owlMove': {
+          // 先生が飛んでいくのを、カメラが追いかける
           placeOwl(e.to);
-          await sleep(1.4 / speed());
+          camOwl();
+          await explain({ color: '#ffd24a', mark: '★', title: 'ホーホー先生', text: '先生は 新しいマスへ とんでいった。そこで メダルが買える', sec: 3.0 });
           break;
+        }
         case 'owlPoor':
-          say(`${name(e.slot)}: どんぐりが足りない…`);
-          await sleep(0.6 / speed());
+          await explain({ color: '#ffd24a', mark: '★', title: 'ホーホー先生', text: `メダルは どんぐり ${RULES.medalPrice}こ。たりなくて 買えない…`, who: e.slot, sec: 2.2 });
           break;
         case 'getItem':
         case 'buyItem':
-          splash(`${name(e.slot)}: ${ITEMS[e.item].name}`);
           renderCards();
-          await sleep(1.0 / speed());
+          await explain({ color: '#34c47c', mark: '?', title: `${ITEMS[e.item].name}を ${e.type === 'buyItem' ? '買った' : 'もらった'}`, text: ITEM_INFO[e.item], who: e.slot, sec: 2.4 });
           break;
         case 'useItem':
-          splash(`${ITEMS[e.item].name}!`);
           renderCards();
-          await sleep(1.0 / speed());
+          await explain({ color: '#34c47c', mark: '?', title: `${ITEMS[e.item].name}を つかった!`, text: ITEM_INFO[e.item], who: e.slot, sec: 2.2 });
           break;
-        case 'happen':
+        case 'happen': {
           sfx.happen();
-          splash(AREA_HAPPEN[e.area] || 'ハプニング!', 'red');
-          await sleep(1.4 / speed());
+          const h = HAPPEN_INFO[e.area];
+          splash(h.title + '!', 'red');
+          await explain({ color: '#9b6bff', mark: '!', title: `ハプニング: ${h.title}`, text: h.text, sec: 3.0 });
+          if (e.area === 'spring' || e.area === 'winter') camOver(); // みんなに起きるので、全体を見せる
           break;
+        }
         case 'duel':
-          splash(`対決! ${name(e.a)} vs ${name(e.b)}`, 'gold');
-          await sleep(1.6 / speed());
+          camOver();
+          await explain({ color: '#ff9a2a', mark: 'VS', title: `対決! ${name(e.a)} vs ${name(e.b)}`, text: `どんぐり ${e.stake}こを かけて、「${GAME_NAMES[e.game]}」で勝負!`, sec: 3.0 });
           break;
         case 'duelEnd':
-          splash(`${name(e.winner)} の勝ち! +${e.stake}`);
-          renderCards();
+          camOn(e.winner);
+          splash(`${name(e.winner)}の勝ち!`, 'gold');
           await sleep(1.4 / speed());
+          renderCards();
           break;
         case 'duelSkip':
-          await sleep(0.3 / speed());
+          if (e.why) await explain({ color: '#ff9a2a', mark: 'VS', title: '対決なし', text: 'かけられる どんぐりが ないので、対決は おやすみ', who: e.slot, sec: 2 });
           break;
         case 'minigame':
-          overview = true;
-          splash(`競技: ${GAME_NAMES[e.game]}`, 'gold');
-          await sleep(1.8 / speed());
+          camOver();
+          splash('競技のじかん!', 'gold');
+          await sleep(1.6 / speed());
+          await explain({ color: '#ffd24a', mark: '★', title: `競技: ${GAME_NAMES[e.game]}`, text: `順位で どんぐりが もらえる(1位 +${RULES.minigamePrize[0]}・2位 +${RULES.minigamePrize[1]}・3位 +${RULES.minigamePrize[2]}・4位 +${RULES.minigamePrize[3]}・5位 +${RULES.minigamePrize[4]})`, sec: 3.6 });
           break;
         case 'minigameEnd':
           renderCards();
-          await sleep(0.8 / speed());
+          camOver();
+          await explain({ color: '#ffd24a', mark: '★', title: '競技の結果', text: e.ranking.map((i, k) => `${k + 1}位 ${name(i)}(+${RULES.minigamePrize[k]})`).join('・'), sec: 3.4 });
           break;
         case 'bonus':
-          overview = true;
-          splash(`ボーナス: ${e.name}`, 'gold');
-          await sleep(1.4 / speed());
+          camOver();
+          await explain({ color: '#ffd24a', mark: '★', title: `ボーナスメダル: ${e.name}`, text: bonusText(e.key), sec: 2.8 });
           if (e.who.length) {
-            for (const i of e.who) pop('メダル+1', i, 'gold');
-            splash(`${e.who.map(name).join('・')}!`);
+            for (const i of e.who) pop('メダル +1', i, 'gold');
+            splash(`${e.who.map(name).join('・')}!`, 'gold');
             sfx.medal();
-          } else splash('なし');
+          } else splash('該当なし');
           renderCards();
-          await sleep(1.6 / speed());
+          await sleep(2.2 / speed());
           break;
       }
     }
+  }
+  function bonusText(key) {
+    return {
+      minigameWins: '競技で 1位を いちばん多く とった子に',
+      gained: 'どんぐりを いちばん多く 手に入れた子に',
+      happen: 'ハプニングマスに いちばん多く 止まった子に',
+      diceSum: 'サイコロの目の合計が いちばん大きい子に',
+      duelWins: '対決で いちばん多く 勝った子に',
+      itemsUsed: 'どうぐを いちばん多く つかった子に',
+    }[key];
   }
 
   // ── 進行 ────────────────────────────────────────
@@ -421,8 +500,13 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       else if (pend.slot === 0) action = await humanAct(pend);
       else {
         if (pend.type === 'roll' || pend.type === 'orderRoll') await rollDice(pend.slot, false);
-        else await sleep(0.7 / speed());
+        else await sleep(1.1 / speed()); // CPU が考えている間
         action = cpuAct(game.cpus[pend.slot], s, pend.slot);
+        if (pend.type === 'branch') {
+          const path = st.squares[action.to].path;
+          say(`${name(pend.slot)}は ${path === 'lily' ? 'ハスの近道' : path === 'ice' ? '氷の近道' : 'このままの道'}へ`);
+          await sleep(1.0 / speed());
+        }
       }
       if (!live()) return;
       const ev = act(s, action);
@@ -434,12 +518,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
 
   // サイコロ: 頭の上で回る。人はタップで止める。CPU は少しして止める
   function rollDice(slot, human) {
-    const p = game.pieces[slot];
-    focus.copy(p.holder.position);
+    camOn(slot);
     dice.g.visible = true;
     dice.spin = true;
     dice.slot = slot;
-    if (!human) return sleep(0.9 / speed()).then(stopDice);
+    if (!human) return sleep(1.5 / speed()).then(stopDice);
     say('タップで止める!');
     return new Promise((resolve) => {
       const btn = { label: 'とめる!', value: 'stop', main: true };
@@ -482,7 +565,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         return a('swap', { target: v });
       }
       case 'branch': {
-        const label = (to) => (st.squares[to].path === 'lily' ? 'ハスの近道' : st.squares[to].path === 'ice' ? '氷の近道' : 'このまま');
+        const label = (to) => (st.squares[to].path === 'lily' ? 'ハスの近道<small>みじかい・ハプニング多め</small>'
+          : st.squares[to].path === 'ice' ? '氷の近道<small>みじかい・つるつるすべる</small>' : 'このまま<small>ふつうの道</small>');
         const v = await choose('どっちへ行く?', pend.options.map((to) => ({ label: label(to), value: to })));
         return a('branch', { to: v });
       }
@@ -556,37 +640,43 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   }
 
   // ── 毎フレーム ──────────────────────────────────
+  // カメラ: ふだんは手番の子(いま何かが起きている子)を中心に、ゆっくりついていく。
+  // 島ぜんたいを見せるのは、開会式・ターンのはじめ・競技の前など、みんなに関わるときだけ
   let freeCamera = false;
+  const cam = { mode: 'overview', slot: 0, look: new THREE.Vector3(), pos: new THREE.Vector3() };
+  function camOn(slot) { cam.mode = 'slot'; cam.slot = slot; }
+  function camOver() { cam.mode = 'overview'; }
+  function camOwl() { cam.mode = 'owl'; }
   function updateCamera(dt, snap = false) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    camera.fov = portrait ? 58 : 45;
+    camera.fov = portrait ? 56 : 45;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
     let pos, look;
-    if (overview || !game) {
-      // 島ぜんたい
+    if (cam.mode === 'overview' || !game) {
       pos = new THREE.Vector3(0, portrait ? 74 : 40, portrait ? 52 : 36);
       look = new THREE.Vector3(0, 0, portrait ? 3 : 1);
     } else {
-      const p = game.pieces[currentSlot(game.s)]?.holder.position || focus;
-      focus.lerp(p, Math.min(1, dt * 6));
-      pos = focus.clone().add(new THREE.Vector3(0, portrait ? 13 : 10, portrait ? 12 : 10));
-      look = focus.clone().add(new THREE.Vector3(0, 0.6, 0));
+      const target = cam.mode === 'owl' ? owl.root.position : game.pieces[cam.slot].holder.position;
+      focus.lerp(target, snap ? 1 : Math.min(1, dt * 3));
+      pos = focus.clone().add(new THREE.Vector3(0, portrait ? 9 : 7, portrait ? 10 : 8.5));
+      look = focus.clone().add(new THREE.Vector3(0, 0.8, portrait ? -1 : 0));
     }
     if (intro < 1) {
       const e = 1 - (1 - intro) ** 3;
       const sky = new THREE.Vector3(30, 70, 70);
       camera.position.lerpVectors(sky, pos, e);
       camera.lookAt(look);
-      camera.userData.look = look.clone();
+      cam.look.copy(look);
       return;
     }
-    const k = snap ? 1 : 1 - Math.exp(-dt * 3.5);
+    // ゆっくり動かす(はやくのときは少しだけ速く)
+    const k = snap ? 1 : 1 - Math.exp(-dt * (fast ? 2.6 : 1.5));
     camera.position.lerp(pos, k);
-    camera.userData.look = camera.userData.look ? camera.userData.look.lerp(look, k) : look.clone();
-    camera.lookAt(camera.userData.look);
+    cam.look.lerp(look, k);
+    camera.lookAt(cam.look);
   }
 
   function frame(rawDt, draw = true) {

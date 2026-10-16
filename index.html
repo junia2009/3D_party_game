@@ -455,8 +455,22 @@
   .bact.main { background: var(--accent); color: #fff; box-shadow: 0 5px 0 #b8362d; }
   .bact:disabled { opacity: .4; }
   .bact:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(31,42,51,.25); }
+  /* 説明カード: 札の色の丸・名前・何が起きるか */
+  .binfo {
+    pointer-events: auto; position: relative; width: min(100%, 420px); box-sizing: border-box; padding: 12px 14px 12px 64px; border-radius: 18px;
+    background: var(--hud-paper); box-shadow: 0 6px 0 rgba(31,42,51,.2), 0 10px 24px rgba(0,0,0,.15); text-align: left;
+  }
+  .binfo.show { animation: infoin .35s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes infoin { from { transform: translateY(24px) scale(.9); opacity: 0; } }
+  .binfo i {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; border-radius: 50%;
+    border: 4px solid #4a2a12; display: grid; place-items: center; font: 400 17px var(--font-display); font-style: normal; color: #fff;
+    -webkit-text-stroke: 3px #4a2a12; paint-order: stroke fill;
+  }
+  .binfo b { display: block; font: 400 17px var(--font-display); color: var(--hud-ink); }
+  .binfo p { margin: 3px 0 0; font: 700 14px/1.45 var(--font-body); color: #5a4030; }
   .bfast {
-    pointer-events: auto; position: absolute; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+    pointer-events: auto; position: absolute; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 82px);
     border: 0; border-radius: 999px; padding: 8px 12px; background: rgba(31,42,51,.6); color: #fff; font: 800 12px var(--font-body);
   }
   .bfast.on { background: var(--accent); }
@@ -846,6 +860,7 @@
   <div class="pops" id="popsB"></div>
   <div class="splash" id="splashB"></div>
   <div class="bfoot">
+    <div class="binfo" id="infoB" hidden><i></i><b></b><p></p></div>
     <p class="bmsg" id="msgB"></p>
     <div class="bacts" id="actsB"></div>
   </div>
