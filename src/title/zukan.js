@@ -23,8 +23,8 @@ const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const accent = (c) => hex(c.dark ?? lineColor(c.main).getHex());
 const ACORN = '<svg viewBox="0 0 20 22" aria-hidden="true"><ellipse cx="10" cy="13" rx="6.5" ry="7.5" fill="currentColor"/><path d="M2.5 9.5a7.5 5 0 0 1 15 0z" fill="#6e4a2a"/><rect x="9" y="2" width="2" height="4" rx="1" fill="#5a3c22"/></svg>';
 
-// 図鑑の番号。ゲストは番号のかわりに「ゲスト」
-const noLabel = (i) => (CHARACTERS[i].guest ? 'ゲスト' : `No.${i + 1}`);
+// 図鑑の番号(ゲストも なかまなので、ほかの子と同じく番号で)
+const noLabel = (i) => `No.${i + 1}`;
 
 function infoHtml(c, i) {
   const stats = c.stats.map((v, k) => `<div class="stat"><span>${STAT_LABELS[k]}</span><i>${
@@ -39,7 +39,7 @@ function infoHtml(c, i) {
       ${(c.facts || []).map(([dt, dd]) => `<div><dt>${dt}</dt><dd>${dd}</dd></div>`).join('')}
     </dl>
     <div class="z-stats">${stats}</div>
-    </div><span class="z-folio">- ${c.guest ? 'ゲスト' : i + 1} -</span>`;
+    </div><span class="z-folio">- ${i + 1} -</span>`;
 }
 
 export function createZukan({ sfx, onClose, faces }) {
