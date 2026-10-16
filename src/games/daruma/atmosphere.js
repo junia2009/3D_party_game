@@ -282,7 +282,8 @@ export function createAtmosphere(scene, renderer, camera, opts = {}) {
     hemi.color.setHex(p.hemi.sky);
     hemi.groundColor.setHex(p.hemi.ground);
     hemi.intensity = p.hemi.intensity;
-    const dir = new THREE.Vector3(...p.sun.dir).normalize();
+    // 会場ごとに、時間帯の太陽の向きを変えられる(opts.sunDir: { evening: [x, y, z] })
+    const dir = new THREE.Vector3(...(opts.sunDir?.[key] || p.sun.dir)).normalize();
     sun.position.copy(sun.target.position).addScaledVector(dir, 60);
     sun.color.setHex(p.sun.color);
     sun.intensity = p.sun.intensity;

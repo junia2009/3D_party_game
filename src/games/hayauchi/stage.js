@@ -79,10 +79,138 @@ function mesa(g, x, z, r, h, rand) {
     g.add(m);
     y += bh;
   }
-  // てっぺんの平らなところ
-  const top = new THREE.Mesh(new THREE.CylinderGeometry(r * (1 - n * 0.06) * 0.98, r * (1 - n * 0.06), 0.4, 9), toonMaterial(0xe9a46c));
+  // てっぺんの平らなところ(ふちに でこぼこ)
+  const topR = r * (1 - n * 0.06);
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(topR * 0.98, topR, 0.4, 9), toonMaterial(0xe9a46c));
   top.position.set(x, y + 0.2, z);
   g.add(top);
+  for (let k = 0; k < 5; k++) {
+    const a = rand() * Math.PI * 2;
+    const b = new THREE.Mesh(new THREE.DodecahedronGeometry(r * (0.12 + rand() * 0.1), 0), toonMaterial(0xd88a56));
+    b.position.set(x + Math.cos(a) * topR * 0.7, y + 0.3, z + Math.sin(a) * topR * 0.7 * 0.8);
+    b.scale.y = 0.6;
+    g.add(b);
+  }
+  // ふもとの落石
+  for (let k = 0; k < 7; k++) {
+    const a = rand() * Math.PI * 2, d = r * (1.0 + rand() * 0.35);
+    const b = new THREE.Mesh(new THREE.DodecahedronGeometry(r * (0.08 + rand() * 0.14), 0), toonMaterial(rand() < 0.5 ? 0xb8583a : 0xa04a30));
+    b.position.set(x + Math.cos(a) * d, r * 0.04, z + Math.sin(a) * d * 0.8);
+    b.rotation.set(rand(), rand() * 6, rand());
+    g.add(b);
+  }
+}
+
+// 岩のアーチ(遠くの目じるし)
+function arch(g, x, z, R, t) {
+  const bands = [0xb8583a, 0xd07a4a, 0xc0603e];
+  bands.forEach((c, i) => {
+    const m = new THREE.Mesh(new THREE.TorusGeometry(R - i * t * 0.02, t * (1 - i * 0.18), 7, 18, Math.PI), toonMaterial(c));
+    m.position.set(x, 0, z + i * 0.05);
+    m.scale.z = 0.7;
+    g.add(m);
+  });
+  // 足もとの岩
+  for (const sx of [-1, 1]) {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(t * 1.1, t * 1.5, t * 2.2, 8), toonMaterial(0xa94a32));
+    b.position.set(x + sx * R, t * 1.1, z);
+    g.add(b);
+  }
+}
+
+// 入り口の看板「どんぐり早うち」
+function buildSign(g) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 200;
+  const x = c.getContext('2d');
+  x.fillStyle = '#c99a62';
+  x.fillRect(0, 0, 512, 200);
+  for (let i = 0; i < 5; i++) {
+    x.fillStyle = i % 2 ? 'rgba(120,70,30,.12)' : 'rgba(255,230,190,.12)';
+    x.fillRect(0, i * 40, 512, 38);
+    x.fillStyle = 'rgba(90,50,20,.5)';
+    x.fillRect(0, i * 40 + 38, 512, 2);
+  }
+  x.font = '400 72px "Dela Gothic One", sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.lineWidth = 12;
+  x.strokeStyle = '#fff1d8';
+  x.strokeText('どんぐり早うち', 256, 104);
+  x.fillStyle = '#7a2e1c';
+  x.fillText('どんぐり早うち', 256, 104);
+  // くぎ
+  x.fillStyle = '#4a3020';
+  for (const [px, py] of [[18, 18], [494, 18], [18, 182], [494, 182]]) { x.beginPath(); x.arc(px, py, 6, 0, Math.PI * 2); x.fill(); }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sign = new THREE.Group();
+  const wood = toonMaterial(0x8a5a32);
+  const board = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.62, 0.07), [wood, wood, wood, wood, new THREE.MeshToonMaterial({ map: tex, gradientMap: toonGradient }), wood]);
+  board.position.y = 1.35;
+  board.rotation.z = -0.04;
+  sign.add(board);
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.7, 0.12), toonMaterial(0x6a4426));
+  post.position.set(0, 0.85, -0.08);
+  sign.add(post);
+  sign.position.set(-5.0, 0, 1.2);
+  sign.rotation.y = 0.35;
+  sign.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.add(sign);
+}
+
+// かれた しげみ(小さな まるい やぶ)
+function buildShrubs(g, rand) {
+  const geo = new THREE.IcosahedronGeometry(0.3, 0);
+  const mesh = new THREE.InstancedMesh(geo, toonMaterial(0xffffff), 60);
+  const dummy = new THREE.Object3D();
+  const col = new THREE.Color();
+  let n = 0;
+  for (let i = 0; i < 200 && n < 60; i++) {
+    const x = (rand() - 0.5) * 50, z = -rand() * 40 + 6;
+    if (Math.abs(x) < 6 && z > CAN_Z - 1.5) continue; // ならぶところと、まん中はあける
+    if (Math.abs(x) < 3 && z > OWL_ROCK.z - 2) continue;
+    dummy.position.set(x, 0.12, z);
+    dummy.scale.set(0.7 + rand() * 0.8, 0.5 + rand() * 0.4, 0.7 + rand() * 0.8);
+    dummy.rotation.y = rand() * 6;
+    dummy.updateMatrix();
+    mesh.setMatrixAt(n, dummy.matrix);
+    mesh.setColorAt(n, col.setHex(rand() < 0.5 ? 0x9a8a4a : 0x7f8a48));
+    n++;
+  }
+  mesh.count = n;
+  mesh.receiveShadow = true;
+  g.add(mesh);
+}
+
+// 木箱と荷車の車輪(柵のはしに)
+function buildProps(g) {
+  const wood = toonMaterial(0xa8744a), dark = toonMaterial(0x6a4426);
+  for (const [x, z, s, r] of [[5.2, -5.6, 0.55, 0.3], [5.8, -5.0, 0.45, -0.2], [5.4, -5.3, 0.4, 0.1]]) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), wood);
+    box.position.set(x, s / 2 + (s === 0.4 ? 0.55 : 0), z);
+    box.rotation.y = r;
+    box.castShadow = true;
+    g.add(box);
+    for (const sx of [-1, 1]) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(s * 1.02, 0.05, s * 1.02), dark);
+      slat.position.set(x, box.position.y + sx * s * 0.3, z);
+      slat.rotation.y = r;
+      g.add(slat);
+    }
+  }
+  const wheel = new THREE.Group();
+  wheel.add(new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 6, 20), dark));
+  wheel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.1, 10).rotateX(Math.PI / 2), dark));
+  for (let k = 0; k < 8; k++) {
+    const sp = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.06, 0.04), wood);
+    sp.rotation.z = (k / 8) * Math.PI;
+    wheel.add(sp);
+  }
+  wheel.position.set(-5.4, 0.55, -5.9);
+  wheel.rotation.set(-0.25, 0.4, 0);
+  wheel.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.add(wheel);
 }
 
 function rock(g, x, z, s, rand, color = 0xc06a44) {
@@ -180,6 +308,8 @@ function buildSurroundings(g) {
   // 遠くの岩山(うしろと左右)
   const spots = [[-38, -70, 12, 22], [-8, -95, 16, 30], [26, -80, 11, 18], [55, -60, 14, 26], [-70, -40, 13, 20], [80, -100, 18, 34], [-60, -120, 20, 40], [12, -150, 22, 44], [70, -20, 10, 16], [-75, 5, 12, 22]];
   for (const [x, z, r, h] of spots) mesa(g, x, z, r, h, rand);
+  arch(g, -26, -48, 7, 1.6);
+  buildShrubs(g, rand);
   // 岩
   for (let i = 0; i < 50; i++) {
     const a = rand() * Math.PI * 2, d = 9 + rand() * 30;
@@ -219,6 +349,8 @@ export function buildStage(scene, n = 5) {
   buildFence(g, n);
   buildOwlRock(g);
   buildSeats(g);
+  buildSign(g);
+  buildProps(g);
   mergeStatic(g);
   scene.add(g);
   return { group: g };

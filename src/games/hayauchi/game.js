@@ -26,7 +26,11 @@ const sec2 = (v) => v.toFixed(2);
 export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 900);
-  const atmosphere = createAtmosphere(scene, renderer, camera, { course: false });
+  // 夕日は 先生のうしろ(奥)の 低いところ。影は手前へ長くのびる(横から当てると、となりの子に影が落ちて まだらになる)
+  const atmosphere = createAtmosphere(scene, renderer, camera, { course: false, sunDir: { evening: [0.28, 0.24, -0.93] } });
+  // 低い光だと、体に まだらな影(影のにじみ)が出やすいので、少し体から はなして計る
+  atmosphere.sun.shadow.normalBias = 0.06;
+  atmosphere.sun.shadow.bias = -0.0012;
   const stage = buildStage(scene, SLOTS);
 
   // ── 音 ──────────────────────────────────────────
@@ -351,6 +355,7 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
     if (kind === 'weed') {
       const dir = Math.random() < 0.5 ? 1 : -1;
       jama.weed = { t: 0, dir, z: -2.6 - Math.random() * 1.5 };
+      gust = 1;
       weed.visible = true;
       sfx.wind(0.1);
     } else {
@@ -453,6 +458,32 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
         fx.splice(i, 1);
       }
     }
+  }
+
+  // ── 夕日の中を ただよう 砂ぼこりの粒(演出なので Math.random でよい) ─────────
+  const DUST = 140;
+  const dustPos = new Float32Array(DUST * 3);
+  const dustSeed = [];
+  for (let i = 0; i < DUST; i++) {
+    dustSeed.push({ x: (Math.random() - 0.5) * 18, y: 0.2 + Math.random() * 4.5, z: -10 + Math.random() * 14, ph: Math.random() * 6, sp: 0.2 + Math.random() * 0.4 });
+  }
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0xffd7a0, size: 0.07, transparent: true, opacity: 0.75, depthWrite: false }));
+  dust.frustumCulled = false;
+  scene.add(dust);
+  let gust = 0; // 草のまりが転がるときなど、風が吹くと速く流れる
+  function updateDust(dt) {
+    gust = Math.max(0, gust - dt * 0.6);
+    for (let i = 0; i < DUST; i++) {
+      const d = dustSeed[i];
+      d.x -= dt * (d.sp + gust * 3);
+      if (d.x < -9) d.x += 18;
+      dustPos[i * 3] = d.x;
+      dustPos[i * 3 + 1] = d.y + Math.sin(time * 0.8 + d.ph) * 0.25;
+      dustPos[i * 3 + 2] = d.z + Math.cos(time * 0.6 + d.ph) * 0.2;
+    }
+    dustGeo.attributes.position.needsUpdate = true;
   }
 
   // ── ゲームの進行 ────────────────────────────────────
@@ -888,6 +919,7 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
       updateShots(dt);
       updateJama(dt);
       updateFx(dt);
+      updateDust(dt);
     }
     if (!paused) {
       for (const a of audience) {
