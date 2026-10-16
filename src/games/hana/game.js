@@ -437,20 +437,68 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
   }
   const dropGeo = new THREE.SphereGeometry(0.035, 6, 4);
   const dropMat = new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.85 });
-  // じょうろ: まわりへ弧をえがいて水が飛ぶ + 地面に広がる輪
-  function splashWater(x, z, r) {
-    for (let i = 0; i < 46; i++) {
-      const m = new THREE.Mesh(dropGeo, dropMat);
-      const a = Math.random() * Math.PI * 2, sp = (0.5 + Math.random()) * r * 1.4;
-      m.position.set(x, 0.9, z);
-      scene.add(m);
-      fx.push({ obj: m, t: 0, life: 0.7, vel: new THREE.Vector3(Math.cos(a) * sp, 2.6 + Math.random() * 1.6, Math.sin(a) * sp), kind: 'drop' });
-    }
+  // じょうろ: 拾ったところで ふわっと浮かんで、くるっと回りながら まわりへ水をまく。小さな にじが かかる
+  const pours = [];
+  const RAINBOW = [0xff6b6b, 0xffa94d, 0xffe066, 0x8ce99a, 0x74c0fc, 0xb197fc];
+  function pourCan(x, z) {
+    const can = makeCan();
+    can.position.set(x, 0.3, z);
+    scene.add(can);
+    const bow = new THREE.Group();
+    RAINBOW.forEach((c, i) => {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(1.75 - i * 0.09, 0.05, 4, 32, Math.PI), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0, depthWrite: false }));
+      bow.add(m);
+    });
+    bow.position.set(x, 0, z);
+    bow.rotation.y = Math.atan2(camera.position.x - x, camera.position.z - z);
+    scene.add(bow);
+    pours.push({ can, bow, x, z, t: 0, acc: 0 });
+    // 地面に広がる水の輪
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, depthWrite: false }));
     ring.position.set(x, 0.05, z);
     ring.renderOrder = 2;
     scene.add(ring);
-    fx.push({ obj: ring, t: 0, life: 0.6, r, kind: 'wave' });
+    fx.push({ obj: ring, t: 0, life: 0.9, r: RULES.canR, kind: 'wave' });
+  }
+  const spoutV = new THREE.Vector3();
+  function updatePours(dt) {
+    for (let i = pours.length - 1; i >= 0; i--) {
+      const p = pours[i];
+      p.t += dt;
+      const t = p.t;
+      // 0〜0.3 秒: 浮かぶ / 0.3〜1.2 秒: かたむけて、回りながら まく / そのあと きらっと消える
+      const up = Math.min(1, t / 0.3);
+      p.can.position.y = 0.3 + (1 - (1 - up) ** 3) * 1.6 + Math.sin(t * 6) * 0.05;
+      p.can.rotation.z = -0.75 * Math.min(1, Math.max(0, (t - 0.15) / 0.2));
+      p.can.rotation.y = t * 5;
+      const end = Math.min(1, Math.max(0, (t - 1.2) / 0.25));
+      p.can.scale.setScalar(1.3 * (1 - end) + 0.001);
+      if (t > 0.25 && t < 1.25) {
+        p.acc += dt * 70;
+        // じょうろの口(はす口)から、外へ向かって水つぶ
+        p.can.updateMatrixWorld();
+        spoutV.set(0.5, 0.4, 0).applyMatrix4(p.can.matrixWorld);
+        const out = new THREE.Vector3(spoutV.x - p.x, 0, spoutV.z - p.z).normalize();
+        while (p.acc >= 1) {
+          p.acc--;
+          const m = new THREE.Mesh(dropGeo, dropMat);
+          m.position.copy(spoutV);
+          scene.add(m);
+          const sp = 1.2 + Math.random() * 1.4;
+          fx.push({ obj: m, t: 0, life: 0.9, vel: new THREE.Vector3(out.x * sp + (Math.random() - 0.5) * 0.6, 0.6 + Math.random() * 0.8, out.z * sp + (Math.random() - 0.5) * 0.6), kind: 'drop' });
+        }
+      }
+      if (Math.abs(t - 1.25) < dt) sparkle(p.can.position, 0xffffff, 6, 0.35);
+      // にじ: ふわっと出て、ゆっくり消える
+      const bowA = Math.min(1, Math.max(0, (t - 0.3) / 0.3)) * (1 - Math.min(1, Math.max(0, (t - 1.4) / 0.6)));
+      p.bow.children.forEach((m) => { m.material.opacity = bowA * 0.55; });
+      p.bow.scale.setScalar(0.85 + bowA * 0.15);
+      if (t > 2.1) {
+        scene.remove(p.can, p.bow);
+        p.bow.children.forEach((m) => m.material.dispose());
+        pours.splice(i, 1);
+      }
+    }
   }
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
   function confetti(x, z) {
@@ -536,12 +584,30 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     sting.rotation.x = -Math.PI / 2;
     sting.position.z = -0.2;
     body.add(sting);
-    const eyeW = new THREE.MeshBasicMaterial({ color: 0x1b1b1b });
+    // 顔: 白目 + 黒目 + 光、ほっぺ、にっこり口。頭に2本の触角
+    const white = new THREE.MeshBasicMaterial({ color: 0xffffff }), black = new THREE.MeshBasicMaterial({ color: 0x1b1b1b });
+    const cheek = new THREE.MeshBasicMaterial({ color: 0xff9a8a });
     for (const s of [-1, 1]) {
-      const e = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), eyeW);
-      e.position.set(s * 0.06, 0.04, 0.16);
-      body.add(e);
+      const e = new THREE.Mesh(new THREE.SphereGeometry(0.038, 10, 8), white);
+      e.position.set(s * 0.058, 0.045, 0.165);
+      const p = new THREE.Mesh(new THREE.SphereGeometry(0.024, 8, 6), black);
+      p.position.set(s * 0.06, 0.042, 0.193);
+      const hl = new THREE.Mesh(new THREE.SphereGeometry(0.008, 6, 4), white);
+      hl.position.set(s * 0.06 + 0.008, 0.052, 0.214);
+      const ck = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), cheek);
+      ck.scale.set(1, 0.6, 0.4);
+      ck.position.set(s * 0.1, -0.012, 0.15);
+      const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 4), blk);
+      ant.position.set(s * 0.045, 0.17, 0.11);
+      ant.rotation.set(0.5, 0, -s * 0.35);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 5), blk);
+      tip.position.set(s * 0.068, 0.225, 0.14);
+      body.add(e, p, hl, ck, ant, tip);
     }
+    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 4, 10, Math.PI), black);
+    mouth.rotation.z = Math.PI;
+    mouth.position.set(0, 0.0, 0.185);
+    body.add(mouth);
     const wings = [];
     const wingGeo = new THREE.CircleGeometry(0.12, 12);
     for (const s of [-1, 1]) {
@@ -618,7 +684,8 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
         v.mesh.rotation.y = v.t * 1.2;
       } else {
         v.mesh.position.set(Math.sin(v.t * 1.7) * 0.25, 0.7 + Math.sin(v.t * 3.4) * 0.12, Math.sin(v.t * 3.4) * 0.12);
-        v.mesh.rotation.y = Math.cos(v.t * 1.7) > 0 ? Math.PI / 2 : -Math.PI / 2;
+        v.mesh.rotation.y = Math.cos(v.t * 1.7) * 0.7; // 手前(カメラのほう)を向いて、左右に ゆらゆら
+        v.mesh.rotation.z = -Math.cos(v.t * 1.7) * 0.15;
         for (const w of v.mesh.userData.wings) w.pivot.rotation.z = w.s * (0.3 + Math.sin(v.t * 60) * 0.5);
       }
       v.ring.scale.setScalar(1 + Math.sin(v.t * 4) * 0.06);
@@ -644,6 +711,12 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
       b.position.set(r.x + Math.cos(t * 4) * rad, 0.55 + Math.sin(t * 7) * 0.12, r.z + Math.sin(t * 4) * rad);
       b.rotation.y = -t * 4;
       for (const w of b.userData.wings) w.pivot.rotation.z = w.s * (0.3 + Math.sin(t * 60) * 0.5);
+      // 花粉のきらきらを落としていく
+      b.userData.pollen = (b.userData.pollen || 0) + dt;
+      if (r.bee > 0 && b.userData.pollen > 0.09) {
+        b.userData.pollen = 0;
+        sparkle(b.position, 0xffe27a, 1, 0.16);
+      }
       // 時間ぎれ: 上へ飛んでいく
       if (r.bee <= 0) {
         b.userData.gone = (b.userData.gone || 0) + dt;
@@ -668,29 +741,90 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     t.wrapS = THREE.RepeatWrapping;
     return t;
   })();
-  const winds = new Map(); // id → { path, twister, parts, t, ex, ez }
-  const twisterMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+  const winds = new Map(); // id → { path, twister, mark, t, gone }
+  // うずの模様: ななめの白いすじ(上へ流して回すと、ねじれて巻き上がって見える)
+  const swirlTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 128;
+    const g = c.getContext('2d');
+    for (let i = 0; i < 9; i++) {
+      const y = (i / 9) * 128;
+      const grad = g.createLinearGradient(0, y, 128, y + 40);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(0.5, `rgba(255,255,255,${0.55 + (i % 3) * 0.15})`);
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.strokeStyle = grad;
+      g.lineWidth = 5 + (i % 3) * 3;
+      g.beginPath();
+      g.moveTo(-10, y);
+      g.bezierCurveTo(40, y + 10, 90, y + 30, 138, y + 44);
+      g.stroke();
+      // 下へはみだしたぶんは上にも描く(つなぎ目を出さない)
+      g.beginPath();
+      g.moveTo(-10, y - 128);
+      g.bezierCurveTo(40, y - 118, 90, y - 98, 138, y - 84);
+      g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  })();
+  // 来るところの「!」
+  const warnTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#ff6a4e';
+    g.strokeStyle = '#fff';
+    g.lineWidth = 10;
+    g.beginPath();
+    g.arc(64, 64, 52, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#fff';
+    g.font = '900 86px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('!', 64, 70);
+    return new THREE.CanvasTexture(c);
+  })();
+  // ろうと(じょうご)の形: 下が細く、上へ広がる
+  const funnelGeo = new THREE.LatheGeometry([[0.12, 0], [0.22, 0.4], [0.38, 1.0], [0.62, 1.7], [0.95, 2.4], [1.25, 2.9]].map(([x, y]) => new THREE.Vector2(x, y)), 20);
+  const dustMat = new THREE.MeshToonMaterial({ color: 0xe8d6b4, gradientMap: toonGradient, transparent: true, opacity: 0.5, depthWrite: false });
+  const dustGeo = new THREE.IcosahedronGeometry(0.15, 1);
   function makeTwister() {
     const g = new THREE.Group();
-    const rings = [];
-    for (let i = 0; i < 7; i++) {
-      const r = 0.25 + i * 0.13;
-      const m = new THREE.Mesh(new THREE.TorusGeometry(r, 0.05 + i * 0.012, 6, 20, Math.PI * 1.5), twisterMat);
-      m.rotation.x = Math.PI / 2;
-      m.position.y = 0.15 + i * 0.32;
+    const layers = [];
+    for (const [sc, op, speed] of [[1, 0.55, 7], [0.72, 0.75, -10], [0.45, 0.6, 13]]) {
+      const tex = swirlTex.clone();
+      tex.repeat.set(2, 1.2);
+      tex.needsUpdate = true;
+      const m = new THREE.Mesh(funnelGeo, new THREE.MeshBasicMaterial({ map: tex, color: 0xf4fbff, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false }));
+      m.scale.set(sc, 1, sc);
+      m.renderOrder = 5;
       g.add(m);
-      rings.push(m);
+      layers.push({ m, speed });
+    }
+    // 足もとの土ぼこり
+    const dust = [];
+    for (let i = 0; i < 9; i++) {
+      const m = new THREE.Mesh(dustGeo, dustMat);
+      g.add(m);
+      dust.push({ m, a: (i / 9) * Math.PI * 2, r: 0.35 + (i % 3) * 0.12, ph: Math.random() * 6 });
     }
     // まきこまれた葉っぱ
     const leafMat = toonMaterial(0x7fbf4f);
     const bits = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 12; i++) {
       const m = new THREE.Mesh(new THREE.SphereGeometry(0.06, 5, 3).scale(1, 0.25, 0.6), leafMat);
       g.add(m);
-      bits.push({ m, a: Math.random() * 6, h: Math.random() * 2.2, r: 0.4 + Math.random() * 0.6 });
+      bits.push({ m, a: Math.random() * 6, h: Math.random() * 2.6 });
     }
-    g.userData = { rings, bits };
+    g.userData = { layers, dust, bits };
     return g;
+  }
+  function disposeTwister(t) {
+    for (const { m } of t.userData.layers) { m.material.map.dispose(); m.material.dispose(); }
   }
   function addWind(e) {
     const len = Math.hypot(e.ex - e.x, e.ez - e.z);
@@ -698,70 +832,98 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     mat.map.repeat.set(len / 0.9, 1);
     mat.map.needsUpdate = true;
     const path = new THREE.Mesh(new THREE.PlaneGeometry(len, RULES.windR * 1.6).rotateX(-Math.PI / 2), mat);
-    path.position.set((e.x + e.ex) / 2, 0.06, (e.z + e.ez) / 2);
+    path.position.set((e.x + e.ex) / 2, 0.24, (e.z + e.ez) / 2); // 花の上に見えるように
     path.rotation.y = -Math.atan2(e.ez - e.z, e.ex - e.x);
     path.renderOrder = 3;
     scene.add(path);
+    // 「!」は、花畑のふちの 来るところに
+    const k = (Math.hypot(e.x, e.z) - FIELD_R + 0.4) / len;
+    const mark = new THREE.Sprite(new THREE.SpriteMaterial({ map: warnTex, transparent: true, depthTest: false }));
+    mark.position.set(e.x + (e.ex - e.x) * k, 1.1, e.z + (e.ez - e.z) * k);
+    mark.renderOrder = 9;
+    scene.add(mark);
     const twister = makeTwister();
     twister.position.set(e.x, 0, e.z);
     twister.scale.setScalar(0.01);
     scene.add(twister);
-    winds.set(e.id, { path, twister, t: 0, gone: 0 });
-    if (settings.sound) sfx.whistle();
+    winds.set(e.id, { path, twister, mark, t: 0, gone: 0 });
+    sfx.whistle();
   }
+  let camShake = 0;
   function updateWinds(dt) {
     const s = game.state;
     const byId = new Map(s.winds.map((w) => [w.id, w]));
+    const me = s.runners[0];
     for (const [id, v] of winds) {
       v.t += dt;
       const w = byId.get(id);
+      let grow = 1;
       if (w) {
         v.twister.position.set(w.x, 0, w.z);
+        v.path.material.map.offset.x -= dt * 2.5;
         if (w.warn > 0) {
-          // 矢じるしが ちかちか流れる
-          v.path.material.opacity = 0.35 + 0.3 * Math.abs(Math.sin(v.t * 8));
-          v.path.material.map.offset.x -= dt * 2.5;
-          v.twister.scale.setScalar(Math.min(1, v.t / RULES.windWarn) * 0.6);
+          // 矢じるしが ちかちか流れる。「!」が ぽんぽん はねる。うずは外で だんだん育つ
+          v.path.material.opacity = 0.4 + 0.35 * Math.abs(Math.sin(v.t * 8));
+          const b = Math.abs(Math.sin(v.t * 9));
+          v.mark.scale.setScalar(0.7 + b * 0.15);
+          v.mark.position.y = 1.1 + b * 0.25;
+          grow = Math.min(1, v.t / RULES.windWarn) * 0.55;
         } else {
-          v.path.material.opacity = Math.max(0, v.path.material.opacity - dt * 0.6);
-          v.path.material.map.offset.x -= dt * 2.5;
-          v.twister.scale.setScalar(Math.min(1, v.twister.scale.x + dt * 3));
+          v.path.material.opacity = Math.max(0, v.path.material.opacity - dt * 0.8);
+          v.mark.visible = false;
+          grow = Math.min(1, v.twister.scale.y + dt * 3);
           if (!v.roared) { v.roared = true; sfx.gust(Math.max(0.35, volFor(w.x, w.z))); }
-          // 通ったあとに、土ぼこり(白い花びら)
-          if (Math.random() < dt * 20) scatterLeaf(w.x, w.z);
+          if (Math.random() < dt * 24) scatterLeaf(w.x, w.z);
+          // 近くを通ると、画面が少しゆれる
+          const d = Math.hypot(w.x - me.x, w.z - me.z);
+          if (d < 3) camShake = Math.max(camShake, 0.12 * (1 - d / 3));
         }
       } else {
         // 外へ抜けた: しぼんで消える
         v.gone += dt;
-        v.twister.scale.setScalar(Math.max(0.01, 1 - v.gone * 2));
+        grow = Math.max(0.01, 1 - v.gone * 2);
         v.path.material.opacity = 0;
+        v.mark.visible = false;
         if (v.gone > 0.5) {
-          scene.remove(v.path, v.twister);
+          scene.remove(v.path, v.twister, v.mark);
           v.path.material.map.dispose();
           v.path.material.dispose();
+          v.mark.material.dispose();
+          disposeTwister(v.twister);
           winds.delete(id);
           continue;
         }
       }
-      const { rings, bits } = v.twister.userData;
-      rings.forEach((m, i) => {
-        m.rotation.z = v.t * (9 - i * 0.6);
-        m.position.x = Math.sin(v.t * 5 + i * 0.7) * 0.06 * i;
-      });
+      // ゆらゆら首をふりながら(上ほど大きく)
+      v.twister.scale.set(grow * (1 + Math.sin(v.t * 6) * 0.05), grow, grow * (1 + Math.cos(v.t * 6) * 0.05));
+      v.twister.rotation.set(Math.sin(v.t * 2.3) * 0.08, 0, Math.cos(v.t * 1.9) * 0.08);
+      const { layers, dust, bits } = v.twister.userData;
+      for (const L of layers) {
+        L.m.rotation.y += dt * L.speed;
+        L.m.material.map.offset.y -= dt * 1.2;
+      }
+      for (const d of dust) {
+        d.a += dt * 6;
+        const p = (Math.sin(v.t * 5 + d.ph) + 1) / 2;
+        d.m.position.set(Math.cos(d.a) * (d.r + p * 0.2), 0.1 + p * 0.12, Math.sin(d.a) * (d.r + p * 0.2));
+        d.m.scale.setScalar(0.7 + p * 0.6);
+      }
       for (const b of bits) {
-        b.a += dt * 7;
-        b.h = (b.h + dt * 1.4) % 2.3;
-        b.m.position.set(Math.cos(b.a) * b.r * (0.5 + b.h * 0.35), b.h, Math.sin(b.a) * b.r * (0.5 + b.h * 0.35));
+        b.a += dt * 8;
+        b.h = (b.h + dt * 1.6) % 2.8;
+        const r = 0.25 + b.h * 0.38;
+        b.m.position.set(Math.cos(b.a) * r, b.h, Math.sin(b.a) * r);
         b.m.rotation.set(b.a * 2, b.a, 0);
       }
     }
+    camShake = Math.max(0, camShake - dt * 0.4);
   }
-  // 舞う葉っぱ(つむじ風のまわり)は、白っぽいみどりの花びらで代用する
+  // つむじ風のまわりで舞う葉っぱ(みどりの花びら)
   function scatterLeaf(x, z) {
     if (pp.length >= PETALS) return;
     const a = Math.random() * Math.PI * 2;
     pp.push({ x: x + Math.cos(a) * 0.5, y: 0.3, z: z + Math.sin(a) * 0.5, vx: -Math.sin(a) * 3, vy: 2 + Math.random() * 2, vz: Math.cos(a) * 3, rx: 0, ry: 0, life: 1, max: 1 });
-    petals.setColorAt(pp.length - 1, tmpC.setHex(0xa8d878));
+    petals.setColorAt(pp.length - 1, tmpC.setHex(Math.random() < 0.5 ? 0xa8d878 : 0xd9c09a));
     if (petals.instanceColor) petals.instanceColor.needsUpdate = true;
   }
 
@@ -779,9 +941,10 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const id of [...items.keys()]) removeItem(id);
-    for (const [id, v] of winds) { scene.remove(v.path, v.twister); winds.delete(id); }
+    for (const [id, v] of winds) { scene.remove(v.path, v.twister, v.mark); disposeTwister(v.twister); winds.delete(id); }
     for (const [slot, b] of followBees) { scene.remove(b); followBees.delete(slot); }
     pp.length = 0;
+    for (const p of pours.splice(0)) scene.remove(p.can, p.bow);
 
     const state = createGame(players, seed);
     const runners = await Promise.all(players.map(async (p, slot) => {
@@ -1049,7 +1212,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
         case 'can': {
           removeItem(e.id);
           waves.push({ x: e.x, z: e.z, r: RULES.canR });
-          splashWater(e.x, e.z, RULES.canR);
+          pourCan(e.x, e.z);
           sfx.shower(e.slot === 0 ? 1 : Math.max(0.2, volFor(e.x, e.z)));
           game.runners[e.slot].happyT = 1;
           if (e.slot === 0) { splash('じょうろ!'); pop(`+${e.n}`, e.x, 1.6, e.z, 'me'); }
@@ -1214,6 +1377,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     camera.position.lerp(pos, k);
     camera.userData.look = camera.userData.look ? camera.userData.look.lerp(look, k) : look.clone();
     camera.lookAt(camera.userData.look);
+    if (camShake > 0) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * camShake, (Math.random() - 0.5) * camShake, 0));
   }
 
   // ── 画質 ─────────────────────────────────────────
@@ -1272,6 +1436,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
       updateRunners(dt);
       updateItems(dt);
       updateWinds(dt);
+      updatePours(dt);
       updatePetals(dt);
       updateFx(dt);
     }
@@ -1307,6 +1472,12 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
       }
     },
     sync: () => syncFlowers(1),
+    // 指定した場所に じょうろ・ミツバチを置く(演出の確認用)
+    spawn: (kind, x, z) => {
+      const it = { id: game.state.nextId++, kind, x, z, life: 30 };
+      game.state.items.push(it);
+      onEvents([{ type: 'item', ...it }]);
+    },
     get paused() { return paused; },
     camera, renderer, scene,
     freeCamera: (on) => { freeCamera = on; },
