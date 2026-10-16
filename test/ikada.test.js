@@ -68,23 +68,24 @@ test('同じシードなら、同じレースになる', () => {
   assert.deepEqual(a.runners.map((r) => r.finish), b.runners.map((r) => r.finish));
 });
 
-test('交互にこぐと まっすぐ速い。同じがわばかりだと そっちへ曲がって、進みは弱い', () => {
+test('交互にこぐと まっすぐ速い。同じがわばかりだと 反対へ曲がって(本物の舟と同じ)、進みは弱い', () => {
   const alt = solo(); paddle(alt, 4, 'alt');
   const left = solo(); paddle(left, 4, -1);
   const right = solo(); paddle(right, 4, 1);
   const r0 = alt.runners[0], rl = left.runners[0], rr = right.runners[0];
   assert.ok(r0.v > rl.v + 0.5, `交互 ${r0.v.toFixed(2)} > 左ばかり ${rl.v.toFixed(2)}`);
-  assert.ok(rl.x < r0.x - 0.8, '左をたたくと左へ');
-  assert.ok(rr.x > r0.x + 0.8, '右をたたくと右へ');
+  assert.ok(rl.x > r0.x + 0.8, '左をこぐと右へ');
+  assert.ok(rr.x < r0.x - 0.8, '右をこぐと左へ');
   // こがなくても、流れが運んでくれる(でも こいだほうが速い)
   const idle = solo(); paddle(idle, 4, 'alt', 0.0001);
   assert.ok(idle.runners[0].s > 5 && r0.s > idle.runners[0].s + 8);
 });
 
 test('速くたたくほど速い。でも2倍たたいても2倍にはならない。速すぎるタップは数えない', () => {
-  const sp = (rate) => { const s = solo(); paddle(s, 6, 'alt', rate); return s.runners[0].v; };
-  const v4 = sp(4), v8 = sp(8);
-  assert.ok(v8 > v4 && v8 < v4 * 1.6, `4回 ${v4.toFixed(2)} / 8回 ${v8.toFixed(2)}`);
+  // 岩のない、はじめのまっすぐな所で、4 秒にこいで進んだ分(流れのぶんは引く)
+  const go = (rate) => { const s = solo(); s.runners[0].x = 0; paddle(s, 4, 'alt', rate); return s.runners[0].s; };
+  const idle = go(0.0001), g4 = go(4) - idle, g8 = go(8) - idle;
+  assert.ok(g8 > g4 && g8 < g4 * 1.6, `4回 ${g4.toFixed(2)}m / 8回 ${g8.toFixed(2)}m`);
   const s = solo();
   let n = 0;
   for (let i = 0; i < 60; i++) n += step(s, [i % 2 ? { left: true } : { right: true }]).filter((e) => e.type === 'stroke').length;

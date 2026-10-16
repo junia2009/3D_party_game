@@ -4,7 +4,7 @@
 // 1. こぐ間隔: 性格ごとの速さ(1秒に何回)で、少しばらつく。ときどき息つぎで手が止まる。
 // 2. どこを通るか: 前に見える岩・流木・うず・ほかのいかだ を見て、よけられる横の位置をえらぶ(react 秒ごとに考えなおす)。
 //    カーブでは内がわに寄る。ねらいは少しずれる(aim)。
-// 3. 向き: ねらいの位置へ向かう向きより右を向きすぎていたら左を、左を向きすぎていたら右を たたく。ちょうどよければ交互。
+// 3. 向き: 本物の舟と同じく、右へ向きたいときは左がわを、左へ向きたいときは右がわを こぐ。ちょうどよければ交互。
 //
 // 乱数は CPU ごとに持つ(シードはゲームのシードと席から作る)。
 
@@ -97,8 +97,8 @@ export function cpuInput(cpu, s, slot) {
   const want = Math.max(-0.7, Math.min(0.7, (cpu.target - r.x - r.kx * 0.3) * 0.45));
   const diff = want - r.yaw - r.yawV * 0.2;
   let side;
-  if (diff > 0.12) side = 1;
-  else if (diff < -0.12) side = -1;
+  if (diff > 0.12) side = -1; // 右へ向きたい → 左をこぐ
+  else if (diff < -0.12) side = 1;
   else side = r.last === 1 ? -1 : 1; // 交互
   return side < 0 ? { left: true } : { right: true };
 }
