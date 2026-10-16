@@ -58,3 +58,4 @@
 | まつぼっくり的あて | 作成中 | [minigames/mato.md](minigames/mato.md) |
 | どんぐりつみ | 作成中 | [minigames/tsumi.md](minigames/tsumi.md) |
 | いかだレース | 作成中 | [minigames/ikada.md](minigames/ikada.md) |
+| 花ぬり陣取り | 作成中 | [minigames/hana.md](minigames/hana.md) |

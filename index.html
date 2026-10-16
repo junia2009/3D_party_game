@@ -325,6 +325,14 @@
     box-shadow: 0 3px 0 rgba(31,42,51,.18); font: 800 clamp(13px, 3.8vw, 17px) var(--font-body); font-variant-numeric: tabular-nums; transition: transform .2s;
   }
   #hudC .timer { width: 2.7em; font-size: 18px; padding: 6px 0; }
+  /* 花ぬり陣取り: 札に広さ(%)。いちばん広い子に花かんむり、ラストスパートは画面のふちが花の色に */
+  #hudH .timer { width: 2.7em; font-size: 18px; padding: 6px 0; }
+  #hudH .chip small { font-size: .62em; margin-left: -2px; opacity: .7; }
+  #hudH .chip.lead { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
+  #hudH .howto { font-size: 16px; padding: 0 12px; }
+  #hudH .lastfx { position: absolute; inset: 0; opacity: 0; transition: opacity .4s;
+    box-shadow: inset 0 0 50px 14px rgba(255,120,170,.55); }
+  #hudH.last .lastfx { opacity: 1; animation: rainbeat .5s infinite; }
   .chip b { min-width: 1.1em; text-align: center; }
   .chip i { flex: none; width: 13px; height: 13px; border-radius: 50%; background: var(--c); border: 2px solid rgba(0,0,0,.2); }
   .chip.me { outline: 3px solid var(--hud-ink); }
@@ -901,6 +909,11 @@
       <span class="name">いかだレース</span>
       <span class="meta"><span>45〜60びょう</span></span>
     </button>
+    <button class="card" type="button" data-open="hana">
+      <span class="thumb"><img src="./assets/thumbs/hana.jpg" alt="" width="640" height="360"><span class="ribbon">第7競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">花ぬり陣取り</span>
+      <span class="meta"><span>45びょう</span></span>
+    </button>
   </div>
 </section>
 
@@ -963,6 +976,19 @@
   <div class="splash" id="splashC"></div>
   <p class="howto" id="howtoC">ゆびを おいて ずらすと はしる</p>
   <div class="stick" id="stickC" hidden><i></i></div>
+</div>
+
+<div class="hud" id="hudH" hidden>
+  <div class="lastfx" aria-hidden="true"></div>
+  <div class="top">
+    <div class="scores" id="scoresH" aria-label="咲かせた広さ"></div>
+    <div class="side"><div class="timer" id="timerH">45<small>びょう</small></div></div>
+    <button class="pausebtn" id="pauseBtnH" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsH"></div>
+  <div class="splash" id="splashH"></div>
+  <p class="howto" id="howtoH">ゆびを おいて ずらすと はしる<br>通ったところに 花がさく</p>
+  <div class="stick" id="stickH" hidden><i></i></div>
 </div>
 
 <div class="hud" id="hudS" hidden>
