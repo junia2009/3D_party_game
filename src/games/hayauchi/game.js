@@ -171,7 +171,7 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
     cloth.position.set(side * 0.5, 1.33, 0);
     pivot.add(pole, cloth);
     pivot.position.set(OWL_ROCK.x + side * 0.6, OWL_ROCK.top + 0.6, OWL_ROCK.z + 0.35);
-    pivot.userData = { side, up: 0, target: 0, cloth };
+    pivot.userData = { side, up: 0, v: 0, target: 0, cloth, glow: 0, color: side < 0 ? 0xffd23a : 0xe8344a };
     pivot.traverse((o) => { o.castShadow = true; });
     scene.add(pivot);
     return pivot;
@@ -183,17 +183,78 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
   function updateFlags(dt) {
     for (const f of [flagGo, flagNo]) {
       const u = f.userData;
-      u.up += (u.target - u.up) * (1 - Math.exp(-dt * 22));
+      // ばねで動かす: ぴしっと あがって、少し ゆれて止まる
+      u.v = (u.v + (u.target - u.up) * 420 * dt) * Math.exp(-dt * 16);
+      u.up += u.v * dt;
       f.rotation.z = -u.side * (1 - u.up) * 2.0;
-      // 布が はためく
+      // あげた旗は、少しのあいだ 光る
+      u.glow = Math.max(0, u.glow - dt * 1.6);
+      u.cloth.material.emissive.setHex(u.color);
+      u.cloth.material.emissiveIntensity = u.glow * 0.8;
+      // 布が はためく(あげた直後は大きく)
       const p = u.cloth.geometry.attributes.position;
-      const t = time * 9;
+      const t = time * (9 + u.glow * 10);
       for (let i = 0; i < p.count; i++) {
-        const x = p.getX(i) + 0.375;
-        p.setZ(i, Math.sin(t + x * 6) * 0.06 * x);
+        const x = p.getX(i) + 0.475;
+        p.setZ(i, Math.sin(t + x * 6) * (0.06 + u.glow * 0.08) * x);
       }
       p.needsUpdate = true;
     }
+  }
+  // 旗のてっぺんから広がる 光の輪
+  const ringTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.strokeStyle = '#fff';
+    g.lineWidth = 12;
+    g.shadowColor = '#fff';
+    g.shadowBlur = 10;
+    g.beginPath();
+    g.arc(64, 64, 50, 0, Math.PI * 2);
+    g.stroke();
+    return new THREE.CanvasTexture(c);
+  })();
+  function raiseFlag(f) {
+    const u = f.userData;
+    u.target = 1;
+    u.v += 6;
+    u.glow = 1;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, color: u.color, transparent: true, depthWrite: false, depthTest: false }));
+    sp.position.set(f.position.x + u.side * 0.4, f.position.y + 1.5, f.position.z + 0.2);
+    sp.renderOrder = 8;
+    scene.add(sp);
+    fx.push({ obj: sp, t: 0, life: 0.45, kind: 'ring', size: 0.4, grow: 3.2 });
+  }
+  // 先生の ふきだし(3D の中。先生の頭の上)
+  function bubble(text, life = 0.9) {
+    const c = document.createElement('canvas');
+    c.width = 320; c.height = 140;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.strokeStyle = '#1f2a33';
+    g.lineWidth = 8;
+    g.beginPath();
+    g.roundRect(8, 8, 304, 96, 40);
+    g.moveTo(140, 100); g.lineTo(160, 134); g.lineTo(186, 100);
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#fff';
+    g.fillRect(144, 92, 38, 12);
+    // ふきだしに おさまる大きさの字に
+    let fs = 44;
+    do { g.font = `400 ${fs}px "Dela Gothic One", sans-serif`; fs -= 2; } while (g.measureText(text).width > 270 && fs > 20);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#1f2a33';
+    g.fillText(text, 160, 58);
+    const tex = new THREE.CanvasTexture(c);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    sp.position.set(OWL_ROCK.x + 0.9, OWL_ROCK.top + 2.3, OWL_ROCK.z + 0.4);
+    sp.scale.set(2.2, 0.96, 1);
+    sp.renderOrder = 9;
+    scene.add(sp);
+    fx.push({ obj: sp, t: 0, life, kind: 'bubble', tex });
   }
 
   // ── どんぐり鉄砲・かん・とぶ どんぐり ───────────────────
@@ -259,6 +320,12 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
     shots.push({ mesh, from, to, t: 0, len: hit ? 0.16 : 0.5, hit, slot });
     v.recoil = 1;
     v.gun.userData.acorn.visible = false;
+    const flashSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkleTex, color: 0xfff0a0, transparent: true, depthWrite: false }));
+    flashSp.position.copy(from);
+    flashSp.scale.setScalar(0.45);
+    scene.add(flashSp);
+    fx.push({ obj: flashSp, t: 0, life: 0.14, kind: 'muzzle', size: 0.45 });
+    puff(from.x, from.z, 3, from.y);
     sfx.pop(slot === 0 ? 1 : 0.45);
   }
   function updateShots(dt) {
@@ -288,6 +355,7 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
       if (c.group.position.y < 0.16 && f.vel.y < 0) {
         // 地面で ころん
         c.group.position.y = 0.16;
+        if (!f.landed) { f.landed = true; puff(c.group.position.x, c.group.position.z, 4); }
         f.vel.multiplyScalar(0.4);
         f.vel.y = Math.abs(f.vel.y) > 1 ? -f.vel.y * 0.4 : 0;
         f.spin *= 0.5;
@@ -298,8 +366,9 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
   function hitCan(slot) {
     const c = cans[slot];
     c.fly = { t: 0, vel: new THREE.Vector3((Math.random() - 0.5) * 1.2, 3.6, -2.2), spin: 10 + Math.random() * 6 };
-    sparkle(c.group.position.clone().setY(RAIL_Y + 0.3), 0xfff3c0, 5, 0.35);
+    sparkle(c.group.position.clone().setY(RAIL_Y + 0.3), 0xfff3c0, 7, 0.4);
     sfx.kan(slot === 0 ? 1 : 0.4);
+    pop('カーン!', c.home.x, RAIL_Y + 0.7, c.home.z, slot === 0 ? 'kan me' : 'kan');
   }
   function resetCans() {
     cans.forEach((c, slot) => {
@@ -387,10 +456,10 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
   // ── けむり・きらきら・紙ふぶき ───────────────────────────
   const fx = [];
   const puffGeo = new THREE.IcosahedronGeometry(0.15, 1);
-  function puff(x, z, n = 5) {
+  function puff(x, z, n = 5, y = 0.1) {
     for (let i = 0; i < n; i++) {
-      const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0xe8c9a0, transparent: true, opacity: 0.8 }));
-      m.position.set(x, 0.1, z);
+      const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: y > 0.3 ? 0xffffff : 0xe8c9a0, transparent: true, opacity: 0.8 }));
+      m.position.set(x, y, z);
       scene.add(m);
       const a = Math.random() * Math.PI * 2;
       fx.push({ obj: m, t: 0, life: 0.6, vel: new THREE.Vector3(Math.cos(a) * 0.8, 0.6 + Math.random() * 0.5, Math.sin(a) * 0.8), kind: 'puff' });
@@ -441,6 +510,18 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
         f.obj.position.addScaledVector(f.vel, dt);
         f.obj.material.opacity = 1 - k;
         f.obj.scale.setScalar(f.size * (1 - k * 0.6));
+      } else if (f.kind === 'ring') {
+        f.obj.scale.setScalar(f.size + f.grow * k);
+        f.obj.material.opacity = 1 - k;
+      } else if (f.kind === 'bubble') {
+        // ぽんと出て、ゆれて、消える
+        const sc = k < 0.15 ? k / 0.15 : 1;
+        f.obj.scale.set(2.2 * sc, 0.96 * sc, 1);
+        f.obj.material.opacity = k > 0.8 ? (1 - k) / 0.2 : 1;
+        f.obj.position.y = OWL_ROCK.top + 2.3 + Math.sin(f.t * 12) * 0.03;
+      } else if (f.kind === 'muzzle') {
+        f.obj.scale.setScalar(f.size * (1 + k));
+        f.obj.material.opacity = 1 - k;
       } else if (f.kind === 'puff') {
         f.obj.position.addScaledVector(f.vel, dt);
         f.obj.scale.setScalar(1 + k * 1.5);
@@ -455,6 +536,7 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
       if (k >= 1) {
         scene.remove(f.obj);
         f.obj.material.dispose();
+        f.tex?.dispose();
         fx.splice(i, 1);
       }
     }
@@ -634,8 +716,8 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
     [...$('chipsW').children].forEach((c, slot) => {
       const sh = s.shots[slot];
       let t = '';
-      if (!s.alive[slot] && !(s.phase === 'judge' && s.last?.out.includes(slot))) t = '×';
-      else if (sh?.fault) t = 'おてつき';
+      if (!s.alive[slot] && !(s.phase === 'judge' && s.last?.out.includes(slot))) t = '';
+      else if (sh?.fault) t = '×';
       else if (sh) t = sh.late ? '…' : sec2(sh.react);
       c.lastChild.textContent = t;
       c.classList.toggle('out', !s.alive[slot]);
@@ -674,27 +756,38 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
           break;
         case 'fake':
           if (e.kind === 'gyaku') {
-            flagNo.userData.target = 1;
+            raiseFlag(flagNo);
             owl.play('flap', { fade: 0.05 });
             signal('うつな!', 'no');
+            flash('no');
             sfx.buzz();
             setTimeout(() => { flagNo.userData.target = 0; }, 700);
           } else if (e.kind === 'nise') {
-            // 旗を半分あげて やめる / 言いかける(どちらかを交互に)
-            if (e.id % 2) {
+            // にせの合図は3とおり: 旗を半分あげて やめる / 言いかける / くしゃみ
+            const k = e.id % 3;
+            if (k === 0) {
               flagGo.userData.target = 0.45;
+              flagGo.userData.v += 3;
               setTimeout(() => { flagGo.userData.target = 0; }, 350);
+              sfx.hoot();
+            } else if (k === 1) {
+              bubble('どん…ぐりぃ…');
+              sfx.hoot();
             } else {
-              signal('どん…ぐりぃ…', 'small');
-              setTimeout(() => signal(''), 700);
+              bubble('ハ…ハ…ハクション!', 1.0);
+              owl.play('flap', { fade: 0.05 });
+              // くしゃみで 両方の旗が ぴくっ
+              flagGo.userData.v += 5;
+              flagNo.userData.v += 5;
+              voice({ type: 'triangle', pts: [[0, 500], [0.25, 700]], len: 0.3, gain: 0.05 });
+              setTimeout(() => noise({ len: 0.3, gain: 0.2, freq: [3000, 800], type: 'bandpass', q: 0.8 }), 280);
             }
-            sfx.hoot();
           } else {
             startJama(e.id % 2 ? 'weed' : 'crow');
           }
           break;
         case 'go':
-          flagGo.userData.target = 1;
+          raiseFlag(flagGo);
           flagNo.userData.target = 0;
           owl.play('flap', { fade: 0.05 });
           owl.setFace('normal');

@@ -329,7 +329,8 @@
   #hudW .chip { font-size: clamp(11px, 3.2vw, 15px); padding: 3px 7px 3px 3px; min-width: 2.2em; }
   #hudW .chip b { min-width: 2.6em; }
   #hudW .chip b:empty { display: none; }
-  #hudW .chip.fault b { color: var(--watch); font-size: .8em; }
+  #hudW .chip.fault b { color: var(--watch); }
+  #hudW .chip { white-space: nowrap; }
   #hudW .chip.best { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
   #hudW .signal {
     position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top, 0px) + 64px); text-align: center; opacity: 0;
@@ -346,6 +347,8 @@
   #hudW .flash.show { animation: flash .45s ease-out forwards; }
   @keyframes flash { 0% { opacity: 1; } 100% { opacity: 0; } }
   .pop.red { color: #ff7a7a; }
+  .pop.kan { color: #fff3c0; font-size: 18px; }
+  .pop.kan.me { font-size: 24px; color: #ffd24a; }
   .pop.out { color: #cfd8dc; font-size: 24px; }
   /* 花ぬり陣取り: 札に広さ(%)。いちばん広い子に花かんむり、ラストスパートは画面のふちが花の色に */
   #hudH .timer { width: 2.7em; font-size: 18px; padding: 6px 0; }
