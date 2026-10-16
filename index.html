@@ -703,6 +703,38 @@
   .aimbar.show { opacity: 1; }
   .aimbar i { display: block; height: 100%; background: #7bd158; transform-origin: left center; }
   .aimbar.hurry i { background: var(--watch); }
+  /* 脱落の札: 上からおりてきて、少しして消える。色の丸に ×、名前、赤い「だつらく」の判子 */
+  .outcard {
+    position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 22%); translate: -50% 0;
+    display: grid; grid-template-columns: auto auto; align-items: center; column-gap: 10px;
+    padding: 10px 18px 10px 12px; border-radius: 18px; background: var(--hud-paper);
+    box-shadow: 0 5px 0 rgba(31,42,51,.22), 0 10px 24px rgba(0,0,0,.18); opacity: 0; pointer-events: none;
+  }
+  .outcard i {
+    grid-row: span 2; width: 40px; height: 40px; border-radius: 50%; background: var(--c); position: relative;
+    border: 3px solid rgba(0,0,0,.18); filter: saturate(.55) brightness(.9);
+  }
+  .outcard i::before, .outcard i::after {
+    content: ''; position: absolute; left: 50%; top: 50%; width: 26px; height: 5px; margin: -2.5px 0 0 -13px;
+    border-radius: 3px; background: #fff; rotate: 45deg;
+  }
+  .outcard i::after { rotate: -45deg; }
+  .outcard b { font: 400 24px/1.1 var(--font-display); color: var(--hud-ink); white-space: nowrap; }
+  .outcard b::after {
+    content: 'だつらく'; display: inline-block; margin-left: 8px; padding: 1px 6px; vertical-align: 3px;
+    border: 2px solid var(--watch); border-radius: 6px; color: var(--watch); font: 800 13px var(--font-body); rotate: -8deg;
+  }
+  .outcard span { font: 700 12px var(--font-body); color: #6b7a84; }
+  .outcard span:empty { display: none; }
+  .outcard.me { background: #fff1ef; }
+  .outcard.show { animation: outcard 2.6s ease-out forwards; }
+  @keyframes outcard {
+    0% { opacity: 0; transform: translateY(-40px) rotate(-4deg); }
+    12% { opacity: 1; transform: translateY(6px) rotate(2deg); }
+    20% { transform: translateY(0) rotate(-1deg); }
+    80% { opacity: 1; transform: none; }
+    100% { opacity: 0; transform: translateY(-10px); }
+  }
 
   /* 横長: メニューは右側に縦に並べる(左は看板と島) */
   @media (min-aspect-ratio: 1/1) {
@@ -896,6 +928,7 @@
   </div>
   <div class="nextp" id="nextT"><small>つぎ</small><b></b></div>
   <div class="splash" id="splashT"></div>
+  <div class="outcard" id="outT" aria-live="polite"><i></i><b></b><span></span></div>
   <p class="tapcall" id="tapT">タップで落とす!</p>
   <div class="aimbar"><i id="barT"></i></div>
   <p class="howto" id="howtoT">ゆれているものを、タップで落とす</p>

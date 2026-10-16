@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
-import { createModel, preload } from '../../runtime/models.js';
+import { createModel, preload, toonGradient } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { KINDS, RULES, STEP, createGame, ranking, stability, stackTop, step, swingX, tryPlace } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
@@ -245,7 +245,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     if (wobble) wobble.t += dt;
     if (topple) {
       topple.t += dt;
-      if (topple.t >= 0.5) { const { from, side } = topple; topple = null; collapseFrom(from, side); }
+      if (topple.t >= 0.5) { const { from, side, px, py } = topple; topple = null; puff(new THREE.Vector3(px, py, 0), 5, 0.9); collapseFrom(from, side); }
     }
     pieces.forEach((p, i) => {
       // ぽよん: ばねのように、つぶれて のびて おさまる
@@ -285,6 +285,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       const onStump = Math.hypot(f.obj.position.x, f.obj.position.z) < STUMP_R;
       const floor = onStump ? STUMP_H + 0.08 : 0.1;
       if (f.obj.position.y < floor && f.v.y < 0 && (onStump ? f.obj.position.y > STUMP_H - 0.3 : true)) {
+        if (f.v.y < -2.5) puff(f.obj.position.clone().setY(floor - 0.05), 3, 0.8);
         f.obj.position.y = floor;
         if (onStump) { const d = Math.hypot(f.obj.position.x, f.obj.position.z) || 1; f.v.x += (f.obj.position.x / d) * 0.8; f.v.z += (f.obj.position.z / d) * 0.8; }
         f.v.y *= -0.35;
@@ -327,7 +328,8 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       holder.add(model.root);
       scene.add(holder);
       const def = CHARACTERS.find((c) => c.key === p.character);
-      return { model, holder, size: def.size || 1, home: holder.position.clone(), arms: [model.node('arm_L'), model.node('arm_R')], time: 0 };
+      const head = model.node('head');
+      return { model, holder, size: def.size || 1, home: holder.position.clone(), arms: [model.node('arm_L'), model.node('arm_R')], head, headRest: head?.rotation.clone(), faceIn: holder.quaternion.clone(), time: 0, droop: 0 };
     }));
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
@@ -337,6 +339,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     tapped = false;
+    $('outT').classList.remove('show');
     buildChips();
     setMode('playing');
     intro = fromSky ? 0 : 1;
@@ -439,6 +442,19 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     if (mine2 && left < 3 && Math.ceil(left) !== game.lastTick) { game.lastTick = Math.ceil(left); sfx.tick(); }
   }
 
+  // 「○○ 脱落」の札: 色の丸・名前・のこりの人数。上からおりてきて、少しして消える
+  function showOutCard({ slot, left }) {
+    const el = $('outT');
+    el.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
+    el.querySelector('b').textContent = slot === 0 ? 'あなた' : game.players[slot].name;
+    el.querySelector('span').textContent = left >= 2 ? `のこり ${left}人` : '';
+    el.classList.toggle('me', slot === 0);
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    sfx.out();
+  }
+
   // ── できごと ────────────────────────────────────────
   const name = (slot) => (slot === 0 ? 'あなた' : game.players[slot].name);
   function onEvents(events) {
@@ -480,8 +496,10 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
           splash('ガラガラ…!', 'red');
           react('cheer', 'surprised', 2);
           game.shake = 0.5;
+          game.fallCam = { t: 2.4, side: topple ? topple.side : 1 };
           break;
         case 'miss':
+          game.fallCam = { t: 2.0, side: Math.sign(e.x) || 1 };
           if (falling) { flying.push({ obj: falling.obj, v: new THREE.Vector3(Math.sign(e.x) * 1.5, 0, 0.8), spin: new THREE.Vector3(3, 2, -Math.sign(e.x) * 4), t: 0 }); falling = null; }
           sfx.miss();
           sfx.oh();
@@ -490,8 +508,8 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
         case 'out': {
           const r = game.runners[e.slot];
           r.outT = 2.5;
-          sfx.out();
-          setTimeout(() => splash(e.slot === 0 ? 'あなたは ここまで…' : `${name(e.slot)} 脱落`, 'red'), 900);
+          addCloud(r);
+          game.outCard = { slot: e.slot, left: e.left, at: 1.0 };
           break;
         }
         case 'reset':
@@ -584,26 +602,112 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       v.time += dt;
       v.throwT = Math.max(0, (v.throwT || 0) - dt);
       v.outT = Math.max(0, (v.outT || 0) - dt);
-      // 番の子は、切り株の前へ一歩出る
+      const out = !s.alive[slot] && s.phase !== 'finished' && mode !== 'result';
+      // 番の子は、切り株の前へ一歩出る。脱落した子は、うしろへ下がる
       const now = s.phase === 'play' && s.cur === slot;
-      const to = now ? v.home.clone().multiplyScalar(0.72) : v.home;
-      v.holder.position.lerp(to, Math.min(1, dt * 4));
+      const to = now ? v.home.clone().multiplyScalar(0.72) : out && v.outT <= 0 ? v.home.clone().multiplyScalar(1.22) : v.home;
+      v.holder.position.lerp(to, Math.min(1, dt * (out ? 1.5 : 4)));
       let clip = 'idle', face = 'normal';
       if (s.phase === 'finished' || mode === 'result') { clip = s.winner === slot ? 'cheer' : 'wave'; face = s.winner === slot ? 'happy' : 'normal'; }
-      else if (!s.alive[slot]) { clip = v.outT > 0 ? 'dizzy' : 'idle'; face = 'frustrated'; }
+      else if (out) { clip = v.outT > 1.2 ? 'dizzy' : 'idle'; face = 'frustrated'; }
       else if (now && s.stage === 'aim') face = 'surprised';
       v.model.play(clip);
       v.model.setFace(face);
+      // しょんぼり: 目が回りおわったら、うつむく(頭をアニメーションの上から足す)
+      if (v.head && v.headRest) v.head.rotation.copy(v.headRest);
       v.model.update(dt);
+      v.droop += ((out && v.outT <= 1.2 ? 1 : 0) - v.droop) * Math.min(1, dt * 3);
+      if (v.head && v.droop > 0.01) v.head.rotation.x += v.droop * 0.45;
+      if (v.cloud) updateCloud(v, dt);
+      // 脱落した子は、こちら(カメラのほう)へ向きなおる(しょんぼり顔が見えるように)
+      v.holder.quaternion.slerp(out && v.outT <= 1.6 ? FACE_CAM : v.faceIn, Math.min(1, dt * 2.5));
       // 番の子は、両手を上へ(落とす合図)。落としたら前へふる
       const [armL, armR] = v.arms;
       if (now && s.phase === 'play' && !(s.phase === 'finished')) {
         const up = v.throwT > 0 ? -1.2 : -2.7 + Math.sin(v.time * 6) * 0.1;
         armL?.rotation.set(up, 0, 0.3);
         armR?.rotation.set(up, 0, -0.3);
+      } else if (out && v.droop > 0.01) {
+        // 両手をだらんと
+        armL?.rotation.set(0.15 * v.droop, 0, 0.12 * v.droop);
+        armR?.rotation.set(0.15 * v.droop, 0, -0.12 * v.droop);
       }
       if (v.marker) v.marker.position.set(0, 2.1 * v.size + 0.08 * Math.sin(performance.now() / 180), 0);
     });
+  }
+
+  const FACE_CAM = new THREE.Quaternion(); // 正面(+z)がカメラのほう
+
+  // ── 脱落した子の頭の上の、小さな雨雲 ────────────────────────
+  const cloudMat = new THREE.MeshToonMaterial({ color: 0x8a96a3, gradientMap: toonGradient, transparent: true });
+  const dropMat = new THREE.MeshBasicMaterial({ color: 0x7fb6e8, transparent: true });
+  const dropGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.12, 4);
+  function addCloud(v) {
+    if (v.cloud) return;
+    const g = new THREE.Group();
+    for (const [x, y, r] of [[0, 0, 0.2], [-0.2, -0.04, 0.15], [0.21, -0.03, 0.16], [0.08, 0.1, 0.15], [-0.1, 0.08, 0.13]]) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), cloudMat);
+      m.position.set(x, y, 0);
+      m.scale.y = 0.8;
+      g.add(m);
+    }
+    const drops = [];
+    for (let i = 0; i < 6; i++) {
+      const d = new THREE.Mesh(dropGeo, dropMat);
+      d.userData.phase = i / 6;
+      d.userData.x = (i / 5 - 0.5) * 0.4;
+      g.add(d);
+      drops.push(d);
+    }
+    g.position.y = 2.25 * v.size;
+    g.scale.setScalar(0.01);
+    v.holder.add(g);
+    v.cloud = { g, drops, t: 0 };
+  }
+  function updateCloud(v, dt) {
+    const c = v.cloud;
+    c.t += dt;
+    const life = 5.5;
+    const k = c.t < 0.4 ? c.t / 0.4 : c.t > life - 0.6 ? Math.max(0, (life - c.t) / 0.6) : 1;
+    c.g.scale.setScalar(Math.max(0.01, k * v.size));
+    c.g.position.x = Math.sin(c.t * 1.3) * 0.05;
+    for (const d of c.drops) {
+      const p = (c.t * 1.6 + d.userData.phase) % 1;
+      d.position.set(d.userData.x, -0.15 - p * 0.55, 0);
+      d.visible = p < 0.9;
+    }
+    if (c.t >= life) { v.holder.remove(c.g); v.cloud = null; }
+  }
+
+  // ── けむり: 落ちたものが はねたところに、ぽふっと ─────────────────
+  const puffGeo = new THREE.IcosahedronGeometry(0.16, 1);
+  const puffs = Array.from({ length: 24 }, () => {
+    const m = new THREE.Mesh(puffGeo, new THREE.MeshToonMaterial({ color: 0xf3ead8, gradientMap: toonGradient, transparent: true, depthWrite: false }));
+    m.visible = false;
+    scene.add(m);
+    return { m, t: 1, v: new THREE.Vector3() };
+  });
+  let puffNext = 0;
+  function puff(pos, n = 4, size = 1) {
+    for (let i = 0; i < n; i++) {
+      const p = puffs[puffNext++ % puffs.length];
+      p.t = 0;
+      p.size = size * (0.7 + Math.random() * 0.6);
+      p.m.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.3, Math.random() * 0.1, (Math.random() - 0.5) * 0.3));
+      p.v.set((Math.random() - 0.5) * 1.2, 0.4 + Math.random() * 0.5, (Math.random() - 0.5) * 1.2);
+      p.m.visible = true;
+    }
+  }
+  function updatePuffs(dt) {
+    for (const p of puffs) {
+      if (p.t >= 1) continue;
+      p.t += dt / 0.7;
+      p.m.position.addScaledVector(p.v, dt);
+      p.v.multiplyScalar(1 - dt * 3);
+      p.m.scale.setScalar(p.size * (0.4 + p.t * 1.2));
+      p.m.material.opacity = 0.85 * (1 - p.t) ** 1.5;
+      if (p.t >= 1) p.m.visible = false;
+    }
   }
 
   let freeCamera = false;
@@ -623,12 +727,23 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     const topY = STUMP_H + (s ? stackTop(s) : 0);
     // 入れたいはんい: よこは ゆれのはば+もののはば、たては 山の少し下から ゆれるものの上まで
     const kind = s?.piece?.kind;
-    const halfW = (s ? s.swing.A : 1) + (kind ? KINDS[kind].w / 2 : 0.5) + 0.45;
+    let halfW = (s ? s.swing.A : 1) + (kind ? KINDS[kind].w / 2 : 0.5) + 0.45;
     // 下は 文字やバーがかぶるので、山のてっぺんが画面のまん中より少し下に来るように
     // 5だんごとに、少しのあいだ 山ぜんたいを見せる
     if (game?.showAll > 0) game.showAll = Math.max(0, game.showAll - dt);
-    const lo = game?.showAll > 0 ? STUMP_H - 0.6 : Math.max(STUMP_H - 0.6, topY - 1.4);
-    const hi = topY + HANG_GAP + 1.0;
+    let lo = game?.showAll > 0 ? STUMP_H - 0.6 : Math.max(STUMP_H - 0.6, topY - 1.4);
+    let hi = topY + HANG_GAP + 1.0;
+    // くずれた・落ちたとき: 地面まで引いて、落ちていくがわへ少し寄る
+    let xOff = 0;
+    const fc = game?.fallCam;
+    if (fc && fc.t > 0) {
+      fc.t -= dt;
+      lo = 0.2;
+      hi = Math.max(topY + 0.6, STUMP_H + 1.6);
+      halfW = 2.5;
+      xOff = fc.side * 1.2;
+    }
+    cam.x = (cam.x ?? 0) + (xOff - (cam.x ?? 0)) * (snap ? 1 : 1 - Math.exp(-dt * 3));
     let d = Math.max(halfW / tanH, ((hi - lo) / 2) / tanV * (game?.showAll > 0 ? 1.18 : 1.05), 5);
     // 自分の番でねらっているときは、少し寄る
     const mine = s && s.phase === 'play' && s.cur === 0 && s.stage === 'aim';
@@ -643,8 +758,8 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     if (game?.shake) game.shake = Math.max(0, game.shake - dt);
     // 少し上から見下ろす(てっぺんの面が見えるように)。高くなるほど水平に近づけて、見上げる感じに
     const h = s ? s.stack.length : 0;
-    const pos = new THREE.Vector3(shake, cam.cy + cam.d * (0.16 - Math.min(0.12, h * 0.01)), cam.d);
-    look.set(0, cam.cy, 0);
+    const pos = new THREE.Vector3(shake + cam.x, cam.cy + cam.d * (0.16 - Math.min(0.12, h * 0.01)), cam.d);
+    look.set(cam.x * 0.8, cam.cy, 0);
     if (intro < 1) {
       const e = 1 - (1 - intro) ** 3;
       const sky = new THREE.Vector3(8, 22, 24);
@@ -698,6 +813,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
         onEvents(step(s, inputs));
         game.acc -= STEP;
       }
+      if (game.outCard && (game.outCard.at -= dt) <= 0) { showOutCard(game.outCard); game.outCard = null; }
       if (game.endTimer !== null) {
         game.endTimer -= dt;
         if (game.endTimer <= 0) { game.endTimer = null; showResult(); }
@@ -707,6 +823,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     if (game && !paused) {
       updateHanging(dt);
       updatePieces(dt);
+      updatePuffs(dt);
       updateRunners(dt);
     }
     if (!paused) {
