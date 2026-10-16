@@ -270,6 +270,82 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     }
   }
 
+  // ── 湖のいきもの: 観客の蓮の葉が ぷかぷか、トンボ、ときどき はねる魚、水ぎわの あわ ──────
+  const dragonflies = [0x4fa8e8, 0xe8604f, 0x6fcf6a].map((c, i) => {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.012, 0.32, 5).rotateX(Math.PI / 2), toonMaterial(c));
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), toonMaterial(c));
+    head.position.z = 0.17;
+    g.add(body, head);
+    const wingMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false });
+    const wings = [];
+    for (const z of [0.06, -0.01]) for (const sx of [-1, 1]) {
+      const w = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.05).rotateX(-Math.PI / 2), wingMat);
+      w.position.set(sx * 0.13, 0.01, z);
+      g.add(w);
+      wings.push({ w, sx });
+    }
+    g.userData = { wings, ph: i * 2.1, r: 6 + i * 1.6, h: 1.2 + i * 0.5, sp: 0.35 + i * 0.08 };
+    scene.add(g);
+    return g;
+  });
+  const fish = (() => {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), toonMaterial(0xf0904a));
+    body.scale.set(0.6, 0.7, 1.4);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.2, 4), toonMaterial(0xe8703a));
+    tail.rotation.x = Math.PI / 2;
+    tail.position.z = -0.28;
+    g.add(body, tail);
+    g.visible = false;
+    scene.add(g);
+    return { g, t: -1, next: 4, x: 0, z: 0, a: 0 };
+  })();
+  function updateLake(dt) {
+    // 観客の蓮の葉
+    stage.pads.forEach((pad, k) => {
+      const y = WATER_Y + 0.02 + Math.sin(time * 1.3 + k * 1.7) * 0.03;
+      pad.position.y = y;
+      pad.rotation.z = Math.sin(time * 1.1 + k) * 0.03;
+      audience[k].model.root.position.y = y + 0.05;
+    });
+    // あわ
+    stage.foam.material.opacity = 0.45 + Math.sin(time * 2.2) * 0.15;
+    stage.foam.scale.setScalar(1 + Math.sin(time * 1.6) * 0.02);
+    // トンボ: 湖の上を 8の字に
+    for (const d of dragonflies) {
+      const u = d.userData, t = time * u.sp + u.ph;
+      const x = Math.sin(t) * u.r, z = Math.sin(t * 2) * u.r * 0.35 - 2;
+      const nx = Math.sin(t + 0.01) * u.r, nz = Math.sin((t + 0.01) * 2) * u.r * 0.35 - 2;
+      d.position.set(x, u.h + Math.sin(time * 3 + u.ph) * 0.15, z);
+      d.rotation.y = Math.atan2(nx - x, nz - z);
+      for (const w of u.wings) w.w.rotation.z = w.sx * Math.sin(time * 70) * 0.5;
+    }
+    // 魚: ときどき ぴょんと はねる
+    fish.next -= dt;
+    if (fish.t < 0 && fish.next <= 0) {
+      fish.t = 0;
+      fish.next = 5 + Math.random() * 6;
+      const a = -Math.PI * Math.random(), d = 7 + Math.random() * 5;
+      fish.x = Math.cos(a) * d; fish.z = Math.sin(a) * d; fish.a = Math.random() * 6;
+      fish.g.visible = true;
+      splashAt(fish.x, fish.z, 0.3);
+    }
+    if (fish.t >= 0) {
+      fish.t += dt;
+      const k = fish.t / 0.8;
+      const dx = Math.sin(fish.a), dz = Math.cos(fish.a);
+      fish.g.position.set(fish.x + dx * k * 1.2, WATER_Y + Math.sin(k * Math.PI) * 1.1, fish.z + dz * k * 1.2);
+      fish.g.rotation.set(-Math.cos(k * Math.PI) * 0.9, fish.a, 0);
+      if (k >= 1) {
+        fish.t = -1;
+        fish.g.visible = false;
+        splashAt(fish.g.position.x, fish.g.position.z, 0.3);
+        sfx.plop(0.5);
+      }
+    }
+  }
+
   // ── 金どんぐり ───────────────────────────────────
   const acornGeo = acornGeometry();
   const goldMat = new THREE.MeshToonMaterial({ color: 0xffd24a, emissive: 0x7a4a00, emissiveIntensity: 0.4 });
@@ -844,6 +920,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
         a.model.update(dt);
       }
       if (stage.water?.material.map) stage.water.material.map.offset.set(time * 0.006, time * 0.004);
+      updateLake(dt);
     }
     atmosphere.update(dt);
     updateCamera(dt);

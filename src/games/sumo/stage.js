@@ -10,19 +10,19 @@ import * as THREE from 'three';
 import { toonGradient, toonMaterial } from '../../runtime/models.js';
 import { mergeStatic } from '../../runtime/merge.js';
 import { grassTexture } from '../daruma/ground.js';
-import { barkMaterial, buildForestTrees, makeRand } from '../daruma/trees.js';
+import { barkMaterial, buildForestTrees, makeRand, taperedTube } from '../daruma/trees.js';
 import { MOSS, RULES } from './rules.js';
 
 export const WATER_Y = -0.9;
 export const SHORE_R = 15; // 岸の半径
-export const LOG_TOP = 0.35; // 観客の丸太の上(岸の高さから)
 const SHORE_Y = WATER_Y + 0.25;
 
-// 観客の席(手前はあけて、奥半分の岸に)
+// 観客の席: 切り株の奥の水面に うかぶ 大きな蓮の葉の上(手前はあけて、カメラから見えるように)
+export const PAD_R = 0.75;
 export const SEATS = [
-  { a: -2.5, kind: 'risu' }, { a: -2.0, kind: 'harinezumi' }, { a: -1.5, kind: 'komadori' },
-  { a: -1.1, kind: 'risu' }, { a: -0.6, kind: 'harinezumi' },
-].map((s) => ({ ...s, x: Math.cos(s.a) * (SHORE_R + 0.8), z: Math.sin(s.a) * (SHORE_R + 0.8), y: SHORE_Y + LOG_TOP }));
+  { a: -2.75, d: 7.4, kind: 'risu' }, { a: -2.2, d: 7.8, kind: 'harinezumi' }, { a: -1.57, d: 7.6, kind: 'komadori' },
+  { a: -0.95, d: 7.8, kind: 'risu' }, { a: -0.4, d: 7.4, kind: 'harinezumi' },
+].map((s) => ({ ...s, x: Math.cos(s.a) * s.d, z: Math.sin(s.a) * s.d, y: WATER_Y + 0.07 }));
 
 // 切り株の上の面: 年輪の絵
 function ringTexture() {
@@ -198,15 +198,6 @@ function buildShore(g) {
     spots.push({ x, y: h, z, h: 4 + rand() * 5, kind: rand() < 0.35 ? 'pine' : 'broad' });
   }
   buildForestTrees(g, spots);
-  const bark = barkMaterial(0x8a5a3a, 2, 1), cut = toonMaterial(0xe8c48c);
-  for (const s of SEATS) {
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.4, LOG_TOP + 0.3, 12), bark);
-    log.position.set(s.x, SHORE_Y + (LOG_TOP - 0.3) / 2 + 0.15, s.z);
-    g.add(log);
-    const top = new THREE.Mesh(new THREE.CircleGeometry(0.36, 12).rotateX(-Math.PI / 2), cut);
-    top.position.set(s.x, s.y + 0.001, s.z);
-    g.add(top);
-  }
   // 手前の岸の 小さな桟橋(カメラの下)
   const plank = toonMaterial(0xb8864e);
   for (let k = 0; k < 6; k++) {
@@ -229,20 +220,49 @@ function buildStump() {
   const rim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 6, 64).rotateX(Math.PI / 2), toonMaterial(0x6a4426));
   rim.position.y = -0.01;
   stump.add(top, side, rim);
+  // 根: 切り株のすそから 水の中へ のびる(土俵といっしょに細くなる)
+  const rootMat = barkMaterial(0x7a4e32, 1, 2);
+  const rand = makeRand(61);
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2 + rand() * 0.3;
+    const pts = [
+      new THREE.Vector3(Math.cos(a) * 0.96, -0.25, Math.sin(a) * 0.96),
+      new THREE.Vector3(Math.cos(a) * 1.12, WATER_Y + 0.25, Math.sin(a) * 1.12),
+      new THREE.Vector3(Math.cos(a + 0.05) * 1.3, WATER_Y - 0.15, Math.sin(a + 0.05) * 1.3),
+      new THREE.Vector3(Math.cos(a + 0.1) * 1.45, WATER_Y - 0.7, Math.sin(a + 0.1) * 1.45),
+    ];
+    const root = new THREE.Mesh(taperedTube(pts, 0.09 + rand() * 0.04, 0.03, 7), rootMat);
+    stump.add(root);
+  }
+  // 水ぎわの あわ(画面側で ゆらす)
+  const foam = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.16, 64).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }));
+  foam.position.y = WATER_Y + 0.02;
+  foam.renderOrder = 2;
+  stump.add(foam);
   // こけ(すべる場所)。ちぢむと外のものは見えなくなる(画面側で)
   const mossTex = (() => {
     const c = document.createElement('canvas');
     c.width = c.height = 128;
     const x = c.getContext('2d');
     const rand = makeRand(9);
-    for (let i = 0; i < 260; i++) {
-      const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * 58;
-      x.fillStyle = `rgba(${70 + rand() * 50},${140 + rand() * 60},${60 + rand() * 30},${0.55 + rand() * 0.4})`;
+    // こい地の上に、明るい ふさを重ねる。外ほど まばらに
+    for (let i = 0; i < 420; i++) {
+      const a = rand() * Math.PI * 2, d = Math.pow(rand(), 0.7) * 60;
+      const dark = rand() < 0.45;
+      const g = dark ? 95 + rand() * 30 : 140 + rand() * 50;
+      x.fillStyle = `rgba(${dark ? 50 + rand() * 20 : 90 + rand() * 40},${g},${dark ? 40 : 50 + rand() * 20},${(0.6 + rand() * 0.4) * (1 - d / 75)})`;
       x.beginPath();
-      x.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 3 + rand() * 6, 0, Math.PI * 2);
+      x.arc(64 + Math.cos(a) * d, 64 + Math.sin(a) * d, 2 + rand() * 5, 0, Math.PI * 2);
       x.fill();
     }
-    return new THREE.CanvasTexture(x.canvas);
+    // しめった つや(白い点)
+    for (let i = 0; i < 30; i++) {
+      x.fillStyle = 'rgba(230,255,220,0.5)';
+      x.fillRect(30 + rand() * 68, 30 + rand() * 68, 2, 2);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
   })();
   const mosses = MOSS.map((m) => {
     const mesh = new THREE.Mesh(new THREE.CircleGeometry(RULES.mossR * 1.05, 24).rotateX(-Math.PI / 2), new THREE.MeshToonMaterial({ map: mossTex, transparent: true, depthWrite: false, gradientMap: toonGradient }));
@@ -251,7 +271,30 @@ function buildStump() {
     mesh.receiveShadow = true;
     return mesh;
   });
-  return { stump, top, side, rim, mosses };
+  return { stump, top, side, rim, mosses, foam };
+}
+
+// 観客の乗る 大きな蓮の葉(ぷかぷか動かすので、まとめない)
+function buildPads(scene) {
+  const mat = toonMaterial(0x5aa04e), vein = toonMaterial(0x4a8a40);
+  return SEATS.map((s) => {
+    const g = new THREE.Group();
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(PAD_R, PAD_R, 0.05, 24, 1, false, 0.25, Math.PI * 2 - 0.25), mat);
+    g.add(pad);
+    for (let k = 0; k < 6; k++) {
+      const v = new THREE.Mesh(new THREE.BoxGeometry(PAD_R * 0.9, 0.012, 0.025), vein);
+      v.position.y = 0.03;
+      v.rotation.y = (k / 6) * Math.PI * 2 + 0.6;
+      v.position.x = Math.cos(-v.rotation.y) * PAD_R * 0.45;
+      v.position.z = Math.sin(-v.rotation.y) * PAD_R * 0.45;
+      g.add(v);
+    }
+    g.position.set(s.x, WATER_Y + 0.02, s.z);
+    g.rotation.y = s.a;
+    g.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+    scene.add(g);
+    return g;
+  });
 }
 
 export function buildStage(scene) {
@@ -264,5 +307,6 @@ export function buildStage(scene) {
   const s = buildStump();
   scene.add(s.stump);
   for (const m of s.mosses) scene.add(m);
-  return { group: g, water: g.getObjectByName('water'), ...s };
+  const pads = buildPads(scene);
+  return { group: g, water: g.getObjectByName('water'), pads, ...s };
 }
