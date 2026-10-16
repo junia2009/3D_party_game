@@ -402,6 +402,7 @@
     font: 400 20px var(--font-display); color: #fff; -webkit-text-stroke: 5px #7a4a1c; paint-order: stroke fill; transition: transform .15s;
   }
   .combo.hot { color: #ffd24a; transform: scale(1.12); }
+  .timer.hurry { background: var(--watch); color: #fff; animation: rainbeat .5s infinite; }
   .band { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity .1s; }
   .band.on { opacity: 1; }
   /* 指の位置だけ、うすく見せる(ぱちんこそのものは 3D で見える) */
@@ -762,6 +763,7 @@
 </div>
 
 <div class="hud" id="hudM" hidden>
+  <div class="rainfx" id="glowM" aria-hidden="true"></div>
   <svg class="band" id="bandM" aria-hidden="true"><line id="bandLine" x1="0" y1="0" x2="0" y2="0"/><circle id="bandKnob" r="16" cx="0" cy="0"/></svg>
   <div class="top">
     <div class="scores" id="scoresM" aria-label="点数"></div>

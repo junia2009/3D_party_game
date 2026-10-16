@@ -82,22 +82,127 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     src.start(t, Math.random() * 0.5);
     src.stop(t + len + 0.05);
   }
+  // ドレミ(れんぞくの音が、1つずつ上がっていく)
+  const SCALE = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16];
   const sfx = {
-    pull: () => voice({ type: 'triangle', pts: [[0, 300], [0.12, 420]], len: 0.12, gain: 0.03 }),
-    throw: () => { hiss({ f0: 900, f1: 2400, q: 2, len: 0.22, gain: 0.08, attack: 0.03 }); voice({ type: 'triangle', pts: [[0, 520], [0.06, 260]], len: 0.08, gain: 0.05 }); },
-    hit: (combo) => {
-      voice({ type: 'triangle', pts: [[0, 700], [0.04, 520]], len: 0.09, gain: 0.14 });
-      voice({ type: 'sine', pts: [[0, 1046 * 2 ** (Math.min(combo, 8) / 12)]], len: 0.18, gain: 0.07, at: 0.05 });
+    // はなす: ゴムのばちん + 風を切る音
+    throw: () => {
+      hiss({ type: 'highpass', f0: 1800, len: 0.05, gain: 0.12, attack: 0.002 });
+      voice({ type: 'triangle', pts: [[0, 160], [0.05, 70]], len: 0.07, gain: 0.1 });
+      hiss({ f0: 700, f1: 2600, q: 2, len: 0.28, gain: 0.07, attack: 0.04, at: 0.02 });
     },
-    gold: () => [1319, 1568, 2093].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.22, gain: 0.08, at: i * 0.07 })),
-    splash: (far) => { hiss({ type: 'lowpass', f0: 2600, f1: 500, len: 0.35, gain: far ? 0.05 : 0.1 }); voice({ type: 'sine', pts: [[0, 620], [0.12, 180]], len: 0.14, gain: far ? 0.03 : 0.06 }); },
-    thud: () => voice({ type: 'triangle', pts: [[0, 150], [0.08, 80]], len: 0.1, gain: 0.08 }),
-    sting: () => { voice({ type: 'sawtooth', pts: [[0, 220], [0.6, 240]], len: 0.7, gain: 0.04, vib: 30, vibRate: 40 }); voice({ type: 'sawtooth', pts: [[0, 330], [0.6, 300]], len: 0.6, gain: 0.03, vib: 25, vibRate: 37, at: 0.05 }); },
-    wind: () => hiss({ f0: 300, f1: 900, q: 0.7, len: 1.4, gain: 0.07, attack: 0.4 }),
+    // 木の的に当たる: コーン!(れんぞくで音が上がる)
+    hit: (combo) => {
+      const up = 2 ** (SCALE[Math.min(combo, SCALE.length) - 1] / 12);
+      hiss({ type: 'bandpass', f0: 3000, q: 1.5, len: 0.04, gain: 0.1, attack: 0.002 });
+      voice({ type: 'triangle', pts: [[0, 880 * up], [0.03, 840 * up]], len: 0.16, gain: 0.16 });
+      voice({ type: 'sine', pts: [[0, 1320 * up]], len: 0.22, gain: 0.06, at: 0.01 });
+      voice({ type: 'sine', pts: [[0, 220], [0.08, 140]], len: 0.1, gain: 0.08 }); // 板がゆれる低い音
+    },
+    // れんぞく3つ・6つ: 小さなファンファーレ
+    combo: (big) => (big ? [1047, 1319, 1568, 2093] : [1047, 1319, 1568]).forEach((f, i) => voice({ type: 'square', pts: [[0, f]], len: 0.12, gain: 0.035, at: 0.12 + i * 0.07 })),
+    gold: () => {
+      [1319, 1568, 2093, 2637].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.3, gain: 0.08, at: i * 0.06 }));
+      voice({ type: 'sine', pts: [[0, 3136]], len: 0.8, gain: 0.04, at: 0.25, vib: 18, vibRate: 9 });
+    },
+    // 池に落ちる: ぽちゃん / 岸に落ちる: ぼすっ
+    splash: (far) => {
+      voice({ type: 'sine', pts: [[0, 900], [0.09, 260]], len: 0.11, gain: far ? 0.04 : 0.09 });
+      hiss({ type: 'lowpass', f0: 2600, f1: 400, len: 0.35, gain: far ? 0.04 : 0.08, at: 0.02 });
+    },
+    thud: () => { voice({ type: 'triangle', pts: [[0, 150], [0.08, 70]], len: 0.1, gain: 0.08 }); hiss({ type: 'lowpass', f0: 900, len: 0.08, gain: 0.05 }); },
+    // ハチ: ぶーん(近づいて、また遠ざかる)
+    sting: () => {
+      for (const [f, d] of [[210, 0], [240, 0.04], [190, 0.08]]) {
+        voice({ type: 'sawtooth', pts: [[0, f], [0.6, f * 1.15], [1.4, f * 0.9]], len: 1.5, gain: 0.035, vib: 18, vibRate: 34 + d * 50, at: d });
+      }
+      voice({ type: 'square', pts: [[0, 330], [0.15, 220]], len: 0.2, gain: 0.05 }); // あいたっ
+    },
+    wind: () => hiss({ f0: 300, f1: 900, q: 0.7, len: 1.6, gain: 0.07, attack: 0.5 }),
     beep: (hi) => voice({ type: 'square', pts: [[0, hi ? 1046 : 523]], len: hi ? 0.4 : 0.15, gain: 0.06 }),
+    tick: (n) => voice({ type: 'square', pts: [[0, n % 2 ? 1568 : 1319]], len: 0.06, gain: 0.05 }),
     whistle: () => voice({ type: 'sine', pts: [[0, 2000], [0.5, 2100]], len: 0.6, gain: 0.08, vib: 60, vibRate: 30 }),
     fanfare: () => [784, 988, 1175, 1568].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.3 + i * 0.1, gain: 0.1, at: i * 0.13 })),
+    // 負けたとき: やさしい2音
+    finish: () => [659, 784].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.35, gain: 0.07, at: i * 0.16 })),
+    // 的が出てくる(自分の的だけ。小さく)
+    appear: (kind) => {
+      if (kind === 'pad') voice({ type: 'sine', pts: [[0, 500], [0.06, 900]], len: 0.08, gain: 0.04 });
+      if (kind === 'stump') voice({ type: 'triangle', pts: [[0, 420], [0.05, 640]], len: 0.07, gain: 0.05 });
+      if (kind === 'swing') hiss({ f0: 2500, f1: 1200, q: 3, len: 0.3, gain: 0.03, attack: 0.05 });
+      if (kind === 'gold') voice({ type: 'sawtooth', pts: [[0, 140], [0.5, 160]], len: 0.6, gain: 0.02, vib: 40, vibRate: 60 });
+      if (kind === 'hive') voice({ type: 'sawtooth', pts: [[0, 190], [0.6, 200]], len: 0.7, gain: 0.02, vib: 15, vibRate: 32 });
+    },
+    bird: () => {
+      const f = 2600 + Math.random() * 1200;
+      for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) voice({ type: 'sine', pts: [[0, f], [0.05, f * 1.25], [0.09, f * 0.95]], len: 0.1, gain: 0.025, at: i * 0.13 });
+    },
   };
+  // ひっぱっているあいだの、ゴムのきしむ音(引くほど高く)
+  let creak = null;
+  function startCreak() {
+    if (!audio || creak) return;
+    const o = audio.createOscillator(), g = audio.createGain(), f = audio.createBiquadFilter();
+    o.type = 'sawtooth';
+    o.frequency.value = 120;
+    f.type = 'bandpass';
+    f.frequency.value = 900;
+    f.Q.value = 2;
+    g.gain.value = 0;
+    o.connect(f).connect(g).connect(audio.destination);
+    o.start();
+    creak = { o, g, f, last: 0 };
+  }
+  function updateCreak(power, dt) {
+    if (!creak) return;
+    // 引く長さが変わっているときだけ鳴る(止めて持っているあいだは静か)
+    const moving = Math.min(1, Math.abs(power - creak.last) / Math.max(dt, 1e-3) * 0.6);
+    creak.last = power;
+    creak.o.frequency.value = 110 + power * 260;
+    creak.f.frequency.value = 700 + power * 900;
+    creak.g.gain.value += (moving * 0.05 - creak.g.gain.value) * Math.min(1, dt * 20);
+  }
+  function stopCreak() {
+    if (!creak) return;
+    creak.o.stop();
+    creak = null;
+  }
+  // まわりの音: 水のたぷたぷ(いつも)と、風(強さで)。ときどき小鳥
+  let amb = null;
+  function startAmbience() {
+    if (!audio || amb) return;
+    if (!noiseBuf) hiss({ f0: 100, len: 0.01, gain: 0.0001 }); // 雑音の元を作る
+    const layer = (type, freq, q) => {
+      const src = audio.createBufferSource();
+      src.buffer = noiseBuf;
+      src.loop = true;
+      const f = audio.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = audio.createGain();
+      g.gain.value = 0;
+      src.connect(f).connect(g).connect(audio.destination);
+      src.start();
+      return { src, f, g };
+    };
+    amb = { water: layer('lowpass', 420, 0.7), wind: layer('bandpass', 500, 0.6), bird: 3 + Math.random() * 4 };
+  }
+  function stopAmbience() {
+    if (!amb) return;
+    amb.water.src.stop();
+    amb.wind.src.stop();
+    amb = null;
+  }
+  function updateAmbience(dt, wind, time) {
+    if (!amb) return;
+    amb.water.g.gain.value = 0.025 + Math.sin(time * 1.3) * 0.01; // 岸に寄せる波
+    const w = Math.abs(wind) / RULES.windMax;
+    amb.wind.g.gain.value += (w * w * 0.06 - amb.wind.g.gain.value) * Math.min(1, dt * 2);
+    amb.wind.f.frequency.value = 350 + w * 500 + Math.sin(time * 0.7) * 80;
+    amb.bird -= dt;
+    if (amb.bird <= 0) { sfx.bird(); amb.bird = 4 + Math.random() * 7; }
+  }
 
   await preload(CHARACTERS.map((c) => c.key));
 
@@ -177,7 +282,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     }
   }
 
-  const targets = createTargets(scene, { splashAt });
+  const targets = createTargets(scene, { splashAt, onAppear: (kind) => sfx.appear(kind) });
   const pond = createPond(scene);
 
   // ── ゲームの進行 ────────────────────────────────────
@@ -256,6 +361,8 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     $('hudM').hidden = m !== 'playing';
     document.body.classList.toggle('ingame', m !== 'idle');
     if (m !== 'playing') endAim();
+    if (m === 'playing') startAmbience();
+    if (m === 'idle') stopAmbience();
   }
   function leave(to) {
     endAim();
@@ -268,7 +375,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     if (mode === 'idle') { paused = false; return; }
     paused = on && mode === 'playing';
     $('pause').hidden = !paused;
-    if (paused) endAim();
+    if (paused) { endAim(); if (amb) amb.water.g.gain.value = amb.wind.g.gain.value = 0; }
   }
   const mine = (fn) => () => { if (mode !== 'idle') fn(); };
   $('pauseBtnM').addEventListener('click', mine(() => setPaused(true)));
@@ -295,6 +402,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     $('bandM').classList.remove('on');
     for (const d of dots) d.visible = false;
     landRing.visible = false;
+    stopCreak();
   }
   function release() {
     if (!aim.active) return;
@@ -311,7 +419,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     unlockAudio();
     Object.assign(aim, { active: true, id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, yaw: 0, power: 0 });
     $('howtoM').classList.remove('show');
-    sfx.pull();
+    startCreak();
   });
   window.addEventListener('pointermove', (e) => {
     if (!aim.active || e.pointerId !== aim.id) return;
@@ -331,7 +439,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     if (e.code === 'Space' && !e.repeat) {
       e.preventDefault();
       unlockAudio();
-      if (!aim.active) Object.assign(aim, { active: true, key: true, id: null, yaw: aim.keyYaw, power: 0 });
+      if (!aim.active) { Object.assign(aim, { active: true, key: true, id: null, yaw: aim.keyYaw, power: 0 }); startCreak(); }
       $('howtoM').classList.remove('show');
     }
   });
@@ -427,6 +535,12 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     const txt = n === 0 ? 'なぎ' : (w > 0 ? '→'.repeat(n) : '←'.repeat(n));
     if (el.dataset.txt !== txt) { el.dataset.txt = txt; el.querySelector('b').textContent = txt; el.classList.toggle('calm', n === 0); }
     const me = s.runners[0];
+    // のこり5秒: チクタク鳴って、時計が赤く脈打つ
+    const secs = Math.ceil(left);
+    $('timerM').classList.toggle('hurry', s.phase === 'play' && secs <= 5);
+    if (s.phase === 'play' && secs <= 5 && secs !== game.lastTick) { game.lastTick = secs; sfx.tick(secs); }
+    // れんぞく3つ以上: 画面のふちが金色に光る
+    $('glowM').classList.toggle('on', me.combo >= 3);
     $('comboM').textContent = me.combo >= 2 ? `${me.combo}れんぞく${me.combo >= 6 ? ' +2' : me.combo >= 3 ? ' +1' : ''}` : '';
     $('comboM').classList.toggle('hot', me.combo >= 3);
   }
@@ -463,7 +577,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
             targets.hit(e.id, at);
             pop(`+${e.points + e.bonus}`, at.clone().setY(at.y + 0.6), e.kind === 'gold' ? 'gold me' : 'me');
             if (e.kind === 'gold') { sfx.gold(); splash('金の的!', 'gold'); } else sfx.hit(e.combo);
-            if (e.combo === 3 || e.combo === 6) splash(e.combo === 6 ? '6れんぞく! +2' : '3れんぞく! +1', 'gold');
+            if (e.combo === 3 || e.combo === 6) { splash(e.combo === 6 ? '6れんぞく! +2' : '3れんぞく! +1', 'gold'); sfx.combo(e.combo === 6); }
           } else {
             const v = game.runners[e.slot];
             pop(`+${e.points + e.bonus}`, tmp.copy(v.holder.position).setY(2.2));
@@ -501,7 +615,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     const order = ranking(s);
     const winner = game.players[s.winner];
     $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
-    if (s.winner === 0) sfx.fanfare();
+    if (s.winner === 0) sfx.fanfare(); else sfx.finish();
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
@@ -658,7 +772,8 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
         }
       }
     }
-    if (game && mode === 'playing') { renderHud(); updateAim(); }
+    if (game && mode === 'playing') { renderHud(); updateAim(); if (aim.active) updateCreak(aim.power, dt); }
+    if (game && !paused) updateAmbience(dt, game.state.wind, performance.now() / 1000);
     if (game && !paused) {
       updateRunners(dt);
       targets.sync(game.state, game.state.runners[0], STAND[0], camera, dt);

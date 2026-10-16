@@ -78,7 +78,7 @@ function faceTexture(ring, gold) {
   return t;
 }
 
-export function createTargets(scene, { splashAt = () => {} } = {}) {
+export function createTargets(scene, { splashAt = () => {}, onAppear = () => {} } = {}) {
   // ── 部品(使い回す) ───────────────────────────────
   const boardGeo = new THREE.CylinderGeometry(1, 1, 0.14, 32);
   boardGeo.rotateX(Math.PI / 2); // 面を +z(投げる子のほう)へ
@@ -391,6 +391,7 @@ export function createTargets(scene, { splashAt = () => {} } = {}) {
         targetPos(tg, now, tp);
         if (tg.kind === 'pad') splashAt(ox + tp.x, -tp.d, 6);
         if (tg.kind === 'stump') dust(ox + tp.x, tp.y - 0.9, -tp.d);
+        onAppear(tg.kind);
       }
     }
     for (const [id, o] of objs) {
