@@ -11,6 +11,7 @@ import { createModel, preload } from '../../runtime/models.js';
 import { nextRandom, seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, launch, fly, ranking, step, timeLeft } from './rules.js';
 import { createTargets } from './targets.js';
+import { makeBasket, makeSling } from './sling.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { buildStage } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -215,7 +216,17 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
       holder.add(model.root);
       scene.add(holder);
       const def = CHARACTERS.find((c) => c.key === p.character);
-      return { model, holder, size: def.size || 1, arm: model.node('arm_R'), throwT: 0, pull: 0, time: 0, stunT: 0 };
+      const size = def.size || 1;
+      // 右手で右前に構えるぱちんこ(キャラから見て +z が前、+x が左)と、左足もとのかご。
+      // カメラは右肩のうしろなので、ぱちんこを右に構えると、引いたゴムが肩の横に見える
+      const sling = makeSling(pineGeo, pineMat);
+      sling.group.position.set(-0.52 * size, 0.92 * size, 0.3 * size); // 大きな頭にかくれないよう、右へ外して
+      sling.group.scale.setScalar(1.35);
+      holder.add(sling.group);
+      const basket = makeBasket(pineGeo, pineMat);
+      basket.position.set(0.55, 0, 0.1);
+      holder.add(basket);
+      return { model, holder, size, sling, arms: [model.node('arm_L'), model.node('arm_R')], throwT: 0, pull: 0, yaw: 0, time: 0, stunT: 0 };
     }));
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
@@ -440,6 +451,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
         case 'throw': {
           const v = game.runners[e.slot];
           v.throwT = 0.35;
+          v.yaw = e.aim.yaw;
           if (e.slot === 0) { sfx.throw(); aim.pending = null; }
           break;
         }
@@ -528,15 +540,35 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
       v.model.play(clip);
       v.model.setFace(face);
       v.model.update(dt);
-      // 投げる腕(右): ひっぱっているあいだは うしろへ。投げたら前へふりぬく
-      const pull = i === 0 && aim.active ? aim.power : v.throwT > 0.25 ? 1 : 0;
-      v.pull += (pull - v.pull) * Math.min(1, dt * 14);
-      if (v.arm && s.phase !== 'finished' && v.stunT <= 0) {
-        if (v.throwT > 0) {
-          const k = 1 - v.throwT / 0.35;
-          v.arm.rotation.set(2.6 - k * 4.2, 0, -0.3);
-        } else if (v.pull > 0.02) {
-          v.arm.rotation.set(-0.4 + v.pull * 3.0, 0, -0.35);
+      // ぱちんこ: 自分はひっぱっている強さ。CPU は、投げる少し前から引いて構える(考えている間の最後の 0.45 秒)
+      const cpu = game.cpus[i];
+      const ready = s.phase === 'play' && r.reload <= 0 && r.stun <= 0;
+      let pull = 0;
+      if (i === 0) pull = aim.active ? aim.power : 0;
+      else if (ready && cpu) pull = Math.max(0, Math.min(1, 1 - cpu.wait / 0.45)) * 0.75;
+      if (i === 0 && aim.active) v.yaw = aim.yaw;
+      v.pull += (pull - v.pull) * Math.min(1, dt * 16);
+      // 体は ねらう向きへ少し回る
+      v.holder.rotation.y += (Math.PI - v.yaw * 0.8 - v.holder.rotation.y) * Math.min(1, dt * 8);
+      const loaded = r.reload <= 0.08 && r.stun <= 0 && s.phase !== 'finished';
+      v.sling.group.visible = s.phase !== 'finished' && mode !== 'result';
+      v.sling.update(dt, { pull: v.pull, yaw: v.yaw, loaded });
+      v.model.root.rotation.x = -v.pull * 0.18; // 引くほど、うしろへそる
+      const [armL, armR] = v.arms;
+      if (s.phase !== 'finished' && mode !== 'result' && v.stunT <= 0) {
+        // 右手: ぱちんこを右前へ構える
+        armR?.rotation.set(-1.25 - v.pull * 0.1, 0, -0.6);
+        if (armL) {
+          if (v.throwT > 0.15) {
+            // はなした直後: 左手は前へふりぬく
+            armL.rotation.set(-1.9, 0, -0.15);
+          } else if (!loaded) {
+            // 次のまつぼっくりを、左足もとのかごから取る
+            armL.rotation.set(-0.35, 0, 0.75);
+          } else {
+            // 袋をつまんで(体の前を右へ)、引くほどうしろへ
+            armL.rotation.set(-1.3 + v.pull * 0.9, 0, -0.75 - v.pull * 0.2);
+          }
         }
       }
       if (v.marker) v.marker.position.set(0, 2.1 * v.size + 0.08 * Math.sin(performance.now() / 180), 0);

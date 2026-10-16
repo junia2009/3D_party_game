@@ -404,8 +404,9 @@
   .combo.hot { color: #ffd24a; transform: scale(1.12); }
   .band { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity .1s; }
   .band.on { opacity: 1; }
-  .band line { stroke: #7a4a1c; stroke-width: 6; stroke-linecap: round; stroke-dasharray: 2 10; }
-  .band circle { fill: rgba(255,246,224,.85); stroke: #7a4a1c; stroke-width: 4; }
+  /* 指の位置だけ、うすく見せる(ぱちんこそのものは 3D で見える) */
+  .band line { stroke: rgba(255,255,255,.7); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 9; }
+  .band circle { fill: rgba(255,255,255,.35); stroke: rgba(255,255,255,.85); stroke-width: 3; }
 
   /* いちじていし・結果: 島の画面と同じ、木わくの紙に木の板のボタン */
   .modal {
