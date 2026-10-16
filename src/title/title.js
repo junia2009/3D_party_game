@@ -19,6 +19,7 @@ import { woodPlank } from './wood.js';
 import { createLeafCurtain } from './leaves.js';
 import { makePortraits } from './portraits.js';
 import { createZukan } from './zukan.js';
+import { LIST as STAGE_LIST } from '../board/stages/index.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -187,6 +188,7 @@ const SCREENS = {
   title: { el: null, view: [0, 0], sign: true, foot: 'tap', bias: 0.4 },
   menu: { el: $('menu'), view: [0.2, 0.17], sign: true, foot: 'menu', bias: 0.56 },
   games: { el: $('games'), view: [0.24, 0.17], sign: false },
+  stages: { el: $('stages'), view: [0.24, 0.17], sign: false },
   settings: { el: $('settings'), view: [0.24, 0.17], sign: false },
   // 競技の入口: 選んだキャラが島の上でよろこぶのが見えるように、島を上の段に出す
   play: { el: $('play'), view: [0.24, 0], sign: false, foot: 'play', bias: 0.5 },
@@ -216,6 +218,7 @@ function go(next) {
   $('ver').hidden = next !== 'title';
   screen = next;
   if (next === 'play') renderChars();
+  if (next === 'stages') renderStageMap();
   if (next === 'zukan') {
     ensureFaces();
     zukan.open();
@@ -375,11 +378,27 @@ const GAMES = {
     ],
     load: () => import('../games/mato/game.js').then((m) => m.createMato),
   },
+  // 大会(すごろく)。入口はステージ選択から(ターンをえらぶ)
+  taikai: {
+    name: '大会',
+    rules: [
+      '盤をまわって、<b>金どんぐりメダル</b>を集める。メダルはホーホー先生から どんぐり 20 こで買える。',
+      '<b>どんぐりサイコロ</b>(1〜10)はタップで止める。青マスで +3、赤マスで -3。',
+      'みんなが動いたら<b>競技</b>。順位でどんぐりがもらえる。',
+      'さいごに<b>ボーナスメダル</b>が3つ。メダルがいちばん多い子が優勝!',
+    ],
+    load: () => import('../board/game.js').then((m) => m.createBoard),
+  },
 };
 let current = 'daruma'; // 入口に出している競技
+let taikai = { stage: 'shiki', turns: 10 }; // 大会の入口でえらんだもの
 function openGame(key) {
   current = key;
-  $('playTitle').textContent = GAMES[key].name;
+  const isTaikai = key === 'taikai';
+  $('turnSel').hidden = !isTaikai;
+  $('play').querySelector('[data-back]').dataset.back = isTaikai ? 'stages' : 'games';
+  if (isTaikai) renderTurns();
+  $('playTitle').textContent = isTaikai ? `大会: ${STAGE_LIST.find((x) => x.key === taikai.stage).name}` : GAMES[key].name;
   $('playRules').innerHTML = GAMES[key].rules.map((r) => `<li><span>${r}</span></li>`).join('');
   ensureGame(key); // ルールを読んでいるあいだに、会場を組み立てておく
   go('play');
@@ -414,6 +433,7 @@ function ensureGame(key) {
       settings,
       getAudio: () => { unlockAudio(); return audio; },
       onExit: (to) => leaveGame(to),
+      playMinigame: (key2, lineup, character) => playMinigame(key2, lineup, character),
     }))
     .then((g) => {
       if (active === 'title') applyQuality(); // 会場の組み立てで影の設定が変わるので、島に合わせなおす
@@ -434,7 +454,8 @@ async function enterGame() {
   await wait(250);
   await curtain.cover();
   playing = await ready;
-  await playing.enter(picked);
+  await playing.enter(picked, current === 'taikai' ? { fromSky: true, turns: taikai.turns, stage: taikai.stage } : undefined);
+  taikaiBoard = current === 'taikai' ? playing : null;
   active = 'game';
   dive.dir = 0;
   dive.k = 1;
@@ -449,6 +470,8 @@ async function leaveGame(to) {
   whoosh(0.9, true);
   await curtain.cover();
   playing.exit();
+  if (taikaiBoard && taikaiBoard !== playing) taikaiBoard.exit(); // 大会の競技のとちゅうでやめたら、大会もおわり
+  taikaiBoard = null;
   active = 'title';
   applyQuality();
   go(to);
@@ -459,6 +482,94 @@ async function leaveGame(to) {
   await curtain.reveal();
   busy = false;
 }
+
+// ── 大会: 盤から競技へ入れかえて、順位をもらってもどる ─────────────
+let taikaiBoard = null; // 大会の盤(大会のあいだだけ)
+async function playMinigame(key, lineup, character) {
+  const home = playing;
+  busy = true;
+  whoosh(1.1, true);
+  await curtain.cover();
+  const g = await ensureGame(key);
+  let finish;
+  const done = new Promise((r) => { finish = r; });
+  await g.enter(character, { fromSky: true, lineup, onFinish: (res) => finish(res) });
+  playing = g;
+  whoosh(0.8, false);
+  await curtain.reveal();
+  busy = false;
+  const res = await done;
+  busy = true;
+  whoosh(0.9, true);
+  await curtain.cover();
+  g.exit();
+  playing = home;
+  home.resume?.();
+  await curtain.reveal();
+  busy = false;
+  return res;
+}
+
+// ── 大会: ステージ選択(地図の本) ────────────────────────
+// 地図の紙に、ステージの島をえがく。遊べる島はタップできる。じゅんびちゅうの島は霧の中
+const ISLE_SPOTS = [[30, 30], [72, 52], [34, 78]]; // 地図の上の位置(%)
+function isleSvg(ready) {
+  if (!ready) {
+    return `<svg viewBox="0 0 120 80"><ellipse cx="60" cy="46" rx="44" ry="22" fill="#c9bfa8" stroke="#8a7a6a" stroke-width="3"/>
+      <g fill="#fffaf0" opacity=".92"><ellipse cx="44" cy="40" rx="26" ry="13"/><ellipse cx="72" cy="36" rx="24" ry="12"/><ellipse cx="60" cy="50" rx="34" ry="12"/></g>
+      <text x="60" y="47" text-anchor="middle" font-size="22" font-family="Dela Gothic One" fill="#8a7a6a">?</text></svg>`;
+  }
+  // 四季の森: 島を4つに分けて、春(桃)・夏(緑)・秋(橙)・冬(白)。まん中に大木
+  return `<svg viewBox="0 0 120 80">
+    <ellipse cx="60" cy="50" rx="46" ry="22" fill="#8a6a50" stroke="#4a2a12" stroke-width="3"/>
+    <clipPath id="isleClip"><ellipse cx="60" cy="44" rx="46" ry="22"/></clipPath>
+    <g clip-path="url(#isleClip)">
+      <rect x="0" y="0" width="60" height="44" fill="#ffc3d6"/><rect x="60" y="0" width="60" height="44" fill="#8fd060"/>
+      <rect x="60" y="44" width="60" height="40" fill="#f0a24a"/><rect x="0" y="44" width="60" height="40" fill="#f4f8ff"/>
+    </g>
+    <ellipse cx="60" cy="44" rx="46" ry="22" fill="none" stroke="#4a2a12" stroke-width="3"/>
+    <ellipse cx="60" cy="44" rx="30" ry="13" fill="none" stroke="#fff6e0" stroke-width="3" stroke-dasharray="3 4"/>
+    <rect x="57" y="30" width="6" height="12" fill="#6b4c36"/><circle cx="60" cy="28" r="10" fill="#4f9a3c" stroke="#2f6b25" stroke-width="2"/>
+  </svg>`;
+}
+function renderStageMap() {
+  const page = $('stageMap');
+  page.replaceChildren();
+  // 島と島をむすぶ、点線の航路
+  const sea = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  sea.setAttribute('class', 'sea');
+  sea.setAttribute('viewBox', '0 0 100 100');
+  sea.setAttribute('preserveAspectRatio', 'none');
+  sea.innerHTML = `<path d="M${ISLE_SPOTS.map((p) => p.join(' ')).join(' L')}" fill="none" stroke="#a07a4a" stroke-width=".8" stroke-dasharray="2 2"/>`;
+  page.append(sea);
+  STAGE_LIST.forEach((s, i) => {
+    const [x, y] = ISLE_SPOTS[i % ISLE_SPOTS.length];
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'isle' + (s.ready ? '' : ' soon');
+    b.style.left = `${x}%`;
+    b.style.top = `${y}%`;
+    b.innerHTML = `${isleSvg(s.ready)}<b>${s.name}</b><small>${s.desc}</small>`;
+    b.addEventListener('click', () => {
+      unlockAudio();
+      if (!s.ready) { boop(); toast('このステージは もうすこし まっててね!'); return; }
+      knock();
+      taikai.stage = s.key;
+      openGame('taikai');
+    });
+    page.append(b);
+  });
+}
+function renderTurns() {
+  for (const b of $('turnSeg').children) b.setAttribute('aria-pressed', String(Number(b.dataset.v) === taikai.turns));
+}
+$('turnSeg').addEventListener('click', (e) => {
+  const v = e.target.closest('button')?.dataset.v;
+  if (!v) return;
+  knock();
+  taikai.turns = Number(v);
+  renderTurns();
+});
 
 // せってい
 function renderSettings() {
@@ -617,5 +728,7 @@ window.title = {
   start: () => enterGame(),
   ready: () => ensureGame(current),
   open: (key) => openGame(key),
+  // 大会から競技を呼ぶ口(E2E で単体でためす用)
+  playMinigame: (key, lineup, character) => playMinigame(key, lineup, character),
   zukan,
 };

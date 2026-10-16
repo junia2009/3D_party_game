@@ -524,7 +524,7 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
   }
 
   // ── 1フレーム(タイトルの輪から呼ばれる) ─────────────────
-  function frame(rawDt) {
+  function frame(rawDt, draw = true) {
     const dt = Math.min(rawDt, 0.1);
     if (mode === 'playing' && intro >= 1) watchQuality(rawDt);
     if (intro < 1 && !paused) {
@@ -559,7 +559,7 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
     owlHead.rotation.y = Math.PI * (look * look * (3 - 2 * look));
     if (!paused) owl.update(dt);
     updateCamera(dt);
-    renderer.render(scene, camera);
+    if (draw) renderer.render(scene, camera);
   }
 
   // E2E 用の口
@@ -569,6 +569,15 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
     get game() { return game; },
     get intro() { return intro; },
     start: (key = picked) => { picked = key; return startGame(); },
+    // 描かずに、画面の動きごと sec 秒すすめる
+    tick: (sec) => { for (let i = 0; i < sec * 60; i++) frame(1 / 60, false); },
+    // 描かずに、みんな CPU で sec 秒すすめる(途中の場面を撮る・大会の E2E 用)
+    advance: (sec) => {
+      const me = createCpu('normal', 1, 0);
+      for (let i = 0; i < sec / STEP && game.state.phase !== 'finished'; i++) {
+        onEvents(step(game.state, game.players.map((p, slot) => cpuHold(slot ? game.cpus[slot] : me, game.state, slot))));
+      }
+    },
     hold: (on) => press(on),
     get paused() { return paused; },
     camera,

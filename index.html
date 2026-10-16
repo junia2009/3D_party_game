@@ -409,6 +409,58 @@
   .band line { stroke: rgba(255,255,255,.7); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 9; }
   .band circle { fill: rgba(255,255,255,.35); stroke: rgba(255,255,255,.85); stroke-width: 3; }
 
+  /* 大会: 地図の本(ステージ選択) */
+  .mapbook { padding: 10px; border-radius: 22px; background: #7a4a24; box-shadow: 0 6px 0 #4a2a12, 0 14px 30px rgba(0,0,0,.25); }
+  .mappage {
+    position: relative; border-radius: 14px; padding: 10px; min-height: 340px;
+    background: radial-gradient(ellipse at 30% 20%, #fff4d6, #f1dcaa 60%, #e3c486); box-shadow: inset 0 0 30px rgba(122,74,36,.35);
+  }
+  .mappage svg.sea { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .isle { position: absolute; border: 0; background: none; padding: 0; width: 46%; transform: translate(-50%, -50%); cursor: pointer; font: inherit; color: #4a2a12; }
+  .isle svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 4px 0 rgba(74,42,18,.25)); }
+  .isle b { display: block; font: 400 17px var(--font-display); margin-top: -4px; }
+  .isle small { display: block; font-size: 11px; font-weight: 700; opacity: .75; }
+  .isle.soon { cursor: default; opacity: .9; }
+  .isle.soon b { color: #8a7a6a; }
+  .isle:not(.soon):active { transform: translate(-50%, -50%) scale(.96); }
+  #turnSeg small { display: block; font-size: 10px; opacity: .7; }
+  /* 大会の盤: 上に5人の札、下にメッセージと操作のボタン */
+  .bcards { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .bcard {
+    display: grid; gap: 1px; padding: 5px 4px 4px; border-radius: 12px; background: var(--hud-paper); box-shadow: 0 3px 0 rgba(31,42,51,.18);
+    font: 800 11px/1.2 var(--font-body); font-variant-numeric: tabular-nums; min-width: 0; transition: transform .2s; text-align: center;
+    border-top: 5px solid var(--c);
+  }
+  .bcard .nm { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 10px; }
+  .bcard .vals { display: flex; justify-content: center; gap: 5px; align-items: center; }
+  .bcard .md { color: #c98a12; font-size: 13px; }
+  .bcard .md::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ffd24a; border: 2px solid #c98a12; margin-right: 2px; vertical-align: -1px; }
+  .bcard .ac { font-size: 11px; color: #7a4a24; }
+  .bcard .ac::before { content: ''; display: inline-block; width: 7px; height: 9px; border-radius: 50% 50% 45% 45%; background: #b5702f; border-top: 3px solid #6e4a2a; margin-right: 2px; vertical-align: -1px; }
+  .bcard .it { font-size: 8px; color: #34c47c; letter-spacing: 1px; min-height: 9px; }
+  .bcard.me { outline: 3px solid var(--hud-ink); }
+  .bcard.now { transform: translateY(5px); background: #fff3c4; }
+  .bturn {
+    position: absolute; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 84px);
+    padding: 4px 14px; border-radius: 999px; background: rgba(31,42,51,.72); color: #fff; font: 800 13px var(--font-body);
+  }
+  .bfoot { position: absolute; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); display: grid; gap: 8px; justify-items: center; pointer-events: none; }
+  .bmsg { margin: 0; font: 400 18px var(--font-display); color: #fff; -webkit-text-stroke: 5px #4a2a12; paint-order: stroke fill; text-align: center; min-height: 1.2em; }
+  .bacts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; pointer-events: auto; }
+  .bact {
+    border: 0; border-radius: 16px; padding: 12px 16px; min-width: 96px; background: var(--hud-paper); color: var(--hud-ink);
+    font: 800 15px var(--font-body); box-shadow: 0 5px 0 rgba(31,42,51,.25); cursor: pointer;
+  }
+  .bact small { display: block; font-size: 11px; opacity: .7; }
+  .bact.main { background: var(--accent); color: #fff; box-shadow: 0 5px 0 #b8362d; }
+  .bact:disabled { opacity: .4; }
+  .bact:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(31,42,51,.25); }
+  .bfast {
+    pointer-events: auto; position: absolute; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+    border: 0; border-radius: 999px; padding: 8px 12px; background: rgba(31,42,51,.6); color: #fff; font: 800 12px var(--font-body);
+  }
+  .bfast.on { background: var(--accent); }
+
   /* いちじていし・結果: 島の画面と同じ、木わくの紙に木の板のボタン */
   .modal {
     position: fixed; inset: 0; z-index: 12; display: grid; place-items: center;
@@ -645,10 +697,9 @@
 <div class="ver" id="ver" hidden>つくりかけ版</div>
 
 <nav class="screen" id="menu" hidden aria-label="メインメニュー">
-  <button class="plank soon" type="button" data-soon="すごろく">
+  <button class="plank" type="button" data-go="stages">
     <span class="ico"><svg viewBox="0 0 40 40"><rect x="5" y="5" width="30" height="30" rx="8" fill="#fffaf0" stroke="#4a2a12" stroke-width="3"/><circle cx="13" cy="13" r="3.2" fill="#d9443a"/><circle cx="20" cy="20" r="3.2" fill="#4a2a12"/><circle cx="27" cy="27" r="3.2" fill="#4a2a12"/></svg></span>
     <span><b>すごろく</b><small>どんぐりを集める 大会</small></span>
-    <span class="tag">じゅんびちゅう</span>
   </button>
   <button class="plank" type="button" data-go="games">
     <span class="ico"><svg viewBox="0 0 40 46"><ellipse cx="20" cy="27" rx="14" ry="16" fill="#c27a35" stroke="#4a2a14" stroke-width="3"/><ellipse cx="14" cy="22" rx="3" ry="6" fill="#fff" opacity=".45"/><path d="M4 18a16 11 0 0 1 32 0q-16 6-32 0z" fill="#7a4f2c" stroke="#4a2a14" stroke-width="3"/><path d="M20 6v-4" stroke="#4a2a14" stroke-width="3" stroke-linecap="round"/></svg></span>
@@ -696,6 +747,11 @@
   </div>
 </section>
 
+<section class="screen sub" id="stages" hidden aria-label="大会のステージ">
+  <div class="head"><button class="back" type="button" data-back>‹ もどる</button><h2>ステージをえらぶ</h2></div>
+  <div class="mapbook"><div class="mappage" id="stageMap"></div></div>
+</section>
+
 <section class="screen sub" id="settings" hidden aria-label="せってい">
   <div class="head"><button class="back" type="button" data-back>‹ もどる</button><h2>せってい</h2></div>
   <div class="opt">
@@ -713,6 +769,10 @@
   <div class="head"><button class="back" type="button" data-back="games">‹ もどる</button><h2 class="long" id="playTitle">だるまさんが ころんだ</h2></div>
   <div class="opt">
     <ul class="rules" id="playRules"></ul>
+  </div>
+  <div class="opt" id="turnSel" hidden>
+    <h3>ターン</h3>
+    <div class="seg" id="turnSeg"><button type="button" data-v="5">5<small>15分</small></button><button type="button" data-v="10">10<small>30分</small></button><button type="button" data-v="15">15<small>45分</small></button></div>
   </div>
   <div class="opt">
     <h3>キャラをえらぶ</h3>
@@ -775,6 +835,21 @@
   <div class="pops" id="popsM"></div>
   <div class="splash" id="splashM"></div>
   <p class="howto" id="howtoM">ゆびで したへ ひっぱって はなす</p>
+</div>
+
+<div class="hud" id="hudB" hidden>
+  <div class="top">
+    <div class="bcards" id="cardsB"></div>
+    <button class="pausebtn" id="pauseBtnB" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="bturn" id="turnB">開会式</div>
+  <div class="pops" id="popsB"></div>
+  <div class="splash" id="splashB"></div>
+  <div class="bfoot">
+    <p class="bmsg" id="msgB"></p>
+    <div class="bacts" id="actsB"></div>
+  </div>
+  <button class="bfast" id="fastB" type="button">はやく ▶▶</button>
 </div>
 
 <section class="modal" id="pause" hidden aria-label="いちじていし">
