@@ -975,7 +975,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     runners[0].marker = marker;
 
     for (const f of fx.splice(0)) scene.remove(f.obj);
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastSec: null };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastSec: null, leader: null, leadAt: 0, finT: 0, fin: {} };
     resetFlowers();
     syncFlowers(1);
     atmosphere.apply(params.get('time') || state.timeOfDay);
@@ -988,6 +988,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     intro = fromSky ? 0 : 1;
     $('howtoH').classList.add('show');
     $('hudH').classList.remove('last');
+    $('tallyH').hidden = true;
     if (!fromSky) splash('よーい…');
     updateCamera(0, true);
   }
@@ -1163,10 +1164,69 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
       const sec = Math.ceil(timeLeft(s));
       if (sec !== game.lastSec) {
         game.lastSec = sec;
-        if (sec <= 3) tone(1175, 0.09, 'square', 0.05);
+        if (sec <= 3) { tone(1175, 0.09, 'square', 0.05); splash(String(sec), 'count'); }
         else tone(880, 0.06, 'square', 0.04);
       }
     }
+    // トップが入れかわったら知らせる(はじめの数秒と、差がないときは だまっている)
+    if (s.phase === 'play') {
+      const lead = order[0];
+      if (game.leader === null) game.leader = lead;
+      const gap = s.counts[order[0]] - s.counts[order[1]];
+      if (lead !== game.leader && gap >= 2 && s.t > RULES.readyTime + 5 && s.t - game.leadAt > 1.5) {
+        const before = game.leader;
+        game.leader = lead;
+        game.leadAt = s.t;
+        if (lead === 0) {
+          notice('トップ!', 'up');
+          tone(988, 0.08); tone(1318, 0.18, 'triangle', 0.1, 0.08);
+        } else if (before === 0) notice('トップを とられた!', 'down');
+        else notice(`${game.players[lead].name}が トップ!`, '', lead);
+      }
+    }
+  }
+  function notice(text, cls = '', slot = null) {
+    const el = $('noticeH');
+    el.innerHTML = (slot !== null ? flowerSvg(slot) : '') + text;
+    el.className = 'notice ' + cls;
+    void el.offsetWidth;
+    el.classList.add('show');
+  }
+  // 決着: 広さの帯をのばして、勝った子の名前
+  function showTally() {
+    const s = game.state, order = ranking(s);
+    const el = $('tallyH');
+    const bar = el.querySelector('.bar');
+    bar.replaceChildren(...order.map((slot) => {
+      const i = document.createElement('i');
+      i.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
+      return i;
+    }));
+    el.querySelector('.labels').innerHTML = order.map((slot) => `<span class="${slot === 0 ? 'me' : ''}">${flowerSvg(slot)}${pct(share(s, slot))}%</span>`).join('');
+    const win = el.querySelector('.win');
+    win.textContent = '';
+    win.className = 'win';
+    el.hidden = false;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      [...bar.children].forEach((i, k) => { i.style.width = `${share(s, order[k]) * 100}%`; });
+    }));
+  }
+  function showWinner() {
+    const s = game.state;
+    const win = $('tallyH').querySelector('.win');
+    win.textContent = s.winner === 0 ? 'あなたの勝ち!' : `${game.players[s.winner].name}の勝ち!`;
+    void win.offsetWidth;
+    win.classList.add('show');
+  }
+  // 勝った子の花が、その子のところから波のように はねる
+  function celebrate(t) {
+    const s = game.state, w = s.runners[s.winner];
+    for (let ci = 0; ci < cells.length; ci++) {
+      if (shown[ci] !== s.winner || active.has(ci)) continue;
+      const k = t - Math.hypot(cells[ci].x - w.x, cells[ci].z - w.z) * 0.12;
+      setFlower(ci, s.winner, k > 0 && k < 0.45 ? 1 + 0.5 * Math.sin((k / 0.45) * Math.PI) : 1);
+    }
+    dirty();
   }
   const tmpV = new THREE.Vector3();
   function pop(text, x, y, z, cls = '') {
@@ -1248,13 +1308,12 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
           break;
         }
         case 'finished': {
-          game.endTimer = 4.2;
+          game.endTimer = 6.5;
+          game.finT = 0;
           splash('そこまで!');
           $('howtoH').classList.remove('show');
           $('hudH').classList.remove('last');
-          const w = game.state.runners[e.winner];
-          setTimeout(() => confetti(w.x, w.z), 1400);
-          tone(784, 0.15, 'triangle', 0.1); tone(988, 0.15, 'triangle', 0.1, 0.15); tone(1175, 0.4, 'triangle', 0.1, 0.3);
+          tone(660, 0.3, 'square', 0.06);
           break;
         }
       }
@@ -1421,6 +1480,25 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
         const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
         onEvents(step(s, inputs));
         game.acc -= STEP;
+      }
+      if (s.phase === 'finished') {
+        game.finT += dt;
+        const f = game.fin, t = game.finT;
+        if (t > 1.3 && !f.tally) {
+          f.tally = true;
+          showTally();
+          // ドロロロ…(帯がのびるあいだ)
+          for (let i = 0; i < 10; i++) tone(300 + i * 30, 0.06, 'triangle', 0.05, i * 0.12);
+        }
+        if (t > 2.8 && !f.win) {
+          f.win = true;
+          showWinner();
+          const w = s.runners[s.winner];
+          confetti(w.x, w.z);
+          for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 3; }
+          tone(784, 0.15, 'triangle', 0.1); tone(988, 0.15, 'triangle', 0.1, 0.15); tone(1175, 0.4, 'triangle', 0.1, 0.3);
+        }
+        if (t > 2.8 && t < 5) celebrate(t - 2.8);
       }
       if (game.endTimer !== null) {
         game.endTimer -= dt;

@@ -334,6 +334,26 @@
   #hudH .chip small { font-size: .62em; margin-left: -2px; opacity: .7; }
   #hudH .chip.lead { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
   #hudH .howto { font-size: 16px; padding: 0 12px; }
+  #hudH .splash.count { font-size: clamp(70px, 26vw, 140px); color: #ffd24a; }
+  #hudH .notice { display: flex; align-items: center; gap: 4px; }
+  #hudH .notice .fl { width: 16px; height: 16px; }
+  /* 決着: 花畑の広さを1本の帯で見せる */
+  #hudH .tally {
+    position: absolute; left: 16px; right: 16px; top: calc(env(safe-area-inset-top, 0px) + 78px); max-width: 520px; margin: 0 auto;
+    padding: 10px 12px 12px; border-radius: 18px; background: var(--hud-paper); box-shadow: 0 4px 0 rgba(31,42,51,.18);
+    animation: tallyin .35s ease-out;
+  }
+  @keyframes tallyin { 0% { opacity: 0; transform: translateY(-10px) scale(.9); } 100% { opacity: 1; transform: none; } }
+  #hudH .tally .tt { margin: 0 0 6px; text-align: center; font: 400 16px var(--font-display); }
+  #hudH .tally .bar { display: flex; height: 26px; border-radius: 999px; overflow: hidden; background: #e9dfcf; }
+  #hudH .tally .bar i { display: block; width: 0; background: var(--c); transition: width 1.3s cubic-bezier(.2,.8,.2,1); border-right: 2px solid rgba(255,255,255,.7); }
+  #hudH .tally .labels { display: flex; justify-content: space-between; gap: 2px; margin-top: 6px; }
+  #hudH .tally .labels span { display: flex; align-items: center; gap: 1px; font: 800 clamp(11px, 3.3vw, 15px) var(--font-body); font-variant-numeric: tabular-nums; }
+  #hudH .tally .labels .fl { width: 16px; height: 16px; }
+  #hudH .tally .labels span.me { text-decoration: underline 3px; text-underline-offset: 3px; }
+  #hudH .tally .win { margin: 8px 0 0; text-align: center; font: 400 22px var(--font-display); color: #c27a00; min-height: 1.2em; }
+  #hudH .tally .win.show { animation: splash 1.1s ease-out forwards; animation-name: winpop; }
+  @keyframes winpop { 0% { opacity: 0; transform: scale(.4); } 30% { opacity: 1; transform: scale(1.15); } 50% { transform: scale(1); } 100% { opacity: 1; } }
   #hudH .lastfx { position: absolute; inset: 0; opacity: 0; transition: opacity .4s;
     box-shadow: inset 0 0 50px 14px rgba(255,120,170,.55); }
   #hudH.last .lastfx { opacity: 1; animation: rainbeat .5s infinite; }
@@ -991,6 +1011,8 @@
   </div>
   <div class="pops" id="popsH"></div>
   <div class="splash" id="splashH"></div>
+  <div class="notice" id="noticeH"></div>
+  <div class="tally" id="tallyH" hidden><p class="tt">ひろさくらべ</p><div class="bar"></div><div class="labels"></div><p class="win"></p></div>
   <p class="howto" id="howtoH">ゆびを おいて ずらすと はしる<br>通ったところに 花がさく</p>
   <div class="stick" id="stickH" hidden><i></i></div>
 </div>
