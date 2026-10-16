@@ -59,3 +59,4 @@
 | どんぐりつみ | 作成中 | [minigames/tsumi.md](minigames/tsumi.md) |
 | いかだレース | 作成中 | [minigames/ikada.md](minigames/ikada.md) |
 | 花ぬり陣取り | 作成中 | [minigames/hana.md](minigames/hana.md) |
+| どんぐり早うち | 作成中 | [minigames/hayauchi.md](minigames/hayauchi.md) |

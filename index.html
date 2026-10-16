@@ -325,6 +325,28 @@
     box-shadow: 0 3px 0 rgba(31,42,51,.18); font: 800 clamp(13px, 3.8vw, 17px) var(--font-body); font-variant-numeric: tabular-nums; transition: transform .2s;
   }
   #hudC .timer { width: 2.7em; font-size: 18px; padding: 6px 0; }
+  /* どんぐり早うち: まん中に先生の合図。合図の瞬間に画面が光る */
+  #hudW .chip { font-size: clamp(11px, 3.2vw, 15px); padding: 3px 7px 3px 3px; min-width: 2.2em; }
+  #hudW .chip b { min-width: 2.6em; }
+  #hudW .chip b:empty { display: none; }
+  #hudW .chip.fault b { color: var(--watch); font-size: .8em; }
+  #hudW .chip.best { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
+  #hudW .signal {
+    position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top, 0px) + 64px); text-align: center; opacity: 0;
+    font: 400 clamp(54px, 18vw, 110px) var(--font-display); color: #ffd24a; -webkit-text-stroke: 7px var(--hud-ink); paint-order: stroke fill;
+  }
+  #hudW .signal.show { opacity: 1; animation: sigin .25s ease-out; }
+  #hudW .signal.sig-small { font-size: clamp(24px, 7vw, 40px); color: #fff; -webkit-text-stroke-width: 5px; }
+  #hudW .signal.sig-no { color: var(--watch); }
+  #hudW .signal.sig-win { font-size: clamp(32px, 10vw, 60px); }
+  @keyframes sigin { 0% { transform: scale(1.6); opacity: 0; } 100% { transform: none; opacity: 1; } }
+  #hudW .flash { position: absolute; inset: 0; opacity: 0; }
+  #hudW .flash.fl-go { background: rgba(255, 230, 120, .6); }
+  #hudW .flash.fl-no { background: rgba(232, 52, 74, .45); }
+  #hudW .flash.show { animation: flash .45s ease-out forwards; }
+  @keyframes flash { 0% { opacity: 1; } 100% { opacity: 0; } }
+  .pop.red { color: #ff7a7a; }
+  .pop.out { color: #cfd8dc; font-size: 24px; }
   /* 花ぬり陣取り: 札に広さ(%)。いちばん広い子に花かんむり、ラストスパートは画面のふちが花の色に */
   #hudH .timer { width: 2.7em; font-size: 18px; padding: 6px 0; }
   #hudH .scores { gap: 3px; }
@@ -938,6 +960,11 @@
       <span class="name">花ぬり陣取り</span>
       <span class="meta"><span>45びょう</span></span>
     </button>
+    <button class="card" type="button" data-open="hayauchi">
+      <span class="thumb"><img src="./assets/thumbs/hayauchi.jpg" alt="" width="640" height="360"><span class="ribbon">第8競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">どんぐり早うち</span>
+      <span class="meta"><span>30〜60びょう</span></span>
+    </button>
   </div>
 </section>
 
@@ -1015,6 +1042,18 @@
   <div class="tally" id="tallyH" hidden><p class="tt">ひろさくらべ</p><div class="bar"></div><div class="labels"></div><p class="win"></p></div>
   <p class="howto" id="howtoH">ゆびを おいて ずらすと はしる<br>通ったところに 花がさく</p>
   <div class="stick" id="stickH" hidden><i></i></div>
+</div>
+
+<div class="hud" id="hudW" hidden>
+  <div class="flash" id="flashW" aria-hidden="true"></div>
+  <div class="top">
+    <div class="scores" id="chipsW" aria-label="のこっている子"></div>
+    <button class="pausebtn" id="pauseBtnW" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="signal" id="signalW"></div>
+  <div class="pops" id="popsW"></div>
+  <div class="splash" id="splashW"></div>
+  <p class="howto" id="howtoW">黄色い どんぐりの旗で タップ!<br>赤い旗・にせものには つられない</p>
 </div>
 
 <div class="hud" id="hudS" hidden>

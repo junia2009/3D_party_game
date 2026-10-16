@@ -412,6 +412,16 @@ const GAMES = {
     ],
     load: () => import('../games/hana/game.js').then((m) => m.createHana),
   },
+  hayauchi: {
+    name: 'どんぐり早うち',
+    rules: [
+      'ホーホー先生が<b>黄色い どんぐりの旗</b>をあげたら、画面のどこでも<b>タップ</b>して うつ。',
+      '1回ごとに、<b>いちばん遅かった子</b>が脱落。最後まで残った子の勝ち!',
+      '旗より前に うつと<b>おてつき</b>で脱落。<b>赤い旗(うつな!)</b>・<b>にせの合図</b>・<b>じゃまもの</b>に つられないで。',
+      '合図までの時間は毎回ちがう。<b>じっとがまん</b>!',
+    ],
+    load: () => import('../games/hayauchi/game.js').then((m) => m.createHayauchi),
+  },
   // 大会(すごろく)。入口はステージ選択から(ターンをえらぶ)
   taikai: {
     name: '大会',
