@@ -109,7 +109,7 @@ function spawn(s) {
   else kind = 'hive';
   const tg = { id: s.nextId++, kind, born: t, ph: nextRandom(s) * Math.PI * 2, x: 0, d: 0, y: 0, life: 0 };
   switch (kind) {
-    case 'pad': tg.d = randRange(s, 6, 14); tg.x = randRange(s, -4.5, 4.5); tg.y = 0.45; tg.life = randRange(s, 4.5, 6); break;
+    case 'pad': tg.d = randRange(s, 6, 14); tg.x = randRange(s, -4.5, 4.5); tg.y = 0.7; tg.life = randRange(s, 4.5, 6); break;
     case 'stump': tg.d = randRange(s, 17, 21); tg.x = randRange(s, -5, 5); tg.y = 1.0; tg.life = randRange(s, 4, 5.5); break;
     case 'swing': tg.d = VINES[nextRandom(s) < 0.5 ? 0 : 1]; tg.x = randRange(s, -4.5, 4.5); tg.y = randRange(s, 2.2, 3.2); tg.life = randRange(s, 4, 5.5); break;
     case 'gold': tg.d = randRange(s, 9, 17); tg.x = randRange(s, -2.5, 2.5); tg.y = randRange(s, 2, 3); tg.life = randRange(s, 3, 4); break;

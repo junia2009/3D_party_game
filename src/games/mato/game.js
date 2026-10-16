@@ -7,9 +7,10 @@
 
 import * as THREE from 'three';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
-import { createModel, preload, toonMaterial } from '../../runtime/models.js';
+import { createModel, preload } from '../../runtime/models.js';
 import { nextRandom, seedFrom } from '../../rng.js';
-import { KINDS, RULES, STEP, VINE_Y, createGame, launch, fly, ranking, step, targetPos, timeLeft } from './rules.js';
+import { RULES, STEP, createGame, launch, fly, ranking, step, timeLeft } from './rules.js';
+import { createTargets } from './targets.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { buildStage } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -121,118 +122,6 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
   const pineMat = new THREE.MeshToonMaterial({ vertexColors: true });
   const shotMeshes = new Map(); // shot(state の中のもの) → mesh
 
-  // ── 的(自分のぶんだけ見える) ──────────────────────────
-  function boardTexture(ring, gold = false) {
-    const S = 128;
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = S;
-    const x = cv.getContext('2d');
-    const cols = gold ? ['#b8860b', '#ffd24a', '#fff1a8', '#ffd24a', '#ff8a2a'] : ['#7a4a24', ring, '#fff6e0', ring, '#e8402f'];
-    [62, 52, 38, 26, 12].forEach((r, i) => {
-      x.fillStyle = cols[i];
-      x.beginPath();
-      x.arc(S / 2, S / 2, r, 0, Math.PI * 2);
-      x.fill();
-    });
-    const t = new THREE.CanvasTexture(cv);
-    t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-  }
-  const boardGeo = new THREE.CylinderGeometry(1, 1, 0.08, 28);
-  boardGeo.rotateX(Math.PI / 2); // 面を前(+z、投げる子のほう)へ
-  const woodMat = toonMaterial(0x8a5a32), ropeMat = toonMaterial(0x8a7a4a), padMat = toonMaterial(0x5fae4a);
-  const ringMat = toonMaterial(0xe0b77c), hiveMat = toonMaterial(0xd99a2b), hiveDark = toonMaterial(0x8a5a1a), bugMat = toonMaterial(0x2b2b2b), wingMat = new THREE.MeshBasicMaterial({ color: 0xdff4ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
-  let boardMat = null, goldMat = null;
-  const targetObjs = new Map(); // id → { group, tg, out: 0, hit: 0 }
-
-  function makeTarget(tg) {
-    const g = new THREE.Group();
-    const k = KINDS[tg.kind];
-    const face = (mat, r) => {
-      const m = new THREE.Mesh(boardGeo, [woodMat, mat, woodMat]);
-      m.scale.set(r, r, 1);
-      return m;
-    };
-    let swingTop = null;
-    switch (tg.kind) {
-      case 'pad': {
-        const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.75, 0.04, 20), padMat);
-        pad.position.y = -0.42;
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 6), woodMat);
-        post.position.y = -0.22;
-        g.add(pad, post, face(boardMat, k.r));
-        break;
-      }
-      case 'stump': {
-        const st = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.52, 0.6, 12), woodMat);
-        st.position.y = -0.75;
-        const top = new THREE.Mesh(new THREE.CircleGeometry(0.4, 12), ringMat);
-        top.rotation.x = -Math.PI / 2;
-        top.position.y = -0.44;
-        g.add(st, top, face(boardMat, k.r));
-        break;
-      }
-      case 'swing': {
-        g.add(face(boardMat, k.r));
-        swingTop = k.r;
-        break;
-      }
-      case 'gold': {
-        g.add(face(goldMat, k.r));
-        // トンボ: 細い胴と、すける羽4枚
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.5, 3, 6), toonMaterial(0x2f8fd8));
-        body.rotation.z = Math.PI / 2;
-        body.position.y = k.r + 0.25;
-        g.add(body);
-        const wings = new THREE.Group();
-        wings.position.y = k.r + 0.3;
-        for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-          const w = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.12), wingMat);
-          w.rotation.x = -Math.PI / 2;
-          w.position.set(sx * 0.08, 0, sz * 0.13);
-          w.rotation.z = sz * 0.2;
-          wings.add(w);
-        }
-        g.add(wings);
-        g.userData.wings = wings;
-        break;
-      }
-      case 'hive': {
-        const hive = new THREE.Group();
-        for (let i = 0; i < 4; i++) {
-          const band = new THREE.Mesh(new THREE.SphereGeometry(0.42 - Math.abs(i - 1.5) * 0.07, 14, 8), i % 2 ? hiveMat : hiveDark);
-          band.scale.set(1, 0.36, 1);
-          band.position.y = 0.3 - i * 0.2;
-          hive.add(band);
-        }
-        g.add(hive);
-        const bees = new THREE.Group();
-        for (let i = 0; i < 4; i++) {
-          const b = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 5), toonMaterial(0xffd23c));
-          bees.add(b);
-        }
-        g.add(bees);
-        g.userData.bees = bees;
-        swingTop = 0.45;
-        break;
-      }
-    }
-    if (swingTop !== null) {
-      // 綱から下がるひも(長さは描くときに合わせる)
-      const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1, 5), ropeMat);
-      g.add(rope);
-      g.userData.rope = rope;
-      g.userData.top = swingTop;
-    }
-    g.scale.setScalar(0.01);
-    scene.add(g);
-    return { group: g, tg, hit: 0, gone: false };
-  }
-  function clearTargets() {
-    for (const o of targetObjs.values()) scene.remove(o.group);
-    targetObjs.clear();
-  }
-
   // ── ねらいの線(風なしの道すじ)と、ぱちんこのゴム ──────────────
   const DOTS = 26;
   const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
@@ -247,11 +136,10 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
   landRing.visible = false;
   scene.add(landRing);
 
-  // ── 水しぶき・はじける木くず(演出なので Math.random でよい) ─────────
+  // ── 水しぶき(演出なので Math.random でよい) ─────────
   const fx = [];
   const dropGeo = new THREE.SphereGeometry(0.06, 5, 4);
   const dropMat = new THREE.MeshBasicMaterial({ color: 0xdff6ff });
-  const chipMat = toonMaterial(0xd9a066);
   const rippleGeo = new THREE.RingGeometry(0.85, 1, 28);
   rippleGeo.rotateX(-Math.PI / 2);
   function splashAt(x, z, n = 10) {
@@ -265,15 +153,6 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     r.position.set(x, 0.04, z);
     scene.add(r);
     fx.push({ obj: r, t: 0, life: 1.2, ripple: true });
-  }
-  function chipsAt(p, n = 8, mat = chipMat) {
-    for (let i = 0; i < n; i++) {
-      const m = new THREE.Mesh(dropGeo, mat);
-      m.scale.set(1, 0.5, 1.4);
-      m.position.copy(p);
-      scene.add(m);
-      fx.push({ obj: m, t: 0, life: 0.7, vel: new THREE.Vector3((Math.random() - 0.5) * 3, 1 + Math.random() * 2.5, 1 + Math.random() * 2), g: 9, spin: 10 });
-    }
   }
   function updateFx(dt) {
     for (let i = fx.length - 1; i >= 0; i--) {
@@ -296,6 +175,8 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     }
   }
 
+  const targets = createTargets(scene, { splashAt });
+
   // ── ゲームの進行 ────────────────────────────────────
   let mode = 'idle';
   let picked = CHARACTERS[0].key;
@@ -317,11 +198,9 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const m of shotMeshes.values()) scene.remove(m);
     shotMeshes.clear();
-    clearTargets();
+    targets.clear();
+    targets.setColor(PLAYER_COLORS[0].hex);
     for (const f of fx.splice(0)) scene.remove(f.obj);
-    boardMat?.map.dispose();
-    boardMat = new THREE.MeshBasicMaterial({ map: boardTexture(css(PLAYER_COLORS[0].hex)) });
-    goldMat ??= new THREE.MeshBasicMaterial({ map: boardTexture('', true) });
 
     const state = createGame(players, seed);
     const runners = await Promise.all(players.map(async (p, slot) => {
@@ -566,10 +445,8 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
         }
         case 'hit': {
           if (e.slot === 0) {
-            const o = targetObjs.get(e.id);
             const at = new THREE.Vector3(STAND[0] + e.x, e.y, -e.d);
-            if (o) o.hit = 0.001;
-            chipsAt(at, 10, e.kind === 'gold' ? toonMaterial(0xffd24a) : chipMat);
+            targets.hit(e.id, at);
             pop(`+${e.points + e.bonus}`, at.clone().setY(at.y + 0.6), e.kind === 'gold' ? 'gold me' : 'me');
             if (e.kind === 'gold') { sfx.gold(); splash('金の的!', 'gold'); } else sfx.hit(e.combo);
             if (e.combo === 3 || e.combo === 6) splash(e.combo === 6 ? '6れんぞく! +2' : '3れんぞく! +1', 'gold');
@@ -583,8 +460,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
           const v = game.runners[e.slot];
           v.stunT = RULES.stun;
           if (e.slot === 0) {
-            const o = targetObjs.get(e.id);
-            if (o) o.hit = 0.001;
+            targets.hit(e.id, new THREE.Vector3(STAND[0] + e.x, e.y, -e.d));
             sfx.sting();
             splash(`ハチの巣! -${RULES.hivePenalty}`, 'red');
           } else pop(`-${RULES.hivePenalty}`, tmp.copy(v.holder.position).setY(2.2), 'red');
@@ -627,53 +503,6 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
   }
 
   // ── 見た目を state に合わせる ─────────────────────────
-  const tp = { x: 0, d: 0, y: 0 };
-  function updateTargets(dt) {
-    const s = game.state;
-    const me = s.runners[0];
-    const alive = new Set();
-    for (const tg of s.targets) {
-      if (me.hit.has(tg.id) && !targetObjs.has(tg.id)) continue;
-      alive.add(tg.id);
-      let o = targetObjs.get(tg.id);
-      if (!o) { o = makeTarget(tg); targetObjs.set(tg.id, o); }
-    }
-    for (const [id, o] of targetObjs) {
-      const tg = o.tg;
-      const age = s.t - tg.born, left = tg.born + tg.life - s.t;
-      targetPos(tg, s.t, tp);
-      const g = o.group;
-      g.position.set(STAND[0] + tp.x, tp.y, -tp.d);
-      // 出てくるときは、ぽんとふくらむ。引っこむときは、しぼむ
-      let sc = Math.min(1, age / 0.25) * (age < 0.25 ? 1.15 - 0.15 * (age / 0.25) : 1);
-      sc = Math.min(sc, Math.max(0, left / 0.35));
-      if (o.hit > 0) {
-        // 当たった: うしろへ倒れて、くるくるしながら落ちる
-        o.hit += dt;
-        g.rotation.x = -Math.min(1.4, o.hit * 8);
-        g.position.y -= o.hit * o.hit * 6;
-        sc = Math.max(0, 1 - o.hit * 1.4);
-      } else if (tg.kind === 'swing' || tg.kind === 'hive') {
-        g.rotation.z = Math.cos((s.t - tg.born) * 1.9 + tg.ph) * 0.25;
-      }
-      g.scale.setScalar(Math.max(0.001, sc));
-      if (g.userData.rope) {
-        // 綱(VINE_Y)まで、ひもをのばす
-        const len = VINE_Y + 0.2 - tp.y - g.userData.top;
-        g.userData.rope.scale.set(1, len / Math.max(0.001, sc), 1);
-        g.userData.rope.position.y = (g.userData.top + len / 2) / Math.max(0.001, sc);
-      }
-      if (g.userData.wings) g.userData.wings.rotation.x = Math.sin(performance.now() / 18) * 0.5;
-      if (g.userData.bees) g.userData.bees.children.forEach((b, i) => {
-        const a = performance.now() / 300 + i * 1.6;
-        b.position.set(Math.cos(a) * 0.65, Math.sin(a * 1.7) * 0.25, Math.sin(a) * 0.65);
-      });
-      if ((!alive.has(id) && o.hit === 0) || o.hit > 0.8 || (left <= 0 && o.hit === 0)) {
-        scene.remove(g);
-        targetObjs.delete(id);
-      }
-    }
-  }
   function updateShots(dt) {
     const s = game.state;
     const live = new Set(s.shots);
@@ -798,7 +627,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     if (game && mode === 'playing') { renderHud(); updateAim(); }
     if (game && !paused) {
       updateRunners(dt);
-      updateTargets(dt);
+      targets.sync(game.state, game.state.runners[0], STAND[0], camera, dt);
       updateShots(dt);
       updateFx(dt);
     }
