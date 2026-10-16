@@ -240,9 +240,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     const pos = view.squarePos(sq, new THREE.Vector3());
     if (here.length > 1) {
       const k = here.indexOf(i);
-      pos.x += (k - (here.length - 1) / 2) * 0.75;
-      pos.z -= 0.3;
-      if (s.phase === 'turn' && currentSlot(s) === i) pos.z += 0.75;
+      pos.x += (k - (here.length - 1) / 2) * 1.1; // コマは 1.25 倍の大きさなので、1.1m あける
+      pos.z -= 0.4;
+      // 手番の子(開会式ではサイコロをふる子)は、一歩手前へ
+      const now = s.phase === 'turn' ? currentSlot(s) : s.phase === 'order' ? s.pending?.slot : null;
+      if (now === i) pos.z += 0.7;
     }
     return pos;
   }
@@ -257,6 +259,10 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     p.anim?.resolve();
     const from = p.holder.position.clone();
     return new Promise((resolve) => { p.anim = { from, to: to.clone(), t: 0, time, hop, resolve }; });
+  }
+  // 同じマスにいる子の並びを、いまの手番に合わせて動かしなおす
+  function stepForward() {
+    game.pieces.forEach((p, i) => { if (!p.anim) animTo(p, spotOf(i), { hop: false, time: 0.35 }); });
   }
   function settlePieces() {
     game.pieces.forEach((p, i) => { if (!p.anim) p.holder.position.copy(spotOf(i)); });
@@ -524,8 +530,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         case 'player':
           camOn(e.slot);
           renderCards();
-          // 同じマスにいる子の並びを、手番の子が手前になるように動かしなおす
-          game.pieces.forEach((p, i) => { if (!p.anim && p.sq === game.pieces[e.slot].sq) movePiece(i, p.sq, { hop: false, time: 0.4 }); });
+          stepForward();
           splash(`${name(e.slot)}の番`);
           sfx.turn();
           await sleep(1.6 / speed());
@@ -725,6 +730,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   // サイコロ: 頭の上で回る。人はタップで止める。CPU は少しして止める
   function rollDice(slot, human) {
     camOn(slot);
+    stepForward();
     dice.g.visible = true;
     dice.acorn.visible = true;
     dice.state = 'spin';
@@ -923,6 +929,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     if (cam.mode === 'overview' || !game) {
       pos = new THREE.Vector3(0, portrait ? 74 : 40, portrait ? 52 : 36);
       look = new THREE.Vector3(0, 0, portrait ? 3 : 1);
+    } else if (game && game.s.phase === 'order') {
+      // 開会式: スタートに並んだ5人を、正面から(横の幅が入る遠さ)
+      const st0 = view.squarePos(st.start, new THREE.Vector3());
+      pos = st0.clone().add(new THREE.Vector3(0, portrait ? 4.5 : 3.5, portrait ? 11 : 8));
+      look = st0.clone().add(new THREE.Vector3(0, 1.4, 0));
     } else if (cam.mode === 'podium') {
       // 表彰台を、正面の少し上から
       // 1位を発表したら、1位に寄る
@@ -1001,12 +1012,12 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       dice.updateBits(dt);
       if (dice.g.visible) {
         const p = game.pieces[dice.slot];
-        dice.g.position.copy(p.holder.position).add(tmp.set(0, dice.state === 'count' ? 2.6 : 3.4, 0));
-        if (dice.state !== 'count') dice.g.position.y = spotOf(dice.slot).y + 3.4;
+        dice.g.position.copy(p.holder.position).add(tmp.set(0, dice.state === 'count' ? 2.6 : 3.6, 0));
+        if (dice.state !== 'count') dice.g.position.y = spotOf(dice.slot).y + 3.6;
         dice.t += dt;
         if (dice.state === 'spin') {
           dice.acorn.rotation.y += dt * 9;
-          dice.label.scale.setScalar(1.1);
+          dice.label.scale.setScalar(0.95);
           if (dice.t > 0.06) {
             dice.t = 0;
             dice.n = (dice.n % 10) + 1;
@@ -1021,7 +1032,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
             dice.burst();
             sfx.stop();
           }
-          dice.acorn.scale.setScalar(7 * (1 + Math.min(0.2, dice.t) * 1.5));
+          dice.acorn.scale.setScalar(5.5 * (1 + Math.min(0.2, dice.t) * 1.5));
           if (dice.burstDone) dice.label.scale.setScalar(1.1 + Math.max(0, 0.5 - (dice.t - 0.2)) * 1.6);
           if (dice.t > 0.7) { dice.state = 'show'; dice.t = 0.5; }
         } else if (dice.state === 'show') {
@@ -1029,7 +1040,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         } else if (dice.state === 'count') {
           dice.label.scale.setScalar(0.85);
         }
-        if (dice.state !== 'hit') dice.acorn.scale.setScalar(7);
+        if (dice.state !== 'hit') dice.acorn.scale.setScalar(5.5);
       }
     }
     // 先生: いまのマスへ、弧をえがいて飛んでいく。頭の上でメダルが回る。足もとに金の光の柱

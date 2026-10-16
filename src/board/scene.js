@@ -515,6 +515,7 @@ export function buildBoardScene(scene, st) {
     if (near(x, z, 2.4)) continue;
     if (Math.hypot(x, z) < 6.5) continue; // まん中は大木のため
     if (Math.hypot(x - PODIUM_AT.x, z - PODIUM_AT.z) < 5.5) continue; // 表彰台の広場
+    if (Math.hypot(x - st.squares[st.start].x, z - st.squares[st.start].z) < 4.5) continue; // スタートの広場(開会式で5人が並ぶ)
     // 道のすぐ手前(+z)は、カメラが道を見るとき木がかくすので、あける(2〜6m 手前まで)
     if (near(x, z - 2.5, 2.4) || near(x, z - 5, 2.4)) continue;
     const area = areaAt(st, x, z);
