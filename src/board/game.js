@@ -105,23 +105,49 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       x.fillText(String(n), 64, 68);
       tex.needsUpdate = true;
     };
-    return { g, acorn, draw, n: 1, spin: false, t: 0 };
+    // 頭突きで割れたどんぐりの殻のかけら
+    const shellGeo = new THREE.SphereGeometry(0.22, 6, 4, 0, Math.PI);
+    const shellMats = [new THREE.MeshToonMaterial({ color: 0xb5702f }), new THREE.MeshToonMaterial({ color: 0x6e4a2a })];
+    const bits = [];
+    function burst() {
+      for (let i = 0; i < 8; i++) {
+        const m = new THREE.Mesh(shellGeo, shellMats[i % 2]);
+        m.position.copy(g.position);
+        scene.add(m);
+        const a = (i / 8) * Math.PI * 2;
+        bits.push({ m, v: new THREE.Vector3(Math.cos(a) * 3, 2.5 + Math.random() * 2, Math.sin(a) * 3), t: 0, spin: Math.random() * 10 });
+      }
+    }
+    function updateBits(dt) {
+      for (let i = bits.length - 1; i >= 0; i--) {
+        const b = bits[i];
+        b.t += dt;
+        b.v.y -= 12 * dt;
+        b.m.position.addScaledVector(b.v, dt);
+        b.m.rotation.x += b.spin * dt;
+        b.m.rotation.z += b.spin * 0.7 * dt;
+        b.m.scale.setScalar(Math.max(0.01, 1 - b.t / 0.9));
+        if (b.t > 0.9) { scene.remove(b.m); bits.splice(i, 1); }
+      }
+    }
+    // state: spin(回っている)/ hit(頭突き)/ show(目が出た)/ count(進むあいだ、のこりのマス)
+    return { g, acorn, label, draw, burst, updateBits, n: 1, state: 'off', t: 0, burstDone: false };
   })();
 
   // ── コマ ──────────────────────────────────────────
   let game = null; // { s, players, pieces, cpus, ... }
   const tmp = new THREE.Vector3();
   function spotOf(i) {
-    // 同じマスに何人かいたら、まるく並べる
+    // 同じマスに何人かいたら、横一列(カメラから見て左右)に並べる。手番の子は、一歩手前へ
     const s = game.s;
     const sq = game.pieces[i].sq;
     const here = s.players.map((_, k) => k).filter((k) => game.pieces[k].sq === sq);
     const pos = view.squarePos(sq, new THREE.Vector3());
     if (here.length > 1) {
       const k = here.indexOf(i);
-      const a = (k / here.length) * Math.PI * 2;
-      pos.x += Math.cos(a) * 0.5;
-      pos.z += Math.sin(a) * 0.5;
+      pos.x += (k - (here.length - 1) / 2) * 0.75;
+      pos.z -= 0.3;
+      if (s.phase === 'turn' && currentSlot(s) === i) pos.z += 0.75;
     }
     return pos;
   }
@@ -192,6 +218,12 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     el.style.top = `${((1 - tmp.y) / 2) * 100}%`;
     $('popsB').append(el);
     setTimeout(() => el.remove(), 900);
+  }
+
+  // キャラの反応(よろこぶ・がっかり・びっくり)を少しのあいだ
+  function react(i, clip, face, sec = 1.5) {
+    const p = game.pieces[i];
+    p.react = { clip, face, t: sec };
   }
 
   // ── 大会のはじまり ──────────────────────────────────
@@ -351,6 +383,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         case 'player':
           camOn(e.slot);
           renderCards();
+          // 同じマスにいる子の並びを、手番の子が手前になるように動かしなおす
+          game.pieces.forEach((p, i) => { if (!p.anim && p.sq === game.pieces[e.slot].sq) movePiece(i, p.sq, { hop: false, time: 0.4 }); });
           splash(`${name(e.slot)}の番`);
           await sleep(1.6 / speed());
           break;
@@ -363,12 +397,16 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         case 'step':
           camOn(e.slot);
           sfx.hop(e.left);
+          // 頭の上に、のこりのマス
+          if (e.left > 0) { dice.slot = e.slot; dice.state = 'count'; dice.g.visible = true; dice.acorn.visible = false; dice.draw(e.left); } else dice.g.visible = false;
           await movePiece(e.slot, e.to, { time: 0.34 / speed() });
           settlePieces();
           if (e.left === 0) say('');
           break;
         case 'land': {
           camOn(e.slot);
+          dice.g.visible = false;
+          view.pulse(e.sq);
           const q = st.squares[e.sq];
           const info = q.ice ? KIND_INFO.ice : KIND_INFO[e.kind];
           if (info && e.kind !== 'happen') await explain({ ...info, text: info.text(s.turns - s.turn < RULES.spurtTurns), who: e.slot });
@@ -399,12 +437,14 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         }
         case 'acorns':
           camOn(e.slot);
+          react(e.slot, e.delta > 0 ? 'cheer' : 'idle', e.delta > 0 ? 'happy' : e.delta < 0 ? 'frustrated' : 'normal');
           if (e.delta > 0) sfx.gain(); else if (e.delta < 0) sfx.lose();
           pop(`${e.delta >= 0 ? '+' : ''}${e.delta}`, e.slot, e.delta >= 0 ? (e.slot === 0 ? 'me' : '') : 'red');
           renderCards();
           await sleep(0.9 / speed());
           break;
         case 'medal':
+          react(e.slot, 'cheer', 'happy', 2.4);
           sfx.medal();
           splash(`${name(e.slot)} メダルゲット!`, 'gold');
           pop('メダル +1', e.slot, 'gold');
@@ -431,6 +471,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           await explain({ color: '#34c47c', mark: '?', title: `${ITEMS[e.item].name}を つかった!`, text: ITEM_INFO[e.item], who: e.slot, sec: 2.2 });
           break;
         case 'happen': {
+          react(e.slot, 'dizzy', 'surprised', 2.2);
           sfx.happen();
           const h = HAPPEN_INFO[e.area];
           splash(h.title + '!', 'red');
@@ -520,7 +561,9 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   function rollDice(slot, human) {
     camOn(slot);
     dice.g.visible = true;
-    dice.spin = true;
+    dice.acorn.visible = true;
+    dice.state = 'spin';
+    dice.t = 0;
     dice.slot = slot;
     if (!human) return sleep(1.5 / speed()).then(stopDice);
     say('タップで止める!');
@@ -532,18 +575,20 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       choose('タップで止める!', [btn]).then(done);
     });
   }
+  // ほんとうの目を出す(頭突きのあとに、大きく)
   function showDice(slot, n, detail) {
     dice.slot = slot;
-    dice.spin = false;
+    if (dice.state !== 'hit') { dice.state = 'show'; dice.t = 0; dice.acorn.visible = false; }
     dice.g.visible = true;
-    dice.t = 0;
     dice.draw(n);
-    dice.pop = 0;
     if (detail) say(detail);
   }
+  // 止める: コマがぴょんと跳んで、どんぐりに頭突き。どんぐりは割れる
   function stopDice() {
-    dice.spin = false;
-    sfx.stop();
+    dice.state = 'hit';
+    dice.t = 0;
+    dice.burstDone = false;
+    game.pieces[dice.slot].jumpT = 0;
     say('');
   }
   async function humanAct(pend) {
@@ -696,32 +741,63 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           if (a.hop) p.holder.position.y += Math.sin(k * Math.PI) * 0.7;
           const dx = a.to.x - a.from.x, dz = a.to.z - a.from.z;
           if (dx * dx + dz * dz > 0.01) p.face = Math.atan2(dx, dz);
-          if (k >= 1) { p.anim = null; a.resolve(); }
+          if (k >= 1) { p.anim = null; p.still = 0; a.resolve(); }
+        } else {
+          // 止まってしばらくしたら、カメラ(手前)のほうを向く
+          p.still = (p.still || 0) + dt;
+          if (p.still > 0.8) p.face = 0;
         }
-        p.holder.rotation.y += (p.face - p.holder.rotation.y) * Math.min(1, dt * 10);
+        // サイコロへの頭突き(ぴょんと跳ぶ)
+        let jump = 0;
+        if (p.jumpT !== undefined && p.jumpT < 0.42) {
+          p.jumpT += dt;
+          jump = Math.sin(Math.min(1, p.jumpT / 0.42) * Math.PI) * 1.3;
+        }
+        if (!p.anim) p.holder.position.y = spotOf(i).y + jump;
+        p.holder.rotation.y += (p.face - p.holder.rotation.y) * Math.min(1, dt * 8);
         const s = game.s;
         const busy = p.anim && p.anim.hop;
-        p.model.play(s.phase === 'finished' ? (ranking(s)[0] === i ? 'cheer' : 'wave') : busy ? 'run' : 'idle');
+        let clip = 'idle', face = 'normal';
+        if (p.react && (p.react.t -= dt) > 0) { clip = p.react.clip; face = p.react.face; } else p.react = null;
+        if (busy) clip = 'run';
+        if (s.phase === 'finished') { clip = ranking(s)[0] === i ? 'cheer' : 'wave'; face = ranking(s)[0] === i ? 'happy' : 'normal'; }
+        p.model.play(clip);
+        p.model.setFace(face);
         p.model.update(dt);
       });
       // サイコロ
+      dice.updateBits(dt);
       if (dice.g.visible) {
         const p = game.pieces[dice.slot];
-        dice.g.position.copy(p.holder.position).add(new THREE.Vector3(0, 3.4, 0));
+        dice.g.position.copy(p.holder.position).add(tmp.set(0, dice.state === 'count' ? 2.6 : 3.4, 0));
+        if (dice.state !== 'count') dice.g.position.y = spotOf(dice.slot).y + 3.4;
         dice.t += dt;
-        if (dice.spin) {
+        if (dice.state === 'spin') {
           dice.acorn.rotation.y += dt * 9;
+          dice.label.scale.setScalar(1.1);
           if (dice.t > 0.06) {
             dice.t = 0;
             dice.n = (dice.n % 10) + 1;
             dice.draw(dice.n);
             sfx.tick();
           }
-        } else {
-          // ほんとうの目が出たら、ぽんとふくらむ
-          dice.g.scale.setScalar(1 + Math.max(0, 0.35 - dice.t) * 1.2);
-          if (dice.t > 1.1) { dice.g.visible = false; dice.g.scale.setScalar(1); }
+        } else if (dice.state === 'hit') {
+          // 跳んだ頭がとどいたところで、どんぐりが割れる
+          if (!dice.burstDone && dice.t > 0.2) {
+            dice.burstDone = true;
+            dice.acorn.visible = false;
+            dice.burst();
+            sfx.stop();
+          }
+          dice.acorn.scale.setScalar(7 * (1 + Math.min(0.2, dice.t) * 1.5));
+          if (dice.burstDone) dice.label.scale.setScalar(1.1 + Math.max(0, 0.5 - (dice.t - 0.2)) * 1.6);
+          if (dice.t > 0.7) { dice.state = 'show'; dice.t = 0.5; }
+        } else if (dice.state === 'show') {
+          dice.label.scale.setScalar(1.3 + Math.max(0, 0.3 - dice.t) * 2);
+        } else if (dice.state === 'count') {
+          dice.label.scale.setScalar(0.85);
         }
+        if (dice.state !== 'hit') dice.acorn.scale.setScalar(7);
       }
     }
     // 先生: いまのマスへ飛んでいく。頭の上でメダルが回る

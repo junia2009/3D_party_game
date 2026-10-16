@@ -457,6 +457,8 @@ export function buildBoardScene(scene, st) {
     return badgeMats[key];
   };
   const tops = []; // マスの上面の高さ
+  const faces = []; // マスの札(止まったときに、ぽんと弾ませる)
+  const pulses = new Map(); // id → 経過時間
   for (const q of st.squares) {
     const leaf = new THREE.Mesh(leafGeos[q.area], leafMats[q.area]);
     leaf.position.set(q.x, 0.06, q.z);
@@ -472,6 +474,7 @@ export function buildBoardScene(scene, st) {
     face.position.set(q.x, 0.222, q.z);
     face.userData.noMerge = true;
     g.add(rim, face);
+    faces[q.id] = face;
     tops[q.id] = 0.24;
   }
 
@@ -611,10 +614,13 @@ export function buildBoardScene(scene, st) {
   // エリアの看板: 各季節の入口に、木の看板
   const areaNames = Object.fromEntries((st.areas || []).map((a) => [a.key, a.name]));
   for (const area of Object.keys(SEASON)) {
-    const first = st.squares.find((q) => q.area === area && !q.path);
+    // 季節の2マスめの、道の奥がわ(カメラは手前から見るので、手前に立てるとマスをかくす)
+    const list = st.squares.filter((q) => q.area === area && !q.path);
+    const first = list[2] || list[0];
     if (!first || !areaNames[area]) continue;
     const len = Math.hypot(first.x, first.z) || 1;
-    const x = first.x + (first.x / len) * 2.4, z = first.z + (first.z / len) * 2.4;
+    const out = first.z > 0 ? -1 : 1; // 手前の道なら内がわ(奥)へ、奥の道なら外がわ(奥)へ
+    const x = first.x + (first.x / len) * 2.4 * out, z = first.z + (first.z / len) * 2.4 * out;
     const sign = new THREE.Group();
     for (const ox of [-0.75, 0.75]) {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 1.8, 6), toonMaterial(0x8a5a32));
@@ -646,6 +652,18 @@ export function buildBoardScene(scene, st) {
       return out.set(q.x, tops[id] ?? 0.24, q.z);
     },
     isle,
-    update: drift,
+    // 止まったマスの札を、ぽんと弾ませる
+    pulse(id) { pulses.set(id, 0); },
+    update(dt) {
+      drift(dt);
+      for (const [id, t0] of pulses) {
+        const t = t0 + dt;
+        const f = faces[id];
+        const k = 1 + Math.sin(Math.min(1, t / 0.5) * Math.PI) * 0.5;
+        f.scale.setScalar(k);
+        f.position.y = 0.222 + Math.sin(Math.min(1, t / 0.5) * Math.PI) * 0.25;
+        if (t >= 0.5) { pulses.delete(id); f.scale.setScalar(1); f.position.y = 0.222; } else pulses.set(id, t);
+      }
+    },
   };
 }
