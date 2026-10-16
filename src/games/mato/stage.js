@@ -1,7 +1,7 @@
 // まつぼっくり的あて の会場「森の池のほとり」。
 //
 // 手前の岸に木の桟橋。5人がならんで、池の向こうをねらう。
-// 池にはハスの葉、岸にはガマとアシ。池の上には、両がわの大きな木から木へ、つるの綱が2本(手前と奥)張ってあって、
+// 池にはハスの葉(水面・ガマとアシ・風の見えるもの は pond.js)。池の上には、両がわの大きな木から木へ、つるの綱が2本(手前と奥)張ってあって、
 // つるされた的とハチの巣はそこから下がる。向こう岸は草の土手で、切り株の的が顔を出す。まわりは森。
 //
 // 座標: 桟橋のまん中の、子が立つところが原点。池は -z のほう。水面の高さは 0。
@@ -65,43 +65,6 @@ function buildGround(g) {
   g.add(Object.assign(new THREE.Mesh(geo, m), { name: 'terrain' }));
 }
 
-// 水面: 少しすける水色。さざなみの絵をゆっくり流す
-function waterTexture() {
-  const S = 256;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = S;
-  const x = cv.getContext('2d');
-  x.fillStyle = '#5fb7d8';
-  x.fillRect(0, 0, S, S);
-  const rand = makeRand(41);
-  x.strokeStyle = 'rgba(255,255,255,.35)';
-  x.lineCap = 'round';
-  for (let i = 0; i < 70; i++) {
-    const px = rand() * S, py = rand() * S, w = 8 + rand() * 22;
-    x.lineWidth = 1.5 + rand() * 2;
-    x.beginPath();
-    x.moveTo(px, py);
-    x.quadraticCurveTo(px + w / 2, py - 3, px + w, py);
-    x.stroke();
-  }
-  const t = new THREE.CanvasTexture(cv);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-function buildWater(g) {
-  const map = waterTexture();
-  map.repeat.set(8, 5);
-  const m = new THREE.MeshToonMaterial({ map, color: 0xffffff, transparent: true, opacity: 0.86 });
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(POND.rx * 2.4, POND.rz * 2.4), m);
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(POND.cx, 0, POND.cz);
-  water.name = 'water';
-  water.userData.noMerge = true;
-  g.add(water);
-  return water;
-}
-
 // 桟橋: 板をならべて、杭で立てる
 function buildDock(g) {
   const plank = toonMaterial(0xb07a4a), plank2 = toonMaterial(0x9a6a3e), post = toonMaterial(0x6b4a2e);
@@ -157,32 +120,6 @@ function buildLilies(g) {
       const h = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), heart);
       h.position.set(x, 0.12, z);
       g.add(h);
-    }
-  }
-}
-
-// 岸のガマとアシ
-function buildReeds(g) {
-  const rand = makeRand(77);
-  const stem = toonMaterial(0x6f9a46), head = toonMaterial(0x7a4a28);
-  for (let i = 0; i < 70; i++) {
-    const a = rand() * Math.PI * 2;
-    const q = 0.97 + rand() * 0.08;
-    const x = POND.cx + Math.cos(a) * POND.rx * q, z = POND.cz + Math.sin(a) * POND.rz * q;
-    if (z > -3 && Math.abs(x) < 8) continue; // 桟橋の前はあける
-    const n = 3 + Math.floor(rand() * 4);
-    for (let k = 0; k < n; k++) {
-      const h = 0.9 + rand() * 0.9;
-      const ox = x + (rand() - 0.5) * 0.7, oz = z + (rand() - 0.5) * 0.7;
-      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.03, h, 5), stem);
-      s.position.set(ox, h / 2 - 0.1, oz);
-      s.rotation.set((rand() - 0.5) * 0.25, 0, (rand() - 0.5) * 0.25);
-      g.add(s);
-      if (rand() < 0.45) {
-        const c = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.22, 3, 6), head);
-        c.position.set(ox + s.rotation.z * -h * 0.5, h - 0.05, oz + s.rotation.x * h * 0.5);
-        g.add(c);
-      }
     }
   }
 }
@@ -265,17 +202,12 @@ function buildForest(g) {
 export function buildStage(scene) {
   const g = new THREE.Group();
   buildGround(g);
-  const water = buildWater(g);
   buildDock(g);
   buildLilies(g);
-  buildReeds(g);
   buildVines(g);
   buildFarShore(g);
   buildForest(g);
   mergeStatic(g);
   scene.add(g);
-  return {
-    group: g,
-    update(dt) { water.material.map.offset.x += dt * 0.01; water.material.map.offset.y += dt * 0.004; },
-  };
+  return { group: g };
 }

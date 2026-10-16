@@ -12,6 +12,7 @@ import { nextRandom, seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, launch, fly, ranking, step, timeLeft } from './rules.js';
 import { createTargets } from './targets.js';
 import { makeBasket, makeSling } from './sling.js';
+import { createPond } from './pond.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { buildStage } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -177,6 +178,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
   }
 
   const targets = createTargets(scene, { splashAt });
+  const pond = createPond(scene);
 
   // ── ゲームの進行 ────────────────────────────────────
   let mode = 'idle';
@@ -663,7 +665,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
       updateShots(dt);
       updateFx(dt);
     }
-    if (!paused) stage.update(dt);
+    if (!paused) pond.update(dt, game ? game.state.wind : 0, splashAt);
     atmosphere.update(dt);
     updateCamera(dt);
     if (draw) renderer.render(scene, camera);
