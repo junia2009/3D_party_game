@@ -11,8 +11,7 @@ import * as THREE from 'three';
 import { toonGradient, toonMaterial } from '../../runtime/models.js';
 import { mergeStatic } from '../../runtime/merge.js';
 import { grassTexture } from '../daruma/ground.js';
-import { acornGeometry, buildForestTrees, makeRand } from '../daruma/trees.js';
-import { KINDS } from './rules.js';
+import { buildForestTrees, makeRand } from '../daruma/trees.js';
 
 export const STUMP_H = 1.4;
 export const STUMP_R = 1.6;
@@ -215,107 +214,4 @@ export function buildStage(scene) {
   mergeStatic(g);
   scene.add(g);
   return { group: g, lanterns };
-}
-
-// ── 積むものの形(ルールのはば w・高さ h に合わせる。下の面が y = 0) ──────────
-export function pieceMeshes() {
-  const toon = (c) => toonMaterial(c);
-  const make = {
-    acorn: () => {
-      const m = new THREE.Mesh(acornGeometry(), new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient }));
-      // acornGeometry は高さ 0.3 ほど。はば 0.5・高さ 0.55 に
-      m.scale.setScalar(KINDS.acorn.h / 0.3);
-      m.position.y = 0.11 * (KINDS.acorn.h / 0.3);
-      const g = new THREE.Group();
-      g.add(m);
-      return g;
-    },
-    walnut: () => {
-      const geo = new THREE.IcosahedronGeometry(0.5, 2);
-      const p = geo.attributes.position;
-      for (let i = 0; i < p.count; i++) {
-        const v = new THREE.Vector3().fromBufferAttribute(p, i);
-        const k = 1 + Math.sin(v.y * 22) * 0.04 + Math.sin(v.x * 18 + v.z * 9) * 0.03;
-        v.multiplyScalar(k);
-        p.setXYZ(i, v.x, v.y, v.z);
-      }
-      geo.computeVertexNormals();
-      geo.scale(KINDS.walnut.w, KINDS.walnut.h, KINDS.walnut.w);
-      geo.translate(0, KINDS.walnut.h / 2, 0);
-      const g = new THREE.Group();
-      g.add(new THREE.Mesh(geo, toon(0xb98a52)));
-      return g;
-    },
-    pinecone: () => {
-      const pts = [];
-      for (let i = 0; i <= 12; i++) {
-        const t = i / 12;
-        pts.push(new THREE.Vector2(Math.sin(t * Math.PI) ** 0.8 * (0.5 - t * 0.18) + 0.01, t));
-      }
-      const geo = new THREE.LatheGeometry(pts, 10);
-      const p = geo.attributes.position;
-      const cols = [];
-      const a = new THREE.Color(0x8a5a2e), b = new THREE.Color(0x5e3a1c);
-      for (let i = 0; i < p.count; i++) { const c = Math.floor(p.getY(i) / 0.12) % 2 ? a : b; cols.push(c.r, c.g, c.b); }
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-      geo.scale(KINDS.pinecone.w, KINDS.pinecone.h, KINDS.pinecone.w);
-      geo.computeVertexNormals();
-      const g = new THREE.Group();
-      g.add(new THREE.Mesh(geo, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient })));
-      return g;
-    },
-    mushroom: () => {
-      const g = new THREE.Group();
-      const k = KINDS.mushroom;
-      const stem = new THREE.Mesh(new THREE.CylinderGeometry(k.w * 0.18, k.w * 0.22, k.h * 0.6, 10), toon(0xfff1d6));
-      stem.position.y = k.h * 0.3;
-      const cap = new THREE.Mesh(new THREE.SphereGeometry(k.w / 2, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), toon(0xe8402f));
-      cap.scale.y = (k.h * 0.55) / (k.w / 2);
-      cap.position.y = k.h * 0.45;
-      // 上を平らに(乗せやすい)
-      const flat = new THREE.Mesh(new THREE.CylinderGeometry(k.w * 0.32, k.w * 0.32, 0.02, 16), toon(0xd8382a));
-      flat.position.y = k.h - 0.01;
-      g.add(stem, cap, flat);
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        const d = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), toon(0xffffff));
-        d.position.set(Math.cos(a) * k.w * 0.32, k.h * 0.78, Math.sin(a) * k.w * 0.32);
-        g.add(d);
-      }
-      return g;
-    },
-    leaf: () => {
-      const k = KINDS.leaf;
-      const sh = new THREE.Shape();
-      sh.moveTo(-k.w / 2, 0);
-      sh.bezierCurveTo(-k.w / 4, 0.32, k.w / 4, 0.32, k.w / 2, 0);
-      sh.bezierCurveTo(k.w / 4, -0.32, -k.w / 4, -0.32, -k.w / 2, 0);
-      const geo = new THREE.ExtrudeGeometry(sh, { depth: k.h * 0.6, bevelEnabled: true, bevelSize: 0.02, bevelThickness: k.h * 0.2, bevelSegments: 1 });
-      geo.rotateX(-Math.PI / 2);
-      geo.translate(0, k.h * 0.2, 0);
-      const g = new THREE.Group();
-      g.add(new THREE.Mesh(geo, toon(0x5fae4a)));
-      const vein = new THREE.Mesh(new THREE.BoxGeometry(k.w * 0.9, 0.02, 0.025), toon(0x3f8a34));
-      vein.position.y = k.h + 0.005;
-      g.add(vein);
-      return g;
-    },
-    twig: () => {
-      const k = KINDS.twig;
-      const g = new THREE.Group();
-      const geo = new THREE.CylinderGeometry(k.h / 2, k.h / 2 * 1.15, k.w, 8);
-      geo.rotateZ(Math.PI / 2);
-      geo.translate(0, k.h / 2, 0);
-      g.add(new THREE.Mesh(geo, toon(0x8a5a32)));
-      const bud = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), toon(0x6dbb4f));
-      bud.position.set(k.w * 0.3, k.h + 0.03, 0.04);
-      g.add(bud);
-      return g;
-    },
-  };
-  return (kind) => {
-    const g = make[kind]();
-    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    return g;
-  };
 }

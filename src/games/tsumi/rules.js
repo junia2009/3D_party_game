@@ -87,32 +87,36 @@ export function swingX(s, t = s.stageT) {
   return s.swing.A * Math.sin(s.swing.phase + s.swing.w * t);
 }
 
+// 山のどの段が いちばんきわどいか。{ margin, level, side, fallFrom }
+//   level: いちばんよゆうのない段(0 = 切り株の上)/ side: 重心がどっちへずれているか(-1 | 1)
+//   fallFrom: くずれるなら、何段めから上が落ちるか(立っていれば null)
+// どの段でも「その上にあるもの全部の重心」が、その段の上の面からはみ出したら、くずれる。
+// (重さは、はば × 高さ に比例とする)
+export function stability(stack) {
+  const base = { x: 0, w: RULES.base.w, grip: RULES.base.grip };
+  const mass = stack.map((p) => KINDS[p.kind].w * KINDS[p.kind].h);
+  let margin = Infinity, level = 0, side = 1, fallFrom = null;
+  for (let i = 0; i < stack.length; i++) {
+    // 段 i(0 は切り株)の上に乗っているのは stack[i..]
+    const sup = i === 0 ? base : stack[i - 1];
+    let m = 0, mx = 0;
+    for (let j = i; j < stack.length; j++) { m += mass[j]; mx += mass[j] * stack[j].x; }
+    const com = mx / m;
+    const room = (sup.w / 2) * sup.grip + RULES.forgive - Math.abs(com - sup.x);
+    if (room < margin) { margin = room; level = i; side = Math.sign(com - sup.x) || 1; }
+    if (room < 0 && fallFrom === null) fallFrom = i;
+  }
+  return { margin, level, side, fallFrom };
+}
+
 // x に置いたら、山はどうなるか。{ ok, miss, fallFrom, margin }
 //   miss: 山(てっぺん)にかすりもしない / fallFrom: くずれるとき、何段めから上が落ちるか / margin: いちばんきわどい段のよゆう
 export function tryPlace(stack, kind, x) {
   const k = KINDS[kind];
   const top = stack[stack.length - 1] || { x: 0, w: RULES.base.w, grip: RULES.base.grip };
   if (Math.abs(x - top.x) > top.w / 2 + k.w / 2 - 0.05) return { ok: false, miss: true, fallFrom: null, margin: -1 };
-  const all = [...stack, { x, w: k.w, grip: k.grip }];
-  // 下の段から順に: その上にあるもの全部の重心が、その段の上の面からはみ出していないか
-  // (重さは、はば × 高さ に比例とする)
-  let margin = Infinity, fallFrom = null;
-  const base = { x: 0, w: RULES.base.w, grip: RULES.base.grip };
-  const mass = all.map((p, i) => {
-    const kk = i < stack.length ? KINDS[stack[i].kind] : k;
-    return kk.w * kk.h;
-  });
-  for (let i = 0; i < all.length; i++) {
-    // 段 i(0 は切り株)の上に乗っているのは all[i..]
-    const sup = i === 0 ? base : all[i - 1];
-    let m = 0, mx = 0;
-    for (let j = i; j < all.length; j++) { m += mass[j]; mx += mass[j] * all[j].x; }
-    const com = mx / m;
-    const room = (sup.w / 2) * sup.grip + RULES.forgive - Math.abs(com - sup.x);
-    if (room < margin) margin = room;
-    if (room < 0 && fallFrom === null) fallFrom = i;
-  }
-  return { ok: fallFrom === null, miss: false, fallFrom, margin };
+  const st = stability([...stack, { kind, x, w: k.w, grip: k.grip }]);
+  return { ok: st.fallFrom === null, miss: false, fallFrom: st.fallFrom, margin: st.margin };
 }
 
 function aliveCount(s) {

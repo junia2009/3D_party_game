@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { KINDS, RULES, STEP, createGame, ranking, stackTop, step, swingX, tryPlace } from '../src/games/tsumi/rules.js';
+import { KINDS, RULES, STEP, createGame, ranking, stability, stackTop, step, swingX, tryPlace } from '../src/games/tsumi/rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from '../src/games/tsumi/cpu.js';
 
 const PLAYERS = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}` }));
@@ -87,6 +87,21 @@ test('重心で見る: 下の段がずれていても、上で反対へもどせ
   assert.ok(!worse.ok, 'さらに右へのせると、2つの重心が小枝からはみ出して、くずれる');
   assert.equal(worse.fallFrom, 1, '小枝の上から落ちる');
   assert.ok(tryPlace(stack, 'mushroom', 0.25).ok, '左へもどすようにのせれば立つ');
+});
+
+test('いちばんきわどい段と、かたむくがわが分かる(ぐらぐらの演出に使う)', () => {
+  const k = (kind, x, y) => ({ kind, x, y, w: KINDS[kind].w, h: KINDS[kind].h, grip: KINDS[kind].grip });
+  const calm = stability([k('twig', 0, 0), k('mushroom', 0, 0.16)]);
+  assert.equal(calm.fallFrom, null);
+  assert.ok(calm.margin > 0.3);
+  // 小枝の上のキノコが左へ大きくずれている → きわどいのは小枝の上(段 1)、左へかたむく
+  const shaky = stability([k('twig', 0, 0), k('mushroom', -0.68, 0.16)]);
+  assert.equal(shaky.fallFrom, null);
+  assert.ok(shaky.margin < 0.06);
+  assert.equal(shaky.level, 1);
+  assert.equal(shaky.side, -1);
+  // tryPlace と同じ答え
+  assert.equal(tryPlace([k('twig', 0, 0)], 'mushroom', -0.68).margin, shaky.margin);
 });
 
 test('落とすと乗る → 次の子の番。くずすと脱落して、山は切り株から', () => {

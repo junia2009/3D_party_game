@@ -8,9 +8,10 @@ import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
-import { KINDS, RULES, STEP, createGame, ranking, stackTop, step, swingX, tryPlace } from './rules.js';
+import { KINDS, RULES, STEP, createGame, ranking, stability, stackTop, step, swingX, tryPlace } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
-import { BRANCH_Y, SEATS, STUMP_H, buildStage, pieceMeshes, waitSpot } from './stage.js';
+import { BRANCH_Y, SEATS, STUMP_H, STUMP_R, buildStage, waitSpot } from './stage.js';
+import { pieceMeshes } from './pieces.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 
 const $ = (id) => document.getElementById(id);
@@ -174,6 +175,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     for (const p of pieces) scene.remove(p.obj);
     for (const f of flying.splice(0)) scene.remove(f.obj);
     pieces = [];
+    wobble = topple = null;
     if (hanging) { scene.remove(hanging.obj); hanging = null; }
     if (falling) { scene.remove(falling.obj); falling = null; }
   }
@@ -183,28 +185,93 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       const st = s.stack[pieces.length];
       let obj;
       if (falling && falling.kind === st.kind) { obj = falling.obj; falling = null; } else { obj = makePiece(st.kind); scene.add(obj); }
-      obj.position.set(st.x, STUMP_H + st.y, 0);
       obj.rotation.set(0, 0, 0);
-      pieces.push({ obj, kind: st.kind, squash: 0.25 });
+      pieces.push({ obj, kind: st.kind, x: st.x, y: STUMP_H + st.y, bounce: 0 });
+      // ぽよん: 乗ったものと、そのすぐ下のもの(少しだけ)
+      pieces[pieces.length - 1].bounce = 1;
+      if (pieces.length > 1) pieces[pieces.length - 2].bounce = Math.max(pieces[pieces.length - 2].bounce, 0.45);
+      pieces[pieces.length - 1].bounceT = 0;
+      if (pieces.length > 1) pieces[pieces.length - 2].bounceT = 0;
     }
+    updateWobble(s);
+  }
+  // ── ぐらぐら: きわどい段のふち(重心が寄っているがわ)を支点に、上をゆらす ───────
+  // wobble: { level, px, py, side, amp, t } / topple: くずれる前に、上がかたむいていく
+  let wobble = null, topple = null;
+  function pivotOf(stack, level, side) {
+    const sup = level === 0 ? { x: 0, w: RULES.base.w, grip: RULES.base.grip, y: 0, h: 0 } : stack[level - 1];
+    return { px: sup.x + side * (sup.w / 2) * sup.grip, py: STUMP_H + sup.y + sup.h };
+  }
+  function updateWobble(s) {
+    if (!s.stack.length) { wobble = null; return; }
+    const st = stability(s.stack);
+    if (st.fallFrom !== null || st.margin >= 0.14) { wobble = null; return; }
+    // よゆうが少ないほど大きく(0.14 で 0、0 で いちばん)
+    const amp = 0.11 * (1 - st.margin / 0.14) ** 1.2;
+    wobble = { level: st.level, side: st.side, amp, t: 0, ...pivotOf(s.stack, st.level, st.side) };
+  }
+  // くずれる: まず上がかたむいて、それから飛ぶ
+  function startTopple(s, from) {
+    const stack = s.stack;
+    const sup = from === 0 ? { x: 0 } : stack[from - 1];
+    let m = 0, mx = 0;
+    for (let j = from; j < stack.length; j++) { const w = KINDS[stack[j].kind].w * KINDS[stack[j].kind].h; m += w; mx += w * stack[j].x; }
+    const side = Math.sign(mx / m - sup.x) || 1;
+    wobble = null;
+    topple = { from, side, t: 0, ...pivotOf(stack, from, side) };
+  }
+  // 支点のまわりに、角度 a だけまわした位置へ
+  function placeAround(p, px, py, a) {
+    const dx = p.x - px, dy = p.y - py;
+    const c = Math.cos(a), sn = Math.sin(a);
+    p.obj.position.set(px + dx * c - dy * sn, py + dx * sn + dy * c, 0);
+    p.obj.rotation.z = a;
   }
   // くずれる: from 段めから上を、ばらばらに飛ばす
-  function collapseFrom(from) {
+  function collapseFrom(from, side = 0) {
     const fall = pieces.splice(from);
     fall.forEach((p, i) => {
-      const dir = Math.sign(p.obj.position.x || (Math.random() - 0.5)) || 1;
-      flying.push({ obj: p.obj, v: new THREE.Vector3(dir * (1.2 + Math.random() * 2.5), 1 + Math.random() * 2 + i * 0.15, (Math.random() - 0.3) * 2.5), spin: new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, -dir * (3 + Math.random() * 5)), t: -i * 0.05 });
+      const dir = side || Math.sign(p.obj.position.x || (Math.random() - 0.5)) || 1;
+      // 上のものほど遠くへ(かたむいた勢いのまま)
+      flying.push({ obj: p.obj, v: new THREE.Vector3(dir * (1.0 + Math.random() * 1.3 + i * 0.3), 1.2 + Math.random() * 1.6, (Math.random() - 0.3) * 1.6), spin: new THREE.Vector3((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 5, -dir * (3 + Math.random() * 5)), t: -i * 0.03 });
     });
   }
   // 山がやりなおしになったら、残っていたものも転がり落ちる
   function resetStack() {
+    topple = wobble = null;
     collapseFrom(0);
   }
   function updatePieces(dt) {
-    for (const p of pieces) {
-      // 乗った瞬間に、ぽよんとつぶれる
-      if (p.squash > 0) { p.squash = Math.max(0, p.squash - dt); const k = Math.sin((p.squash / 0.25) * Math.PI) * 0.18; p.obj.scale.set(1 + k, 1 - k, 1 + k); }
+    if (wobble) wobble.t += dt;
+    if (topple) {
+      topple.t += dt;
+      if (topple.t >= 0.5) { const { from, side } = topple; topple = null; collapseFrom(from, side); }
     }
+    pieces.forEach((p, i) => {
+      // ぽよん: ばねのように、つぶれて のびて おさまる
+      let sy = 1, sxz = 1;
+      if (p.bounce > 0) {
+        p.bounceT += dt;
+        const k = p.bounce * 0.22 * Math.exp(-p.bounceT * 6) * Math.cos(p.bounceT * 19);
+        sy = 1 - k;
+        sxz = 1 + k * 0.6;
+        if (p.bounceT > 1) p.bounce = 0;
+      }
+      p.obj.scale.set(sxz, sy, sxz);
+      if (topple && i >= topple.from) {
+        // くずれる: 支点のまわりに、だんだん速くかたむく
+        const a = -topple.side * 1.1 * (topple.t / 0.5) ** 2;
+        placeAround(p, topple.px, topple.py, a);
+      } else if (wobble && i >= wobble.level) {
+        // ぐらぐら: 重心のがわへ かたむいて もどる、をくりかえす(はじめは大きく、だんだん小さく。でも止まらない)
+        const amp = wobble.amp * (0.45 + 0.55 * Math.exp(-wobble.t * 1.2));
+        const a = -wobble.side * amp * (0.5 + 0.5 * Math.sin(wobble.t * 9));
+        placeAround(p, wobble.px, wobble.py, a);
+      } else {
+        p.obj.position.set(p.x, p.y, 0);
+        p.obj.rotation.z = 0;
+      }
+    });
     for (let i = flying.length - 1; i >= 0; i--) {
       const f = flying[i];
       f.t += dt;
@@ -214,9 +281,12 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       f.obj.rotation.x += f.spin.x * dt;
       f.obj.rotation.y += f.spin.y * dt;
       f.obj.rotation.z += f.spin.z * dt;
-      // 地面ではねて、止まる
-      if (f.obj.position.y < 0.1 && f.v.y < 0) {
-        f.obj.position.y = 0.1;
+      // 切り株の上・地面ではねて、止まる(切り株の上では、ふちへ転がる)
+      const onStump = Math.hypot(f.obj.position.x, f.obj.position.z) < STUMP_R;
+      const floor = onStump ? STUMP_H + 0.08 : 0.1;
+      if (f.obj.position.y < floor && f.v.y < 0 && (onStump ? f.obj.position.y > STUMP_H - 0.3 : true)) {
+        f.obj.position.y = floor;
+        if (onStump) { const d = Math.hypot(f.obj.position.x, f.obj.position.z) || 1; f.v.x += (f.obj.position.x / d) * 0.8; f.v.z += (f.obj.position.z / d) * 0.8; }
         f.v.y *= -0.35;
         f.v.x *= 0.6;
         f.v.z *= 0.6;
@@ -404,7 +474,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
           break;
         case 'collapse':
           syncStack(s);
-          collapseFrom(e.from);
+          startTopple(s, e.from);
           sfx.collapse();
           sfx.oh();
           splash('ガラガラ…!', 'red');
@@ -666,6 +736,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     freeCamera: (on) => { freeCamera = on; },
     snap: () => { updateCamera(0, true); renderer.render(scene, camera); },
     sync: () => syncStack(game.state),
+    get debugPieces() { return { topple, wobble, pieces: pieces.map((p) => [p.kind, p.obj.position.x.toFixed(2), p.obj.position.y.toFixed(2), p.obj.rotation.z.toFixed(2)]), flying: flying.map((f) => [f.t.toFixed(2), f.obj.position.x.toFixed(2), f.obj.position.y.toFixed(2), f.obj.position.z.toFixed(2)]) }; },
     setTime: (key) => atmosphere.apply(key),
     tick: (sec) => { for (let i = 0; i < sec * 60; i++) frame(1 / 60, false); },
     advance: (sec) => {
