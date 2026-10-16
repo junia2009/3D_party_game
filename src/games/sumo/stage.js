@@ -229,9 +229,9 @@ function buildStump() {
       new THREE.Vector3(Math.cos(a) * 0.96, -0.25, Math.sin(a) * 0.96),
       new THREE.Vector3(Math.cos(a) * 1.12, WATER_Y + 0.25, Math.sin(a) * 1.12),
       new THREE.Vector3(Math.cos(a + 0.05) * 1.3, WATER_Y - 0.15, Math.sin(a + 0.05) * 1.3),
-      new THREE.Vector3(Math.cos(a + 0.1) * 1.45, WATER_Y - 0.7, Math.sin(a + 0.1) * 1.45),
+      new THREE.Vector3(Math.cos(a + 0.1) * 1.38, WATER_Y - 0.3, Math.sin(a + 0.1) * 1.38),
     ];
-    const root = new THREE.Mesh(taperedTube(pts, 0.09 + rand() * 0.04, 0.03, 7), rootMat);
+    const root = new THREE.Mesh(taperedTube(pts, 0.08 + rand() * 0.03, 0.025, 7), rootMat);
     stump.add(root);
   }
   // 水ぎわの あわ(画面側で ゆらす)

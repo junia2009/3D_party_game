@@ -196,6 +196,29 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 0.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.5 + Math.random() * 0.4, (Math.random() - 0.5) * 0.6), kind: 'puff' });
     }
   }
+  const tmpS = new THREE.Vector3();
+  function suck(v, color) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkleTex, color, transparent: true, depthWrite: false }));
+    const a = Math.random() * Math.PI * 2, d = 0.9 + Math.random() * 0.5;
+    const p = v.holder.position;
+    const from = new THREE.Vector3(p.x + Math.cos(a) * d, 0.2 + Math.random() * 1.3, p.z + Math.sin(a) * d);
+    sp.position.copy(from);
+    scene.add(sp);
+    fx.push({ obj: sp, t: 0, life: 0.32, kind: 'suck', from, to: v, size: 0.16 });
+  }
+  const streakGeo = new THREE.PlaneGeometry(0.05, 0.9);
+  streakGeo.rotateX(-Math.PI / 2); // ながい向きが z
+  function streak(x, z, face, sc) {
+    for (let k = 0; k < 2; k++) {
+      const m = new THREE.Mesh(streakGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }));
+      const side = (Math.random() - 0.5) * 0.9 * sc;
+      m.position.set(x + Math.cos(face) * side, 0.3 + Math.random() * 1.0 * sc, z - Math.sin(face) * side);
+      m.rotation.y = face;
+      m.rotation.z = Math.PI / 2; // たてに立てる
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 0.25, kind: 'streak' });
+    }
+  }
   // 「ドン!」の しょうげき(星形が ぱっと広がる)
   function impact(x, y, z, force) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkleTex, color: 0xfff2a0, transparent: true, depthWrite: false }));
@@ -246,6 +269,15 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
         f.obj.position.addScaledVector(f.vel, dt);
         f.obj.scale.setScalar(1 + k * 1.5);
         f.obj.material.opacity = 0.8 * (1 - k);
+      } else if (f.kind === 'suck') {
+        // 体のまんなかへ すいこまれる
+        const tp = f.to.holder.position;
+        f.obj.position.lerpVectors(f.from, tmpS.set(tp.x, 0.7 * f.to.scale, tp.z), k * k);
+        f.obj.material.opacity = Math.min(1, k * 3);
+        f.obj.scale.setScalar(f.size * (1 - k * 0.6));
+      } else if (f.kind === 'streak') {
+        f.obj.material.opacity = 0.7 * (1 - k);
+        f.obj.scale.set(1, 1, 1 + k);
       } else if (f.kind === 'burst') {
         f.obj.scale.setScalar(f.size * (0.5 + k * 1.2));
         f.obj.material.opacity = 1 - k;
@@ -420,7 +452,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       const r = state.runners[slot];
       holder.position.set(r.x, 0, r.z);
       scene.add(holder);
-      return { model, holder, body, shadow: sh, ring, size, scale: 1, fall: null, happyT: 0, lean: 0, dustAcc: 0 };
+      return { model, holder, body, shadow: sh, ring, size, scale: 1, fall: null, happyT: 0, lean: 0, dustAcc: 0, spinV: 0, spinA: 0, suckAcc: 0, full: false };
     }));
     // 自分の頭の上に しるし
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
@@ -428,7 +460,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     runners[0].holder.add(marker);
     runners[0].marker = marker;
 
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastR: RULES.r0, shake: 0 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastR: RULES.r0, shake: 0, hitstop: 0 };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     Object.assign(input, { touch: null, stick: null, target: null, hold: false, holdPointer: null, holdKey: false });
@@ -670,6 +702,14 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
             pop(e.by !== null ? 'ドーン!' : 'ドン!', e.x, 1.8, e.z, e.by !== null ? 'don' : 'bang');
             if (near) game.shake = Math.max(game.shake, Math.min(0.3, e.force / 30));
           }
+          // とっしんで当てられた子は、くるくる回りながら とぶ
+          if (e.by !== null && e.force > 3) {
+            const hit = e.by === e.a ? e.b : e.a;
+            game.runners[hit].spinV = (Math.random() < 0.5 ? -1 : 1) * Math.min(26, e.force * 2.6);
+            game.runners[e.by].happyT = 0.8;
+            // 強く当たったら、ほんの一瞬 止める(ヒットストップ)
+            if (e.force > 5.5) game.hitstop = Math.max(game.hitstop, near ? 0.09 : 0.05);
+          }
           break;
         }
         case 'fall': {
@@ -767,7 +807,10 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
         const ck = r.charge / RULES.chargeMax;
         const leanWant = r.dash > 0 ? 0.45 : r.recover > 0 ? -0.1 : 0;
         v.lean += (leanWant - v.lean) * (1 - Math.exp(-dt * 14));
-        v.body.rotation.set(0, 0, 0);
+        v.spinA += v.spinV * dt;
+        v.spinV *= Math.exp(-dt * 2.5);
+        if (Math.abs(v.spinV) < 0.5) v.spinA = lerpAngle(v.spinA, 0, 1 - Math.exp(-dt * 8));
+        v.body.rotation.set(0, v.spinA, 0);
         const fwdX = Math.sin(r.face), fwdZ = Math.cos(r.face);
         v.body.rotation.x = v.lean * fwdZ;
         v.body.rotation.z = -v.lean * fwdX;
@@ -780,10 +823,24 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
         v.ring.material.color.setHex(ck >= 1 ? 0xffd24a : PLAYER_COLORS[i].hex);
         v.shadow.visible = true;
         v.shadow.scale.setScalar(0.95 * v.size * v.scale);
-        // とっしん中は土ぼこり
+        // ためる: まわりから 光のつぶが すいこまれる(たまるほど たくさん)
+        if (r.holding) {
+          v.suckAcc += dt * (10 + ck * 30);
+          while (v.suckAcc >= 1) { v.suckAcc--; suck(v, ck >= 1 ? 0xffd24a : PLAYER_COLORS[i].hex); }
+          if (ck >= 1 && !v.full) {
+            v.full = true;
+            sparkle(new THREE.Vector3(r.x, 1.2 * v.scale, r.z), 0xffd24a, 8, 0.4);
+            if (i === 0) [1568, 2093].forEach((f, n) => voice({ pts: [[0, f]], len: 0.25, gain: 0.06, at: n * 0.06 }));
+          }
+        } else v.full = false;
+        // とっしん中は土ぼこりと 風のすじ
         if (r.dash > 0) {
           v.dustAcc += dt;
-          if (v.dustAcc > 0.04) { v.dustAcc = 0; puff(r.x - fwdX * 0.3, r.z - fwdZ * 0.3, 1); }
+          if (v.dustAcc > 0.035) {
+            v.dustAcc = 0;
+            puff(r.x - fwdX * 0.3, r.z - fwdZ * 0.3, 1);
+            streak(r.x - fwdX * 0.5, r.z - fwdZ * 0.5, r.face, v.scale);
+          }
         }
         if (r.power > 0 && Math.random() < dt * 8) sparkle(new THREE.Vector3(r.x + (Math.random() - 0.5) * 0.8, 0.3 + Math.random() * 1.4 * v.scale, r.z + (Math.random() - 0.5) * 0.8), 0xffd24a, 1, 0.22);
         if (done) {
@@ -888,6 +945,9 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('はっけよい…');
     }
+    // ヒットストップ: 強く当たった一瞬だけ、なにもかも止める
+    const stopped = game && game.hitstop > 0;
+    if (stopped) { game.hitstop -= rawDt; renderer.render(scene, camera); return; }
     if (game && mode === 'playing' && !paused && intro >= 1) {
       const s = game.state;
       game.acc += dt;
