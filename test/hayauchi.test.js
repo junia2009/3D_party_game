@@ -124,7 +124,7 @@ test('同じ性格どうしなら、どの席も勝てる(かたよりすぎな�
 });
 
 test('人くらいの反応・つられやすさでも、CPU と互角に戦える', () => {
-  PERSONALITIES.human = { label: 'ひと', react: [0.31, 0.06], fooled: { nise: 0.1, jama: 0.03, gyaku: 0.2 }, itchy: 0.01 };
+  PERSONALITIES.human = { label: 'ひと', react: [0.42, 0.08], fooled: { nise: 0.1, jama: 0.03, gyaku: 0.2 }, itchy: 0.01 };
   try {
     let rankSum = 0, wins = 0;
     const NN = 200;

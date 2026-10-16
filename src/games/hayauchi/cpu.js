@@ -10,9 +10,10 @@
 import { nextRandom, seedFrom } from '../../rng.js';
 
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', react: [0.33, 0.05], fooled: { nise: 0.04, jama: 0.01, gyaku: 0.08 }, itchy: 0.0 },
-  normal: { label: 'ふつう', react: [0.3, 0.05], fooled: { nise: 0.08, jama: 0.03, gyaku: 0.15 }, itchy: 0.01 },
-  bold: { label: 'つよき', react: [0.27, 0.05], fooled: { nise: 0.15, jama: 0.05, gyaku: 0.25 }, itchy: 0.025 },
+  // 反応時間は、スマホで人が うったときに計れる時間(見てから指が動くまで + 画面とタッチの おくれ)に合わせる
+  cautious: { label: 'しんちょう', react: [0.47, 0.07], fooled: { nise: 0.05, jama: 0.02, gyaku: 0.1 }, itchy: 0.0 },
+  normal: { label: 'ふつう', react: [0.43, 0.07], fooled: { nise: 0.1, jama: 0.04, gyaku: 0.18 }, itchy: 0.01 },
+  bold: { label: 'つよき', react: [0.39, 0.07], fooled: { nise: 0.18, jama: 0.06, gyaku: 0.28 }, itchy: 0.025 },
 };
 
 export function createCpu(personality, seed, slot) {

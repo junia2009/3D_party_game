@@ -10,7 +10,7 @@
 // 版はファイルの中身から作るので、1つでも変われば sw.js が変わり、ブラウザが入れなおす。
 
 // <precache>
-const VERSION = '6121adab1844';
+const VERSION = 'c8678710e825';
 const PRECACHE = [
   "./",
   "./assets/thumbs/catch.jpg",
