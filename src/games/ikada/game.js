@@ -16,6 +16,7 @@ import { LENGTH, LOGS, LOG_R, TUNNEL, currentAt, logX } from './course.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, buildStage, coursePoint, courseHeading, seatPoint } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
+import { buildScenery } from './scenery.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -27,6 +28,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 900);
   const atmosphere = createAtmosphere(scene, renderer, camera, { course: false });
   const stage = buildStage(scene);
+  const scenery = buildScenery(scene);
 
   // ── 音 ──────────────────────────────────────────
   let audio = null;
@@ -266,8 +268,8 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null };
     atmosphere.apply(params.get('time') || 'morning');
     // 朝もや: ふつうの朝より霧を近く
-    scene.fog.near = 18;
-    scene.fog.far = 140;
+    scene.fog.near = 22;
+    scene.fog.far = 150;
     atmosphere.sun.target.position.copy(coursePoint(LENGTH / 2, 0));
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     taps.length = 0;
@@ -641,6 +643,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       // 水が流れる・うずが回る
       stage.water.map.offset.y -= dt * 0.5;
       for (const w of stage.whirls) w.rotation.z += dt * 1.6;
+      scenery.update(dt, camera);
       for (const a of audience) {
         if (a.until > 0 && (a.until -= dt) <= 0) { a.model.play('idle'); a.model.setFace('normal'); }
         a.model.update(dt);

@@ -102,14 +102,14 @@ function buildWater(g) {
     const hw = halfWidthAt(Math.min(s, POND_END));
     const fast = Math.max(0, (currentAt(s) - 2.2) / 2.6);
     let fall = 0;
-    for (const f of FALLS) fall = Math.max(fall, 1 - Math.min(1, Math.abs(s - f.s - 0.6) / 2.2));
+    for (const f of FALLS) fall = Math.max(fall, s > f.s ? 1 - Math.min(1, (s - f.s - 0.8) ** 2 / 9) : 0);
     for (const u of across) {
       const p = coursePoint(s, u * hw, 0);
       pos.push(p.x, p.y, p.z);
       uv.push(u * hw / 4, s / 4);
       // まん中ほど深い色。ふちは明るく。急流・滝は白く
       c.copy(deep).lerp(mid, Math.min(1, Math.abs(u) * 0.9));
-      c.lerp(foam, Math.min(0.85, fast * 0.45 + fall * 0.85));
+      c.lerp(foam, Math.min(0.8, fast * 0.4 + fall * 0.6 * (0.6 + 0.4 * Math.abs(Math.sin(s * 3.1 + u * 7)))));
       col.push(c.r, c.g, c.b);
     }
   }
@@ -163,7 +163,7 @@ function buildBed(g) {
 
 // 岸と、まわりの森の地面。川のすぐわきは こけの土手、はなれると森の地面
 const groundPts = samples.filter((_, i) => i % 4 === 0);
-function ground(x, z) {
+export function ground(x, z) {
   let wsum = 0, ysum = 0, best = Infinity, near = groundPts[0];
   for (const p of groundPts) {
     const d2 = (p.x - x) ** 2 + (p.z - z) ** 2;
@@ -294,35 +294,94 @@ function buildRocks(g) {
   }
 }
 
-// 木の根のトンネル: 大きな根が川の上に何本もアーチになる。こけと、たれさがるつる
+// 木の根のトンネル: 大きな根が川の上にアーチになる。根はでこぼこで、根もとほど太く、両はしは岸の土へもぐる。
+// 上の面には こけ(頂点の色)、たれさがる つる、根のわきに ほんのり光る小さなキノコ
+function rootGeometry(curve, r0, r1, rand) {
+  const tube = new THREE.TubeGeometry(curve, 40, 1, 8, false);
+  const p = tube.attributes.position, n = tube.attributes.normal;
+  const cols = [];
+  const c = new THREE.Color();
+  const center = new THREE.Vector3(), v = new THREE.Vector3(), nn = new THREE.Vector3();
+  const segs = 40, radial = 8;
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    curve.getPointAt(t, center);
+    // 両はし(根もと)が太く、まん中が細い。こぶも少し
+    const r = r1 + (r0 - r1) * Math.abs(t * 2 - 1) ** 1.5 + Math.max(0, Math.sin(t * 23 + r0 * 9)) * 0.08;
+    for (let k = 0; k <= radial; k++) {
+      const idx = i * (radial + 1) + k;
+      v.fromBufferAttribute(p, idx).sub(center).normalize();
+      nn.fromBufferAttribute(n, idx);
+      p.setXYZ(idx, center.x + v.x * r, center.y + v.y * r, center.z + v.z * r);
+      // 上を向いているところは こけ、ほかは木の皮(すじ)
+      const stripe = Math.sin(t * 90 + k * 1.7) * 0.5 + 0.5;
+      if (nn.y > 0.55) c.setHSL(0.27, 0.45, 0.32 + stripe * 0.06);
+      else c.setHSL(0.07, 0.38, 0.2 + stripe * 0.08 + (rand() - 0.5) * 0.02);
+      cols.push(c.r, c.g, c.b);
+    }
+  }
+  tube.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  tube.computeVertexNormals();
+  return tube;
+}
 function buildTunnel(g) {
-  const rootMat = toonMaterial(0x6b4a30);
+  const mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient });
   const mossMat = toonMaterial(0x5e9a48);
+  const leafMat = toonMaterial(0x6fb04f);
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xbff7e8 });
+  const capMat = new THREE.MeshBasicMaterial({ color: 0x8fe8d0 });
   const rand = makeRand(23);
-  for (let s = TUNNEL.from; s <= TUNNEL.to; s += 2.6 + rand() * 1.2) {
-    const hw = halfWidthAt(s) + 1.2;
+  for (let s = TUNNEL.from; s <= TUNNEL.to; s += 2.2 + rand() * 1.4) {
+    const hw = halfWidthAt(s) + 1.4;
+    const lean = (rand() - 0.5) * 1.6; // 少し前うしろへ ねじれる
+    const top = 3.3 + rand() * 0.8;
     const pts = [];
-    for (let i = 0; i <= 12; i++) {
-      const a = (i / 12) * Math.PI;
-      pts.push(coursePoint(s + Math.sin(a * 2) * 0.6, -Math.cos(a) * hw, Math.sin(a) * (3.4 + rand() * 0.6) - 0.5));
+    for (let i = 0; i <= 14; i++) {
+      const t = i / 14;
+      const a = t * Math.PI;
+      // 両はしは土の下まで(-1.2)。まん中は高く、少しでこぼこ
+      const x = -Math.cos(a) * (hw + (t < 0.15 || t > 0.85 ? 0.6 : 0));
+      const h = Math.sin(a) * top - 1.2 * (1 - Math.sin(a)) + Math.sin(t * 11 + s) * 0.15;
+      pts.push(coursePoint(s + Math.sin(a) * lean + Math.sin(t * 7 + s) * 0.25, x, h));
     }
     const curve = new THREE.CatmullRomCurve3(pts);
-    const r0 = 0.32 + rand() * 0.2;
-    const tube = new THREE.TubeGeometry(curve, 24, r0, 7, false);
-    g.add(new THREE.Mesh(tube, rootMat));
-    // こけ(上に少し)
-    const moss = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, r0 * 0.75, 6, false), mossMat);
-    moss.position.y = r0 * 0.45;
-    moss.scale.set(1, 1, 1);
-    g.add(moss);
-    // たれさがる つる
-    for (let k = 0; k < 3; k++) {
-      const t = 0.25 + rand() * 0.5;
-      const top = curve.getPoint(t);
-      const len = 0.8 + rand() * 1.2;
-      const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, len, 4), mossMat);
-      vine.position.set(top.x, top.y - len / 2, top.z);
+    g.add(new THREE.Mesh(rootGeometry(curve, 0.62 + rand() * 0.2, 0.26 + rand() * 0.1, rand), mat));
+    // 細い わき根(となりへ からまる)
+    if (rand() < 0.7) {
+      const side = rand() < 0.5 ? -1 : 1;
+      const sub = [];
+      for (let i = 0; i <= 8; i++) {
+        const t = i / 8;
+        sub.push(coursePoint(s + t * 1.6, side * (hw - t * 1.5), Math.sin(t * Math.PI) * 1.4 - 1 + t * 1.6));
+      }
+      g.add(new THREE.Mesh(rootGeometry(new THREE.CatmullRomCurve3(sub), 0.26, 0.1, rand), mat));
+    }
+    // たれさがる つる(先に葉っぱ)
+    for (let k = 0; k < 4; k++) {
+      const t = 0.28 + rand() * 0.44;
+      const p = curve.getPointAt(t);
+      const len = 0.6 + rand() * 1.3;
+      const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, len, 4), mossMat);
+      vine.position.set(p.x, p.y - 0.25 - len / 2, p.z);
       g.add(vine);
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), leafMat);
+      leaf.scale.set(1.4, 0.4, 0.9);
+      leaf.position.set(p.x, p.y - 0.25 - len, p.z);
+      g.add(leaf);
+    }
+    // 根もとの光るキノコ
+    for (const side of [-1, 1]) {
+      if (rand() < 0.4) continue;
+      const base = coursePoint(s + (rand() - 0.5), side * (hw - 0.9), 0.2);
+      for (let k = 0; k < 3; k++) {
+        const st = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.16, 5), glowMat);
+        const cp = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2), capMat);
+        const off = new THREE.Vector3((rand() - 0.5) * 0.4, 0, (rand() - 0.5) * 0.4);
+        st.position.copy(base).add(off);
+        cp.position.copy(st.position);
+        cp.position.y += 0.08;
+        g.add(st, cp);
+      }
     }
   }
 }
@@ -367,25 +426,33 @@ function buildWhirls(g) {
   });
 }
 
-// 滝: 落ち口の白い水のカーテンと、下のあわ
+// 滝: 落ち口の両わきに、こけの岩を積む(水のカーテン・あわ・しぶきは scenery.js)
 function buildFalls(g) {
-  const foamMat = new THREE.MeshToonMaterial({ color: 0xf2fbf8, gradientMap: toonGradient, transparent: true, opacity: 0.85 });
+  const rand = makeRand(61);
   for (const f of FALLS) {
     const hw = halfWidthAt(f.s);
-    // 落ち口に、ならんだ岩のふち
-    for (let x = -hw - 0.6; x <= hw + 0.6; x += 0.9) {
-      const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35, 0), toonMaterial(0x7e8278));
-      r.position.copy(coursePoint(f.s - 0.2, x, -0.15));
-      r.scale.y = 0.6;
-      g.add(r);
-    }
-    // 下のあわ
-    for (let i = 0; i < 9; i++) {
-      const b = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), foamMat);
-      b.position.copy(coursePoint(f.s + 1.2 + (i % 3) * 0.6, (i / 8 - 0.5) * hw * 1.8, -0.05));
-      b.scale.set(1.2, 0.25, 0.8);
-      b.userData.noMerge = true;
-      g.add(b);
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < 4; k++) {
+        const geo = new THREE.DodecahedronGeometry(1, 1);
+        const p = geo.attributes.position;
+        const cols = [];
+        const c = new THREE.Color();
+        for (let i = 0; i < p.count; i++) {
+          const v = new THREE.Vector3().fromBufferAttribute(p, i).multiplyScalar(1 + (rand() - 0.5) * 0.25);
+          p.setXYZ(i, v.x, v.y, v.z);
+          if (v.y > 0.4) c.setHSL(0.27, 0.42, 0.38); else c.setHSL(0.1, 0.05, 0.45 + v.y * 0.06);
+          cols.push(c.r, c.g, c.b);
+        }
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+        geo.computeVertexNormals();
+        const r = 0.5 + rand() * 0.45;
+        const m = new THREE.Mesh(geo, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient }));
+        m.position.copy(coursePoint(f.s + (k - 1.5) * 0.7, side * (hw + 0.2 + rand() * 0.6), -f.drop * (k / 3) * 0.8 + 0.1));
+        m.scale.set(r * 1.1, r * 0.8, r);
+        m.rotation.y = rand() * 6;
+        m.castShadow = true;
+        g.add(m);
+      }
     }
   }
 }
