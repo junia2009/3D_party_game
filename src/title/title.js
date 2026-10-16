@@ -365,6 +365,16 @@ const GAMES = {
     ],
     load: () => import('../games/sled/game.js').then((m) => m.createSled),
   },
+  mato: {
+    name: 'まつぼっくり的あて',
+    rules: [
+      'ゆびを<b>下へひっぱって、はなす</b>と投げる。左へひっぱると右へ飛ぶ。',
+      '<b>自分の色の的</b>に当てる。遠い的・つるされた的は 2 点、<b>金の的</b>は 5 点。',
+      '<b>ハチの巣</b>に当てると 3 点へって、少し投げられない。',
+      '<b>風</b>で横へ流される。<b>つづけて当てる</b>とボーナス!',
+    ],
+    load: () => import('../games/mato/game.js').then((m) => m.createMato),
+  },
 };
 let current = 'daruma'; // 入口に出している競技
 function openGame(key) {

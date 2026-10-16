@@ -54,3 +54,4 @@
 | だるまさんがころんだ | 作成中 | [minigames/daruma.md](minigames/daruma.md) |
 | どんぐりキャッチ | 作成中 | [minigames/catch.md](minigames/catch.md) |
 | 落ち葉そりレース | 作成中 | [minigames/sled.md](minigames/sled.md) |
+| まつぼっくり的あて | 作成中 | [minigames/mato.md](minigames/mato.md) |

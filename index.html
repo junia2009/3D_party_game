@@ -387,6 +387,26 @@
   .speed.on { opacity: 1; animation: speedspin .3s linear infinite; }
   @keyframes speedspin { to { transform: rotate(2deg); } }
 
+  /* まつぼっくり的あて: 風の札、れんぞくの数、ぱちんこのゴム */
+  #hudM .timer { width: 2.7em; font-size: 18px; padding: 6px 0; }
+  .wind {
+    position: absolute; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 64px);
+    display: flex; align-items: baseline; gap: 6px; padding: 4px 12px; border-radius: 999px; background: var(--hud-paper);
+    box-shadow: 0 3px 0 rgba(31,42,51,.18); font: 800 15px var(--font-body); color: var(--hud-ink);
+  }
+  .wind small { font-size: 11px; opacity: .7; }
+  .wind b { color: #2f8fd8; letter-spacing: -2px; min-width: 2.2em; text-align: center; }
+  .wind.calm b { color: #7a8a92; letter-spacing: 0; }
+  .combo {
+    position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); text-align: center;
+    font: 400 20px var(--font-display); color: #fff; -webkit-text-stroke: 5px #7a4a1c; paint-order: stroke fill; transition: transform .15s;
+  }
+  .combo.hot { color: #ffd24a; transform: scale(1.12); }
+  .band { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: 0; transition: opacity .1s; }
+  .band.on { opacity: 1; }
+  .band line { stroke: #7a4a1c; stroke-width: 6; stroke-linecap: round; stroke-dasharray: 2 10; }
+  .band circle { fill: rgba(255,246,224,.85); stroke: #7a4a1c; stroke-width: 4; }
+
   /* いちじていし・結果: 島の画面と同じ、木わくの紙に木の板のボタン */
   .modal {
     position: fixed; inset: 0; z-index: 12; display: grid; place-items: center;
@@ -666,7 +686,11 @@
       <span class="name">落ち葉そりレース</span>
       <span class="meta"><span>30〜45びょう</span></span>
     </button>
-    <div class="card locked" aria-label="第4競技 じゅんびちゅう"><span class="thumb"><b>?</b><span class="ribbon">第4競技</span></span><span class="name">じゅんびちゅう</span><span class="meta"><span>もうすこし まってね</span></span></div>
+    <button class="card" type="button" data-open="mato">
+      <span class="thumb"><img src="./assets/thumbs/mato.jpg" alt="" width="640" height="360"><span class="ribbon">第4競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">まつぼっくり的あて</span>
+      <span class="meta"><span>45びょう</span></span>
+    </button>
   </div>
 </section>
 
@@ -734,6 +758,20 @@
   <p class="howto" id="howtoS">左右で まがる・りょうほうで ふせる</p>
   <div class="pad left" id="padL" aria-hidden="true">◀</div>
   <div class="pad right" id="padR" aria-hidden="true">▶</div>
+</div>
+
+<div class="hud" id="hudM" hidden>
+  <svg class="band" id="bandM" aria-hidden="true"><line id="bandLine" x1="0" y1="0" x2="0" y2="0"/><circle id="bandKnob" r="16" cx="0" cy="0"/></svg>
+  <div class="top">
+    <div class="scores" id="scoresM" aria-label="点数"></div>
+    <div class="side"><div class="timer" id="timerM">45<small>びょう</small></div></div>
+    <button class="pausebtn" id="pauseBtnM" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="wind calm" id="windM"><small>かぜ</small><b>なぎ</b></div>
+  <div class="combo" id="comboM"></div>
+  <div class="pops" id="popsM"></div>
+  <div class="splash" id="splashM"></div>
+  <p class="howto" id="howtoM">ゆびで したへ ひっぱって はなす</p>
 </div>
 
 <section class="modal" id="pause" hidden aria-label="いちじていし">
