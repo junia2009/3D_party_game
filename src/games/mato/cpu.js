@@ -15,9 +15,11 @@ import { KINDS, aimFor, pass, targetPos } from './rules.js';
 export const PERSONALITIES = {
   // react: 気づいてから投げるまで(秒)/ aimErr: ねらいのぶれ / windSense: 風を計算に入れる割合
   // lead: 動く的の先読み / greed: 金の的・遠い的への食いつき / think: 投げたあと、次をねらうまで
-  cautious: { label: 'しんちょう', react: [0.95, 1.3], aimErr: 1.2, windSense: 0.6, lead: 0.55, greed: 0.8, think: [0.6, 0.9] },
-  normal: { label: 'ふつう', react: [0.85, 1.2], aimErr: 1.2, windSense: 0.5, lead: 0.5, greed: 1.0, think: [0.55, 0.85] },
-  bold: { label: 'つよき', react: [0.75, 1.1], aimErr: 1.3, windSense: 0.4, lead: 0.45, greed: 1.6, think: [0.45, 0.7] },
+  // think は「投げてから、次を投げるまで」。人は指をおいて・引いて・ねらって・はなすのに 2 秒くらいかかるので、
+  // CPU もそれに合わせる(1試合で 20〜25 回)。速く投げすぎると、ねらいが同じでも数で勝ってしまう
+  cautious: { label: 'しんちょう', react: [0.95, 1.3], aimErr: 0.9, windSense: 0.6, lead: 0.55, greed: 0.8, think: [1.35, 1.85] },
+  normal: { label: 'ふつう', react: [0.85, 1.2], aimErr: 0.85, windSense: 0.5, lead: 0.5, greed: 1.0, think: [1.25, 1.7] },
+  bold: { label: 'つよき', react: [0.75, 1.1], aimErr: 1.05, windSense: 0.4, lead: 0.45, greed: 1.6, think: [1.05, 1.5] },
 };
 
 export function createCpu(personality, seed, slot) {

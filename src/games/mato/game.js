@@ -652,7 +652,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
       const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
-        `<span>${def.name}<small>${who}</small></span><span class="dist">${r.score}てん<small>あてた ${r.hits}/${r.throws}・れんぞく ${r.best}</small></span>`;
+        `<span>${def.name}<small>${who}</small></span><span class="dist">${r.score}てん<small>あてた ${r.hits}/${r.throws}<br>れんぞく ${r.best}</small></span>`;
       return li;
     }));
     setMode('result');

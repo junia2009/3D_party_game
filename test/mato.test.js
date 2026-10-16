@@ -231,17 +231,25 @@ test('同じ性格どうしなら、どの席も勝てる(かたよりすぎな�
 });
 
 test('人くらいの反応でも、CPU と互角に戦える', () => {
-  PERSONALITIES.human = { label: 'ひと', react: [0.9, 1.3], aimErr: 1.15, windSense: 0.45, lead: 0.4, greed: 1.0, think: [0.55, 0.85] };
+  // 人: 実際に遊んでみると、指をおいて・引いて・ねらって・はなすまでに 2 秒くらい(1試合で 20 回くらい)。
+  // そのかわり、点線を見てねらうので、よく当たる(15/20 くらい)
+  PERSONALITIES.human = { label: 'ひと', react: [0.9, 1.3], aimErr: 0.8, windSense: 0.5, lead: 0.5, greed: 1.0, think: [1.5, 2.1] };
   try {
-    let rankSum = 0, wins = 0;
+    let rankSum = 0, wins = 0, cpuThrows = 0, humanThrows = 0;
     const N = 150;
     for (let seed = 1; seed <= N; seed++) {
       const order = PLAYERS.map((_, i) => (i === 0 ? 'human' : kinds[(i + seed) % 3]));
-      const r = ranking(run(seed, { personalities: order }).s);
+      const { s } = run(seed, { personalities: order });
+      const r = ranking(s);
+      humanThrows += s.runners[0].throws;
+      cpuThrows += s.runners.slice(1).reduce((a, x) => a + x.throws, 0) / 4;
       rankSum += r.indexOf(0) + 1;
       if (r[0] === 0) wins++;
     }
     assert.ok(rankSum / N <= 3.4, `人の平均順位 ${rankSum / N}`);
+    assert.ok(rankSum / N >= 2.4, `人が勝ちすぎない ${rankSum / N}`);
+    // CPU が人よりずっと多く投げて、数で勝つことがないように
+    assert.ok(cpuThrows / humanThrows < 1.35, `投げた数 CPU ${(cpuThrows / N).toFixed(1)} / 人 ${(humanThrows / N).toFixed(1)}`);
     assert.ok(wins / N >= 0.1, `人の勝ち ${wins}/${N}`);
   } finally {
     delete PERSONALITIES.human;
