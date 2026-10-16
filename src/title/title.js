@@ -378,6 +378,16 @@ const GAMES = {
     ],
     load: () => import('../games/mato/game.js').then((m) => m.createMato),
   },
+  tsumi: {
+    name: 'どんぐりつみ',
+    rules: [
+      '上で<b>左右にゆれている森のもの</b>を、<b>タップ</b>で落として山に積む。',
+      'みんなでひとつの山。順番に1こずつ積んでいく。',
+      '<b>山をくずした子</b>・山に乗せそこねた子は脱落。山は切り株からやりなおし。',
+      '丸いものの上はすべりやすい。<b>最後まで残った子</b>の勝ち!',
+    ],
+    load: () => import('../games/tsumi/game.js').then((m) => m.createTsumi),
+  },
   // 大会(すごろく)。入口はステージ選択から(ターンをえらぶ)
   taikai: {
     name: '大会',

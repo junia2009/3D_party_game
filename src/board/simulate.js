@@ -1,5 +1,5 @@
 // 競技を画面なしで、CPU だけで最後まで回す(大会の CPU どうしの対決・テストに使う)。
-// THREE にも DOM にも触らない。4つの競技のルールと CPU を、同じ形で呼べるようにまとめる。
+// THREE にも DOM にも触らない。競技のルールと CPU を、同じ形で呼べるようにまとめる。
 
 import * as daruma from '../games/daruma/rules.js';
 import * as darumaCpu from '../games/daruma/cpu.js';
@@ -9,12 +9,15 @@ import * as sled from '../games/sled/rules.js';
 import * as sledCpu from '../games/sled/cpu.js';
 import * as mato from '../games/mato/rules.js';
 import * as matoCpu from '../games/mato/cpu.js';
+import * as tsumi from '../games/tsumi/rules.js';
+import * as tsumiCpu from '../games/tsumi/cpu.js';
 
 export const GAMES = {
   daruma: { rules: daruma, createCpu: darumaCpu.createCpu, input: darumaCpu.cpuHold, picked: (s) => s.runners.map((r) => r.acorns) },
   catch: { rules: catchR, createCpu: catchCpu.createCpu, input: catchCpu.cpuInput, picked: () => null },
   sled: { rules: sled, createCpu: sledCpu.createCpu, input: sledCpu.cpuInput, picked: () => null },
   mato: { rules: mato, createCpu: matoCpu.createCpu, input: matoCpu.cpuInput, picked: () => null },
+  tsumi: { rules: tsumi, createCpu: tsumiCpu.createCpu, input: tsumiCpu.cpuInput, picked: () => null },
 };
 
 // lineup: [{ cpu: 性格 }]。返すのは { ranking(席の番号の順), picked }

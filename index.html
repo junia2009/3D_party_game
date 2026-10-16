@@ -672,6 +672,38 @@
     .z-bar { width: min(94vw, 520px); }
   }
 
+  /* どんぐりつみ: 上に番の札(いまの番が浮く・脱落はうすく)、右に山の高さ、下に「つぎ」と のこり時間 */
+  .chip.now { transform: translateY(5px) scale(1.08); box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px var(--c); }
+  .chip.out { opacity: .38; filter: grayscale(1); }
+  .chip.out b { text-decoration: line-through; }
+  #hudT .scores { flex-wrap: wrap; }
+  #hudT .chip { font-size: clamp(11px, 3.1vw, 15px); }
+  .height {
+    flex: none; min-width: 3.4em; text-align: center; background: var(--hud-ink); color: var(--hud-paper);
+    border-radius: 16px; padding: 6px 0; font: 800 22px/1 var(--font-body); font-variant-numeric: tabular-nums;
+  }
+  .height small { display: block; font-size: 10px; font-weight: 700; opacity: .7; margin-top: 2px; }
+  .nextp {
+    position: absolute; right: max(12px, env(safe-area-inset-right, 0px)); top: calc(env(safe-area-inset-top, 0px) + 74px);
+    padding: 4px 10px; border-radius: 999px; background: var(--hud-paper); box-shadow: 0 3px 0 rgba(31,42,51,.18);
+    font: 800 13px var(--font-body);
+  }
+  .nextp small { font-size: 10px; opacity: .65; margin-right: 4px; }
+  .tapcall {
+    position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 58px); margin: 0; text-align: center;
+    font: 400 26px var(--font-display); color: #ffd24a; -webkit-text-stroke: 6px var(--hud-ink); paint-order: stroke fill;
+    opacity: 0; transform: scale(.8); transition: opacity .25s, transform .25s;
+  }
+  .tapcall.show { opacity: 1; transform: none; animation: pulse 1.2s ease-in-out infinite; }
+  .aimbar {
+    position: absolute; left: 50%; width: min(240px, 60vw); margin-left: min(-120px, -30vw); bottom: calc(env(safe-area-inset-bottom, 0px) + 40px);
+    height: 10px; border-radius: 5px; background: rgba(31,42,51,.35); border: 2px solid var(--hud-paper); overflow: hidden;
+    opacity: 0; transition: opacity .2s;
+  }
+  .aimbar.show { opacity: 1; }
+  .aimbar i { display: block; height: 100%; background: #7bd158; transform-origin: left center; }
+  .aimbar.hurry i { background: var(--watch); }
+
   /* 横長: メニューは右側に縦に並べる(左は看板と島) */
   @media (min-aspect-ratio: 1/1) {
     #menu { --plank-h: clamp(44px, 10.5dvh, 64px); left: auto; right: max(32px, env(safe-area-inset-right, 0px)); bottom: 50%; transform: translateY(50%); width: min(400px, 36vw); }
@@ -757,6 +789,11 @@
       <span class="thumb"><img src="./assets/thumbs/mato.jpg" alt="" width="640" height="360"><span class="ribbon">第4競技</span><span class="go-mark" aria-hidden="true"></span></span>
       <span class="name">まつぼっくり的あて</span>
       <span class="meta"><span>45びょう</span></span>
+    </button>
+    <button class="card" type="button" data-open="tsumi">
+      <span class="thumb"><img src="./assets/thumbs/tsumi.jpg" alt="" width="640" height="360"><span class="ribbon">第5競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">どんぐりつみ</span>
+      <span class="meta"><span>1〜2ふん</span></span>
     </button>
   </div>
 </section>
@@ -849,6 +886,19 @@
   <div class="pops" id="popsM"></div>
   <div class="splash" id="splashM"></div>
   <p class="howto" id="howtoM">ゆびで したへ ひっぱって はなす</p>
+</div>
+
+<div class="hud" id="hudT" hidden>
+  <div class="top">
+    <div class="scores" id="chipsT" aria-label="番の順"></div>
+    <div class="side"><div class="height" id="heightT">0<small>だん</small></div></div>
+    <button class="pausebtn" id="pauseBtnT" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="nextp" id="nextT"><small>つぎ</small><b></b></div>
+  <div class="splash" id="splashT"></div>
+  <p class="tapcall" id="tapT">タップで落とす!</p>
+  <div class="aimbar"><i id="barT"></i></div>
+  <p class="howto" id="howtoT">ゆれているものを、タップで落とす</p>
 </div>
 
 <div class="hud" id="hudB" hidden>
