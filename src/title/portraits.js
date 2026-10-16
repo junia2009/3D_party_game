@@ -2,6 +2,7 @@
 // (別の絵を用意すると、モデルを直したときに食いちがう)
 
 import * as THREE from 'three';
+import { CHARACTERS } from '../characters.js';
 import { createModel } from '../runtime/models.js';
 
 const SIZE = 256; // 撮る大きさ。半分に縮めて使う(ふちをなめらかにするため)
@@ -34,6 +35,9 @@ export async function makePortraits(renderer, keys) {
     m.root.updateMatrixWorld(true);
     const head = new THREE.Vector3();
     m.node('head').getWorldPosition(head);
+    // 頭の回る点が 顔のまんなかにない子(ゲスト)は、その ずれ(faceLift)だけ上げる。
+    // 動かない部品は まとめて描くので、頭のノードの下には形が残っていない(箱では測れない)
+    head.y += CHARACTERS.find((c) => c.key === key)?.faceLift ?? 0;
     const box = new THREE.Box3().setFromObject(m.root);
     const h = box.max.y - box.min.y;
     // 顔がまん中に大きく入るように(肩が少し見えるくらい)

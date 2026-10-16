@@ -14,7 +14,8 @@ export function makePlayers({ picked, lineup = null, seed, kinds, slots = 5 }) {
     return lineup.map((l, i) => ({ id: i === 0 ? 'me' : `cpu${i}`, name: i === 0 ? 'あなた' : l.name ?? nameOf(l.character), character: l.character, cpu: i === 0 ? null : l.cpu }));
   }
   const pick = { rng: seedFrom(`${seed}:pick`) };
-  const others = CHARACTERS.filter((c) => c.key !== picked).map((c) => c.key);
+  // ゲスト(ほかのゲームから来た子)は CPU には出てこない
+  const others = CHARACTERS.filter((c) => c.key !== picked && !c.guest).map((c) => c.key);
   const cpuChars = [];
   while (cpuChars.length < slots - 1) cpuChars.push(others.splice(Math.floor(nextRandom(pick) * others.length), 1)[0]);
   return [

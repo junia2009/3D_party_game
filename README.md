@@ -50,6 +50,16 @@ npm install         # three(書き出しに使うだけ)
 npm run export:glb  # models/*.glb を上書き
 ```
 
+## ゲスト(ほかのゲームから来た子)
+
+`CHARACTERS` の中で `guest: true` の子。形は もらった glb(`tools/source/`)をそのまま使い、
+`src/guests/<key>.js` が この大会の約束ごと(下)に合わせて組みなおす(骨・表情・スカーフ・輪郭線・動き)。
+`npm run export:glb` で ほかの子といっしょに `models/<key>.glb` へ書き出す(1体だけなら `npm run export:glb -- ray`)。
+
+- CPU には出てこない。キャラえらびでは「ゲスト」の札、図鑑では「とくべつ出演」。
+- 頭の回る点が顔のまんなかにないときは、`faceLift`(顔のまんなかまでの高さ)で顔の絵の位置を合わせる。
+- 脚がない子もいる(`leg_L` / `leg_R` はない)。走るときは ぴょんぴょん はねる。
+
 ## glb の約束ごと
 
 ゲーム側は次の名前でモデルに触る。

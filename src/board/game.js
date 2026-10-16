@@ -343,7 +343,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   async function startTournament({ fromSky = false } = {}) {
     const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
     const pick = { rng: seedFrom(`${seed}:pick`) };
-    const others = CHARACTERS.filter((c) => c.key !== picked).map((c) => c.key);
+    const others = CHARACTERS.filter((c) => c.key !== picked && !c.guest).map((c) => c.key); // ゲストは CPU に出てこない
     const kinds = Object.keys(PERSONALITIES);
     const players = [{ character: picked, cpu: null, name: 'あなた' }];
     while (players.length < 5) {

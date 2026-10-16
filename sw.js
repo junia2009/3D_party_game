@@ -10,7 +10,7 @@
 // 版はファイルの中身から作るので、1つでも変われば sw.js が変わり、ブラウザが入れなおす。
 
 // <precache>
-const VERSION = 'd7c0679b9f8f';
+const VERSION = 'b226aeeff014';
 const PRECACHE = [
   "./",
   "./assets/thumbs/catch.jpg",
@@ -37,6 +37,7 @@ const PRECACHE = [
   "./models/mogura.glb",
   "./models/penne.glb",
   "./models/ponta.glb",
+  "./models/ray.glb",
   "./models/risu.glb",
   "./src/board/cpu.js",
   "./src/board/effects.js",
@@ -85,6 +86,7 @@ const PRECACHE = [
   "./src/games/tsumi/pieces.js",
   "./src/games/tsumi/rules.js",
   "./src/games/tsumi/stage.js",
+  "./src/guests/ray.js",
   "./src/model-kit.js",
   "./src/npcs.js",
   "./src/rng.js",

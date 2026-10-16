@@ -9,7 +9,7 @@
 // 描画の器(renderer)と毎フレームの輪はここが持ち、競技の画面には frame() を呼んで描いてもらう。
 
 import * as THREE from 'three';
-import { CHARACTERS, PLAYER_COLORS } from '../characters.js';
+import { CHARACTERS, PLAYER_COLORS, shownCharacters } from '../characters.js';
 import { createModel, preload } from '../runtime/models.js';
 import { createAtmosphere } from '../games/daruma/atmosphere.js';
 import { loadSettings, saveSettings } from '../settings.js';
@@ -281,7 +281,7 @@ for (const b of document.querySelectorAll('[data-back]')) {
 }
 
 // ── 競技の入口(ルールとキャラえらび) ───────────────────────
-let picked = CHARACTERS.some((c) => c.key === settings.character) ? settings.character : CHARACTERS[0].key;
+let picked = shownCharacters().some((c) => c.key === settings.character) ? settings.character : CHARACTERS[0].key;
 let faces = null; // キャラの顔の絵(はじめて入口・図鑑をひらいたときに撮る)
 function ensureFaces() {
   if (faces) return;
@@ -293,13 +293,14 @@ function ensureFaces() {
   });
 }
 function renderChars() {
-  $('chars').replaceChildren(...CHARACTERS.map((c) => {
+  $('chars').replaceChildren(...shownCharacters().map((c) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('aria-pressed', String(c.key === picked));
     const color = '#' + c.main.toString(16).padStart(6, '0');
     const face = faces ? `<img class="face" src="${faces[c.key]}" alt="">` : `<i class="face" style="background:${color}"></i>`;
-    b.innerHTML = `${face}<span>${c.name}</span>`;
+    b.innerHTML = `${face}<span>${c.name}</span>${c.guest ? '<em class="guest">ゲスト</em>' : ''}`;
+    if (c.guest) b.classList.add('guest');
     b.title = `${c.name}(${c.species})`;
     b.addEventListener('click', () => {
       unlockAudio();

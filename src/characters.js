@@ -124,6 +124,9 @@ export function mouthParts(expr, mw) {
 
 const R = 0.48; // 頭の半径(全員共通)
 
+// キャラえらびと図鑑に出す子(hidden の子は、まだ出さない)
+export const shownCharacters = () => CHARACTERS.filter((c) => !c.hidden);
+
 export const CHARACTERS = [
   {
     key: 'ponta',
@@ -395,6 +398,24 @@ export const CHARACTERS = [
       crown.add(gem);
       head.add(crown);
     },
+  },
+  // ── ゲスト ──────────────────────────────────────
+  // ほかのゲームから来た子。形は もらった glb のまま(src/guests/)。CPU には出てこない
+  {
+    key: 'ray',
+    guest: true,
+    hidden: true, // プロフィール(もとのゲームの設定)がそろうまで、キャラえらびと図鑑には出さない
+    faceLift: 0.25, // 頭の回る点(首)から、顔のまんなかまで
+    name: 'レイ',
+    species: 'あおいとり',
+    main: 0x4f8cff,
+    sub: 0x253561,
+    accent: 0xff9a1a,
+    line: '(じゅんびちゅう)',
+    role: 'ゲスト',
+    personality: '(じゅんびちゅう)',
+    stats: [3, 3, 3, 3],
+    marks: ['紺と青の まっ二つの体', '大きな青い目', 'まるいオレンジのくちばし', '頭の葉っぱ'],
   },
 ];
 

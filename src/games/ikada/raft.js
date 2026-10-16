@@ -126,10 +126,10 @@ export function makeRaft(colorHex, seed = 1) {
   body.add(nut);
   // 旗の柱
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 1.35, 6), toonMaterial(0x6b4a30));
-  pole.position.set(0.55, 0.78, -0.62);
+  pole.position.set(0.62, 0.78, -0.74); // うしろの すみ(体の大きな子にも ささらないように)
   body.add(pole);
   const tip = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), toonMaterial(0xffd24a));
-  tip.position.set(0.55, 1.47, -0.62);
+  tip.position.set(0.62, 1.47, -0.74);
   body.add(tip);
   body.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   mergeStatic(body);
@@ -139,7 +139,7 @@ export function makeRaft(colorHex, seed = 1) {
   shape.lineTo(0.48, -0.13);
   shape.lineTo(0, -0.28);
   const flag = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshToonMaterial({ color: colorHex, gradientMap: toonGradient, side: THREE.DoubleSide }));
-  flag.position.set(0.55, 1.42, -0.62);
+  flag.position.set(0.62, 1.42, -0.74);
   flag.castShadow = true;
   g.add(flag);
   return { g, flag };

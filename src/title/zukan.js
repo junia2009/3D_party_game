@@ -6,7 +6,9 @@
 // めくるときは、いまのページの写しを1枚の紙にのせて、背表紙を軸に回す。
 
 import * as THREE from 'three';
-import { CHARACTERS } from '../characters.js';
+import { shownCharacters } from '../characters.js';
+
+const CHARACTERS = shownCharacters(); // 図鑑にのせる子(まだ出さない子は のせない)
 import { createModel } from '../runtime/models.js';
 import { lineColor } from '../model-kit.js';
 import { paintElement } from './paint.js';
@@ -21,11 +23,14 @@ const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 const accent = (c) => hex(c.dark ?? lineColor(c.main).getHex());
 const ACORN = '<svg viewBox="0 0 20 22" aria-hidden="true"><ellipse cx="10" cy="13" rx="6.5" ry="7.5" fill="currentColor"/><path d="M2.5 9.5a7.5 5 0 0 1 15 0z" fill="#6e4a2a"/><rect x="9" y="2" width="2" height="4" rx="1" fill="#5a3c22"/></svg>';
 
+// 図鑑の番号。ゲストは番号のかわりに「ゲスト」
+const noLabel = (i) => (CHARACTERS[i].guest ? 'ゲスト' : `No.${i + 1}`);
+
 function infoHtml(c, i) {
   const stats = c.stats.map((v, k) => `<div class="stat"><span>${STAT_LABELS[k]}</span><i>${
     Array.from({ length: 5 }, (_, n) => `<b class="${n < v ? 'on' : ''}">${ACORN}</b>`).join('')}</i></div>`).join('');
   return `<div class="z-in">
-    <div class="z-name"><h3>${c.name}</h3><span class="z-species">${c.species}</span></div>
+    <div class="z-name"><h3>${c.name}</h3><span class="z-species">${c.species}</span>${c.guest ? '<span class="z-guest">とくべつ出演</span>' : ''}</div>
     <p class="z-line">「${c.line}」</p>
     <dl class="z-facts">
       <div><dt>とくい</dt><dd>${c.role}</dd></div>
@@ -33,7 +38,7 @@ function infoHtml(c, i) {
       <div><dt>見分け方</dt><dd>${c.marks.join('・')}</dd></div>
     </dl>
     <div class="z-stats">${stats}</div>
-    </div><span class="z-folio">- ${i + 1} -</span>`;
+    </div><span class="z-folio">- ${c.guest ? 'ゲスト' : i + 1} -</span>`;
 }
 
 export function createZukan({ sfx, onClose, faces }) {
@@ -142,7 +147,7 @@ export function createZukan({ sfx, onClose, faces }) {
     const c = CHARACTERS[i];
     info.innerHTML = infoHtml(c, i);
     info.style.setProperty('--char', accent(c));
-    $('zNo').textContent = `No.${i + 1}`;
+    $('zNo').textContent = noLabel(i);
     for (const [k, b] of [...$('zTabs').children].entries()) b.setAttribute('aria-current', String(k === i));
     $('zPrev').disabled = i === 0;
     $('zNext').disabled = i === CHARACTERS.length - 1;
@@ -213,7 +218,7 @@ export function createZukan({ sfx, onClose, faces }) {
       const was = index;
       index = i;
       fill(i);
-      $('zNo').textContent = `No.${was + 1}`; // 左(上)のページは、めくり終わるまで前のキャラのまま
+      $('zNo').textContent = noLabel(was); // 左(上)のページは、めくり終わるまで前のキャラのまま
     } else {
       // 表: いまのキャラの絵 / 裏: 前のキャラのプロフィール
       const pic = canvas.toDataURL('image/png');
@@ -222,7 +227,7 @@ export function createZukan({ sfx, onClose, faces }) {
       putPicture(back, 'back page info', await infoPicture(prev, i));
       index = i;
       await show(prev.key);
-      $('zNo').textContent = `No.${i + 1}`;
+      $('zNo').textContent = noLabel(i);
     }
     leaf.hidden = false;
     void leaf.offsetWidth;
@@ -234,7 +239,7 @@ export function createZukan({ sfx, onClose, faces }) {
     });
     if (forward) {
       await show(CHARACTERS[i].key);
-      $('zNo').textContent = `No.${i + 1}`;
+      $('zNo').textContent = noLabel(i);
     } else fill(i);
     leaf.hidden = true;
     leaf.classList.remove('go');

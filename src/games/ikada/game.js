@@ -413,10 +413,12 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       wake.position.set(0, 0.0, -2.75);
       holder.add(wake);
       const def = CHARACTERS.find((c) => c.key === p.character);
+      // 体の前のはし(まるくて大きい子は、かいを もっと前で持つ)
+      const front = new THREE.Box3().setFromObject(model.root).max.z;
       scene.add(holder);
       const node = (n) => model.node(n);
       return {
-        model, holder, body, raft, seat, paddle, wake, size: def.size || 1, time: Math.random() * 10, dur: 0.28, lean: 0,
+        model, holder, body, raft, seat, paddle, wake, front, size: def.size || 1, time: Math.random() * 10, dur: 0.28, lean: 0,
         strokeT: 9, strokeSide: 1, spinDir: 1, air: 0, lastSpin: 0, planted: true,
         arms: [node('arm_L'), node('arm_R')], legs: [node('leg_L'), node('leg_R')], head: node('head'),
       };
@@ -783,7 +785,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     v.pt = lerp(v.pt ?? 0, sd * tilt, a);
     v.ps = lerp(v.ps ?? 0, sweep, a);
     v.lean = lerp(v.lean, lean, a);
-    v.paddle.position.set(0, 0.45 * v.size, 0.42 * v.size);
+    v.paddle.position.set(0, 0.45 * v.size, Math.max(0.42 * v.size, v.front + 0.12));
     v.paddle.rotation.set(0, v.ps, v.pt);
     // 体: こぐがわへ ひねる・前へ かがむ
     v.model.root.rotation.set(v.lean, v.ps * 0.45, 0);

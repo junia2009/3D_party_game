@@ -190,14 +190,22 @@
   .rules li { display: flex; gap: 8px; align-items: baseline; font: 700 13px/1.45 var(--font-body); color: #5a3c22; }
   .rules li::before { content: ''; flex: none; width: 10px; height: 12px; border-radius: 50% 50% 45% 45%; background: #c27a35; box-shadow: inset 0 4px 0 #7a4f2c; transform: translateY(1px); }
   .rules b { color: var(--red); }
-  /* 6人を横1列に(縦長でも島が見えるように、低くおさめる) */
-  .chars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; padding-top: 6px; }
+  /* 6人 + ゲストを横1列に(縦長でも島が見えるように、低くおさめる)。ゲストは少しはなす */
+  .chars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding-top: 6px; padding-bottom: 6px; }
+  .chars:has(.guest) { grid-template-columns: repeat(6, 1fr) 1.05fr; }
   .chars button {
     position: relative; display: grid; justify-items: center; gap: 0; padding: 2px 1px 4px; cursor: pointer; min-width: 0;
     border: 3px solid #d8bf93; border-radius: 14px; background: #fff3d9;
     transition: transform .12s cubic-bezier(.3, 1.6, .5, 1), border-color .12s, background .12s;
   }
   .chars button .face { width: 100%; max-width: 72px; aspect-ratio: 1; border-radius: 50%; display: block; }
+  /* ゲスト(ほかのゲームから来た子): 星の飾りと「ゲスト」の札 */
+  .chars button.guest { position: relative; margin-left: 5px; background: linear-gradient(160deg, #fffbe8, #fff3c4); border-color: #e6b93a; }
+  /* 「ゲスト」の札は下に(上は えらんだときの「あなた」の札が出る) */
+  .chars button .guest {
+    position: absolute; bottom: -8px; left: 50%; translate: -50% 0; padding: 0 6px; border-radius: 999px; background: #ffb81f; color: #5a3a00;
+    font: 800 9px/1.5 var(--font-body); font-style: normal; box-shadow: 0 2px 0 rgba(0,0,0,.18); white-space: nowrap;
+  }
   .chars button span { font: 800 clamp(10px, 2.9vw, 14px) var(--font-body); color: var(--ink); white-space: nowrap; }
   .chars button[aria-pressed="true"] { background: #e3f4d2; border-color: var(--leaf); transform: translateY(-3px); box-shadow: 0 4px 0 #2f6b25; }
   .chars button[aria-pressed="true"]::after {
@@ -562,6 +570,7 @@
   .z-in { display: grid; align-content: start; gap: clamp(3px, 2.2cqh, 12px); height: 100%; padding: clamp(8px, 5cqh, 26px) clamp(12px, 6cqw, 30px) clamp(14px, 7cqh, 28px); }
   .z-name { display: flex; align-items: baseline; gap: 10px; border-bottom: 4px solid var(--char, #c27a35); padding-bottom: 3px; }
   .z-name h3 { margin: 0; font: 400 clamp(18px, min(9cqw, 9cqh), 36px) var(--font-display); color: var(--ink); }
+  .z-guest { font: 800 clamp(10px, 3.6cqh, 12px) var(--font-body); color: #5a3a00; background: #ffd24a; border: 2px dashed #c98a00; border-radius: 6px; padding: 1px 8px; transform: rotate(-4deg); }
   .z-species { font: 800 clamp(10px, 3.6cqh, 12px) var(--font-body); color: #fff; background: var(--char, #c27a35); border-radius: 999px; padding: 2px 10px; text-shadow: 0 1px 1px rgba(0,0,0,.35); }
   .z-line {
     position: relative; margin: 0; justify-self: start; padding: 6px 12px; border-radius: 14px; background: #fff;
