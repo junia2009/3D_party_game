@@ -112,6 +112,18 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
       voice({ pts: [[0, 70], [0.1, 50]], len: 0.14, gain: 0.12 });
       voice({ pts: [[0, 64], [0.1, 46]], len: 0.14, gain: 0.09, at: 0.18 });
     },
+    // ヒュルリ〜: いっきうちの口笛(西部劇ふう)
+    duel() {
+      [[0, 880, 0.35], [0.4, 1175, 0.25], [0.7, 1047, 0.2], [0.95, 880, 0.7]].forEach(([at, f, len]) =>
+        voice({ pts: [[0, f * 0.97], [0.06, f]], len, gain: 0.07, at, vib: 10, vibRate: 6 }));
+      noise({ len: 2.0, gain: 0.07, freq: [400, 700], q: 3, attack: 0.6 });
+    },
+    // パッパカパーン: 決着
+    fanfare() {
+      [[0, 523], [0.12, 659], [0.24, 784], [0.36, 1047]].forEach(([at, f]) => voice({ type: 'square', pts: [[0, f]], len: 0.12, gain: 0.05, at }));
+      voice({ type: 'square', pts: [[0, 1047]], len: 0.6, gain: 0.05, at: 0.5, vib: 12, vibRate: 7 });
+      voice({ type: 'triangle', pts: [[0, 523]], len: 0.7, gain: 0.07, at: 0.5 });
+    },
     // ガーン: 脱落
     gaan() { voice({ type: 'triangle', pts: [[0, 330], [0.6, 160]], len: 0.7, gain: 0.08 }); },
   };
@@ -620,7 +632,8 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
     runners[0].holder.add(foot);
 
     for (const f of fx.splice(0)) scene.remove(f.obj);
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, heart: 0 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, heart: 0, duel: false, sideN: null };
+    $('hudW').classList.remove('duel', 'tense');
     flagGo.userData.target = flagNo.userData.target = 0;
     jama.weed = jama.crow = null;
     weed.visible = crow.visible = false;
@@ -748,10 +761,24 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
           for (const v of game.runners) v.gun.userData.acorn.visible = true;
           flagGo.userData.target = flagNo.userData.target = 0;
           owl.setFace('glare');
-          signal(e.round === 1 ? 'かまえて…' : `${aliveSlots(s).length}人 のこり… かまえて`, 'small');
+          if (aliveSlots(s).length === 2 && !game.duel) {
+            // さいごの2人: いっきうち。まん中へ よって、かんも よせる
+            game.duel = true;
+            const [a, b] = aliveSlots(s);
+            game.runners[a].duelX = -0.85;
+            game.runners[b].duelX = 0.85;
+            cans[a].home.x = -0.85;
+            cans[b].home.x = 0.85;
+            resetCans();
+            $('hudW').classList.add('duel');
+            splash('いっきうち!', 'gold');
+            signal(`${game.players[a].name} と ${game.players[b].name}`, 'small');
+            sfx.duel();
+          } else signal(e.round === 1 ? 'かまえて…' : `${aliveSlots(s).length}人 のこり… かまえて`, 'small');
           break;
         case 'wait':
           signal('');
+          $('hudW').classList.add('tense');
           game.heart = 0.6;
           break;
         case 'fake':
@@ -787,6 +814,7 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
           }
           break;
         case 'go':
+          $('hudW').classList.remove('tense');
           raiseFlag(flagGo);
           flagNo.userData.target = 0;
           owl.play('flap', { fade: 0.05 });
@@ -810,6 +838,8 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
           break;
         }
         case 'judge': {
+          $('hudW').classList.remove('tense');
+          game.focus = e.out.length && !e.redo ? game.runners[e.out[0]].home.x : null;
           flagGo.userData.target = 0;
           owl.play('idle');
           if (e.redo) {
@@ -820,11 +850,17 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
           if (e.fastest !== null) {
             const v = game.runners[e.fastest];
             pop('いちばん!', v.holder.position.x, 2.5, 0, 'gold');
+            sparkle(v.holder.position.clone().setY(2.0 * v.size), 0xffd24a, 9, 0.45);
             v.happyT = 1.6;
           }
           for (const slot of e.out) {
             const v = game.runners[slot];
             v.outT = 0;
+            // 脱落した子は、列の よこへ よけて 見物する(いっきうちのカメラを ふさがないように)
+            const side = v.home.x < 0 || (v.home.x === 0 && slot % 2) ? -1 : 1;
+            game.sideN = game.sideN || { '-1': 0, '1': 0 };
+            const k = game.sideN[side]++;
+            v.side = { x: side * (3.6 + k * 0.85), z: -1.2 - k * 0.5 };
             pop('だつらく', v.holder.position.x, 2.5, 0, 'out');
           }
           if (e.out.includes(0)) { splash('だつらく…', 'red'); sfx.gaan(); }
@@ -836,9 +872,10 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
           const w = game.runners[e.winner];
           signal(e.winner === 0 ? 'あなたの勝ち!' : `${game.players[e.winner].name}の勝ち!`, 'win');
           confetti(w.holder.position.x, w.holder.position.z);
-          voice({ type: 'triangle', pts: [[0, 784]], len: 0.15, gain: 0.1 });
-          voice({ type: 'triangle', pts: [[0, 988]], len: 0.15, gain: 0.1, at: 0.15 });
-          voice({ type: 'triangle', pts: [[0, 1175]], len: 0.4, gain: 0.1, at: 0.3 });
+          sfx.fanfare();
+          $('hudW').classList.remove('duel', 'tense');
+          owl.play('flap', { fade: 0.05 });
+          for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 3; }
           break;
         }
       }
@@ -888,8 +925,17 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
       v.back += ((out ? 1 : 0) - v.back) * (1 - Math.exp(-dt * 3));
       const win = s.phase === 'finished' && s.winner === i ? 1 : 0;
       v.win = (v.win || 0) + (win - (v.win || 0)) * (1 - Math.exp(-dt * 3));
-      v.holder.position.set(v.home.x * (1 - v.win), 0, v.home.z + v.back * 0.9 + v.win * 2.4);
-      v.holder.rotation.y = Math.PI * (1 - Math.max(v.back, v.win));
+      if (v.duelX !== undefined && alive) v.home.x += (v.duelX - v.home.x) * (1 - Math.exp(-dt * 4));
+      if (v.side) {
+        // よこの見物の場所へ。列の まん中(のこっている子)のほうを向く
+        const px = v.home.x + (v.side.x - v.home.x) * v.back, pz = v.home.z + (v.side.z - v.home.z) * v.back;
+        v.holder.position.set(px, 0, pz);
+        const face = Math.atan2(-px, 0.5 - pz);
+        v.holder.rotation.y = Math.PI + (face - Math.PI) * v.back;
+      } else {
+        v.holder.position.set(v.home.x * (1 - v.win), 0, v.home.z + v.win * 2.4);
+        v.holder.rotation.y = Math.PI * (1 - v.win);
+      }
       let clip = 'idle', face = 'normal';
       if (s.phase === 'finished') {
         if (s.winner === i) { clip = 'cheer'; face = 'happy'; } else { clip = 'wave'; face = 'happy'; }
@@ -932,8 +978,21 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
     } else {
       // うしろから、列ごしに先生を見る。待っているあいだは、じわっと寄る
       const tense = s && s.phase === 'wait' ? Math.min(1, s.phaseT / 4) : 0;
-      pos = portrait ? new THREE.Vector3(0, 4.4 - tense * 0.4, 10.2 - tense * 1.4) : new THREE.Vector3(0, 2.9 - tense * 0.3, 7.4 - tense * 1.2);
-      look = portrait ? new THREE.Vector3(0, 1.3, -4.5) : new THREE.Vector3(0, 1.5, -5);
+      if (game?.duel) {
+        // いっきうち: 2人の うしろに低く寄る
+        pos = portrait ? new THREE.Vector3(0, 2.7 - tense * 0.3, 6.6 - tense * 1.2) : new THREE.Vector3(0, 2.0 - tense * 0.2, 5.0 - tense * 0.9);
+        look = new THREE.Vector3(0, 1.5, -5);
+      } else {
+        pos = portrait ? new THREE.Vector3(0, 4.4 - tense * 0.4, 10.2 - tense * 1.4) : new THREE.Vector3(0, 2.9 - tense * 0.3, 7.4 - tense * 1.2);
+        look = portrait ? new THREE.Vector3(0, 1.3, -4.5) : new THREE.Vector3(0, 1.5, -5);
+      }
+      // 判定のはじめ: 脱落する子のほうへ 寄って見せる
+      if (s?.phase === 'judge' && game.focus !== null && s.phaseT < 1.8) {
+        pos.x += game.focus * 0.6;
+        pos.y -= 0.8;
+        pos.z -= portrait ? 3.2 : 2.2;
+        look = new THREE.Vector3(game.focus, 1.0, -1);
+      }
     }
     camera.fov = portrait ? 58 : 46;
     camera.aspect = aspect;

@@ -342,6 +342,11 @@
   #hudW .signal.sig-win { font-size: clamp(32px, 10vw, 60px); }
   @keyframes sigin { 0% { transform: scale(1.6); opacity: 0; } 100% { transform: none; opacity: 1; } }
   #hudW .flash { position: absolute; inset: 0; opacity: 0; }
+  /* 待っているあいだ、画面のふちが暗くなる(いっきうちは もっと) */
+  #hudW .vig { position: absolute; inset: 0; opacity: 0; transition: opacity 1.2s; box-shadow: inset 0 0 90px 30px rgba(40,10,0,.55); }
+  #hudW.tense .vig { opacity: .6; }
+  #hudW.duel .vig { opacity: .5; }
+  #hudW.duel.tense .vig { opacity: 1; }
   #hudW .flash.fl-go { background: rgba(255, 230, 120, .6); }
   #hudW .flash.fl-no { background: rgba(232, 52, 74, .45); }
   #hudW .flash.show { animation: flash .45s ease-out forwards; }
@@ -1048,6 +1053,7 @@
 </div>
 
 <div class="hud" id="hudW" hidden>
+  <div class="vig" aria-hidden="true"></div>
   <div class="flash" id="flashW" aria-hidden="true"></div>
   <div class="top">
     <div class="scores" id="chipsW" aria-label="のこっている子"></div>
