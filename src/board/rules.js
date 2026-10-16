@@ -35,7 +35,7 @@ export const RULES = {
   happen: { springBack: 3, summerHit: 10, summerNear: 3, summerRange: 3, winterLoss: 5 },
 };
 export const TURNS = [5, 10, 15];
-export const MINIGAMES = ['daruma', 'catch', 'sled', 'mato', 'tsumi'];
+export const MINIGAMES = ['daruma', 'catch', 'sled', 'mato', 'tsumi', 'ikada'];
 export const DUEL_GAMES = ['mato', 'catch', 'daruma', 'tsumi'];
 
 // どうぐ。price はお店の値段(null はお店にない)。weight はどうぐマスで出る重み

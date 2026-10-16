@@ -57,3 +57,4 @@
 | 落ち葉そりレース | 作成中 | [minigames/sled.md](minigames/sled.md) |
 | まつぼっくり的あて | 作成中 | [minigames/mato.md](minigames/mato.md) |
 | どんぐりつみ | 作成中 | [minigames/tsumi.md](minigames/tsumi.md) |
+| いかだレース | 作成中 | [minigames/ikada.md](minigames/ikada.md) |

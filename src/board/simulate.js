@@ -11,6 +11,8 @@ import * as mato from '../games/mato/rules.js';
 import * as matoCpu from '../games/mato/cpu.js';
 import * as tsumi from '../games/tsumi/rules.js';
 import * as tsumiCpu from '../games/tsumi/cpu.js';
+import * as ikada from '../games/ikada/rules.js';
+import * as ikadaCpu from '../games/ikada/cpu.js';
 
 export const GAMES = {
   daruma: { rules: daruma, createCpu: darumaCpu.createCpu, input: darumaCpu.cpuHold, picked: (s) => s.runners.map((r) => r.acorns) },
@@ -18,6 +20,7 @@ export const GAMES = {
   sled: { rules: sled, createCpu: sledCpu.createCpu, input: sledCpu.cpuInput, picked: () => null },
   mato: { rules: mato, createCpu: matoCpu.createCpu, input: matoCpu.cpuInput, picked: () => null },
   tsumi: { rules: tsumi, createCpu: tsumiCpu.createCpu, input: tsumiCpu.cpuInput, picked: () => null },
+  ikada: { rules: ikada, createCpu: ikadaCpu.createCpu, input: ikadaCpu.cpuInput, picked: () => null },
 };
 
 // lineup: [{ cpu: 性格 }]。返すのは { ranking(席の番号の順), picked }

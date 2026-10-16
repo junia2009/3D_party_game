@@ -740,6 +740,25 @@
     100% { opacity: 0; transform: translateY(-10px); }
   }
 
+  /* いかだレース: 左右の「こぐ」しるし(たたくと光る)、滝のあとの水しぶき */
+  #hudK .pad { width: 84px; height: 84px; font-size: 15px; line-height: 1.1; text-align: center; color: #fff; }
+  #hudK .pad small { display: block; font: 700 11px var(--font-body); opacity: .85; }
+  #hudK .pad.hit { animation: padhit .2s ease-out; }
+  @keyframes padhit { 0% { background: rgba(110,200,255,.75); transform: scale(.88); } 100% { background: rgba(31,42,51,.18); transform: scale(1); } }
+  #hudK .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 118px); }
+  #hudK .progress { top: calc(env(safe-area-inset-top, 0px) + 96px); bottom: calc(env(safe-area-inset-bottom, 0px) + 130px); }
+  .sprayfx {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .5s;
+    background:
+      radial-gradient(circle at 18% 30%, rgba(255,255,255,.75) 0 18px, transparent 20px),
+      radial-gradient(circle at 70% 22%, rgba(255,255,255,.65) 0 26px, transparent 28px),
+      radial-gradient(circle at 42% 62%, rgba(255,255,255,.55) 0 14px, transparent 16px),
+      radial-gradient(circle at 85% 70%, rgba(255,255,255,.7) 0 22px, transparent 24px),
+      radial-gradient(circle at 12% 80%, rgba(255,255,255,.6) 0 30px, transparent 32px),
+      radial-gradient(ellipse at center, rgba(230,248,255,0) 40%, rgba(230,248,255,.55) 100%);
+  }
+  .sprayfx.on { opacity: 1; transition: none; }
+
   /* 横長: メニューは右側に縦に並べる(左は看板と島) */
   @media (min-aspect-ratio: 1/1) {
     #menu { --plank-h: clamp(44px, 10.5dvh, 64px); left: auto; right: max(32px, env(safe-area-inset-right, 0px)); bottom: 50%; transform: translateY(50%); width: min(400px, 36vw); }
@@ -830,6 +849,11 @@
       <span class="thumb"><img src="./assets/thumbs/tsumi.jpg" alt="" width="640" height="360"><span class="ribbon">第5競技</span><span class="go-mark" aria-hidden="true"></span></span>
       <span class="name">どんぐりつみ</span>
       <span class="meta"><span>1〜2ふん</span></span>
+    </button>
+    <button class="card" type="button" data-open="ikada">
+      <span class="thumb"><img src="./assets/thumbs/ikada.jpg" alt="" width="640" height="360"><span class="ribbon">第6競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">いかだレース</span>
+      <span class="meta"><span>45〜60びょう</span></span>
     </button>
   </div>
 </section>
@@ -936,6 +960,20 @@
   <p class="tapcall" id="tapT">タップで落とす!</p>
   <div class="aimbar"><i id="barT"></i></div>
   <p class="howto" id="howtoT">ゆれているものを、タップで落とす</p>
+</div>
+
+<div class="hud" id="hudK" hidden>
+  <div class="sprayfx" id="sprayK" aria-hidden="true"></div>
+  <div class="top">
+    <div class="rank" id="rankK" data-rank="">1<small>位</small></div>
+    <div class="chant laptime"><span id="timeK">0.0</span><small>びょう</small></div>
+    <button class="pausebtn" id="pauseBtnK" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="progress" id="trackK"></div>
+  <div class="splash" id="splashK"></div>
+  <p class="howto" id="howtoK">左・右を こうごに たたいて こぐ</p>
+  <div class="pad left" id="padLK" aria-hidden="true">こぐ<small>ひだり</small></div>
+  <div class="pad right" id="padRK" aria-hidden="true">こぐ<small>みぎ</small></div>
 </div>
 
 <div class="hud" id="hudB" hidden>
