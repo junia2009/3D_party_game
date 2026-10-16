@@ -267,7 +267,7 @@ function updateDrops(s, events) {
   if (s.phase === 'ready') return;
   if (nextRandom(s) < RULES.dropRate * STEP) {
     const d = {
-      lane: Math.floor(nextRandom(s) * LANES),
+      lane: Math.floor(nextRandom(s) * s.runners.length), // 参加者の数の列から(対決の2人でも)
       x: randRange(s, TRACK - RULES.dropZone, TRACK - 0.3),
       left: RULES.dropWarn,
     };

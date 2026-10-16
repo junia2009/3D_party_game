@@ -352,3 +352,18 @@ test('どの性格の CPU も優勝できる(かたよりすぎない)', () => {
   }
   for (const k of kinds) assert.ok(wins[k] > N * 0.15, `優勝の数 ${JSON.stringify(wins)}`);
 });
+
+test('競技を画面なしで回せる(CPU どうしの対決・5人の競技)', async () => {
+  const { simulate, GAMES } = await import('../src/board/simulate.js');
+  const { DUEL_GAMES, MINIGAMES } = await import('../src/board/rules.js');
+  for (const key of MINIGAMES) {
+    assert.ok(GAMES[key], `${key} を回せる`);
+    const r = simulate(key, PLAYERS.map((_, i) => ({ cpu: kinds[i % 3] })), 3);
+    assert.deepEqual([...r.ranking].sort(), [0, 1, 2, 3, 4]);
+  }
+  for (const key of DUEL_GAMES) {
+    const r = simulate(key, [{ cpu: 'normal' }, { cpu: 'bold' }], 5);
+    assert.deepEqual([...r.ranking].sort(), [0, 1], `${key} は 2 人でも決着する`);
+  }
+  assert.equal(simulate('daruma', [{ cpu: 'normal' }, { cpu: 'normal' }], 2).picked.length, 2, 'だるまさんは拾ったどんぐりも返す');
+});

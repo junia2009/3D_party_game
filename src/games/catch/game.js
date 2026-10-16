@@ -8,9 +8,10 @@
 // パソコンは矢印キー / WASD。
 
 import * as THREE from 'three';
+import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
-import { nextRandom, seedFrom } from '../../rng.js';
+import { seedFrom } from '../../rng.js';
 import { ARENA_R, ITEMS, RULES, STEP, createGame, isHazard, ranking, step, timeLeft } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { PERCH, SEATS, STUMP_TOP, buildStage } from './stage.js';
@@ -483,6 +484,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   // ── ゲームの進行 ────────────────────────────────────
   let mode = 'idle'; // idle(タイトルにいる)→ playing → result
   let picked = CHARACTERS[0].key;
+  let tour = null; // 大会から呼ばれているとき { lineup, onFinish }
   let game = null; // { state, players, cpus, runners(見た目), acc, endTimer }
   let intro = 1;
   const INTRO_TIME = 2.4;
@@ -490,15 +492,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
 
   async function startGame({ fromSky = false } = {}) {
     const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const pick = { rng: seedFrom(`${seed}:pick`) };
-    const others = CHARACTERS.filter((c) => c.key !== picked).map((c) => c.key);
-    const cpuChars = [];
-    while (cpuChars.length < SLOTS - 1) cpuChars.push(others.splice(Math.floor(nextRandom(pick) * others.length), 1)[0]);
-    const kinds = Object.keys(PERSONALITIES);
-    const players = [
-      { id: 'me', name: 'あなた', character: picked, cpu: null },
-      ...cpuChars.map((key, i) => ({ id: `cpu${i}`, name: CHARACTERS.find((c) => c.key === key).name, character: key, cpu: kinds[Math.floor(nextRandom(pick) * kinds.length)] })),
-    ];
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const id of [...items.keys()]) removeItem(id);
 
@@ -552,6 +546,8 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
 
   function setMode(m) {
     mode = m;
+    // 大会のあいだは「さいしょから」「キャラをかえる」は出さない
+    $('restart').hidden = $('pauseReselect').hidden = $('again').hidden = $('reselect').hidden = !!tour;
     paused = false;
     $('pause').hidden = true;
     $('result').hidden = m !== 'result';
@@ -863,6 +859,13 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    if (tour) {
+      // 大会: 結果画面は出さずに、順位(と拾ったどんぐり)を返す
+      const done = tour.onFinish;
+      setMode('idle');
+      done({ ranking: ranking(s), picked: null });
+      return;
+    }
     const order = ranking(s);
     const winner = game.players[s.winner];
     $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
@@ -1185,8 +1188,10 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true } = {}) {
+    // 大会から呼ぶときは lineup(顔ぶれ)と onFinish(順位を返す)をわたす。そのときは結果画面を出さない
+    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
       picked = character;
+      tour = onFinish ? { lineup, onFinish } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });
