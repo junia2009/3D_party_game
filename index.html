@@ -703,6 +703,10 @@
   .aimbar.show { opacity: 1; }
   .aimbar i { display: block; height: 100%; background: #7bd158; transform-origin: left center; }
   .aimbar.hurry i { background: var(--watch); }
+  /* けっしょう: 残った2人の札が金色にふちどられて、脈打つ */
+  #hudT.final .chip:not(.out) { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a, 0 0 14px rgba(255,200,40,.7); }
+  #hudT.final .chip.now:not(.out) { animation: finalbeat 1s ease-in-out infinite; }
+  @keyframes finalbeat { 50% { scale: 1.06; } }
   /* 脱落の札: 上からおりてきて、少しして消える。色の丸に ×、名前、赤い「だつらく」の判子 */
   .outcard {
     position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 22%); translate: -50% 0;

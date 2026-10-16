@@ -77,11 +77,12 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     src.start(t, Math.random() * 0.5);
     src.stop(t + len + 0.05);
   }
-  const SCALE = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19];
+  const SCALE = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24];
   const sfx = {
     drop: () => hiss({ f0: 1800, f1: 600, q: 2, len: 0.35, gain: 0.05, attack: 0.02 }),
     // 乗った: ことん(高くなるほど音が上がる)
     land: (h, kind) => {
+      // 高くなるほど音が上がる(ドレミ…で 2 オクターブまで)
       const up = 2 ** (SCALE[Math.min(h - 1, SCALE.length - 1)] / 12);
       const soft = kind === 'leaf' || kind === 'mushroom';
       voice({ type: 'triangle', pts: [[0, (soft ? 300 : 520) * up], [0.05, (soft ? 220 : 380) * up]], len: 0.12, gain: 0.12 });
@@ -102,6 +103,27 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     whistle: () => voice({ type: 'sine', pts: [[0, 2000], [0.5, 2100]], len: 0.6, gain: 0.08, vib: 60, vibRate: 30 }),
     fanfare: () => [784, 988, 1175, 1568].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.3 + i * 0.1, gain: 0.1, at: i * 0.13 })),
     finish: () => [659, 784].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.35, gain: 0.07, at: i * 0.16 })),
+    // 5だん: きらりん / 10だん: ファンファーレ / 記録: のぼる音
+    chime: () => [1319, 1568, 2093].forEach((f, i) => voice({ type: 'sine', pts: [[0, f]], len: 0.35, gain: 0.05, at: i * 0.06 })),
+    ten: () => {
+      [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: i === 6 ? 0.7 : 0.16, gain: 0.08, at: i * 0.1 }));
+      hiss({ type: 'highpass', f0: 4000, len: 0.5, gain: 0.03, at: 0.6 });
+    },
+    record: () => [784, 988, 1175, 1568, 1976].forEach((f, i) => voice({ type: 'sine', pts: [[0, f], [0.08, f * 1.02]], len: 0.2, gain: 0.05, at: i * 0.05 })),
+    // ドキドキ(どっくん)
+    heart: (k = 1) => { voice({ type: 'sine', pts: [[0, 70], [0.1, 45]], len: 0.16, gain: 0.16 * k }); voice({ type: 'sine', pts: [[0, 62], [0.1, 40]], len: 0.14, gain: 0.11 * k, at: 0.17 }); },
+    // けっしょう: 小太鼓のロールから、ジャン!
+    final: () => {
+      for (let i = 0; i < 14; i++) hiss({ type: 'bandpass', f0: 1800, q: 0.8, len: 0.06, gain: 0.03 + i * 0.003, at: i * 0.05 });
+      [392, 523, 659, 784].forEach((f) => voice({ type: 'triangle', pts: [[0, f]], len: 0.8, gain: 0.06, at: 0.75 }));
+      hiss({ type: 'lowpass', f0: 500, len: 0.5, gain: 0.08, at: 0.75 });
+    },
+    // 森の鳥
+    bird: () => {
+      const f = 2400 + Math.random() * 900;
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) voice({ type: 'sine', pts: [[0, f], [0.07, f * 1.25]], len: 0.09, gain: 0.018, at: i * 0.13 });
+    },
     oh: () => { for (let i = 0; i < 4; i++) hiss({ f0: 500 + i * 120, f1: 380 + i * 90, q: 5, len: 1.0, gain: 0.04, at: i * 0.04, attack: 0.1 }); },
     cheer: () => { for (let i = 0; i < 5; i++) hiss({ f0: 700 + i * 180, f1: 900 + i * 150, q: 4, len: 1.3, gain: 0.05, at: i * 0.05, attack: 0.15 }); },
   };
@@ -335,11 +357,12 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     runners[0].holder.add(marker);
     runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null, lastTick: null };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null, lastTick: null, best: 0, resets: 0, recordShown: false, beatT: 0.3, birdT: 3, finalCall: null };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     tapped = false;
     $('outT').classList.remove('show');
+    $('hudT').classList.remove('final');
     buildChips();
     setMode('playing');
     intro = fromSky ? 0 : 1;
@@ -486,7 +509,19 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
         case 'land':
           syncStack(s);
           sfx.land(e.height, s.stack[s.stack.length - 1].kind);
-          if (e.margin < 0.06) { splash('ぐらぐら…!', 'red'); sfx.close(); react('cheer', 'surprised', 1.2); } else if (e.height % 5 === 0) { splash(`${e.height}だん!`, 'gold'); react('cheer', 'happy'); game.showAll = 1.8; }
+          // 10だん: 紙ふぶきとファンファーレ / 5だん: きらりん / この試合の記録をこえた: さいこう記録!
+          if (e.height % 10 === 0) {
+            splash(`${e.height}だん!!`, 'gold');
+            confetti(new THREE.Vector3(s.stack[s.stack.length - 1].x, STUMP_H + stackTop(s) + 0.2, 0));
+            sfx.ten();
+            sfx.cheer();
+            react('cheer', 'happy', 2.6);
+            owl.play('flap', { fade: 0.1 });
+            game.showAll = 2.4;
+          } else if (e.margin < 0.06) { splash('ぐらぐら…!', 'red'); sfx.close(); react('cheer', 'surprised', 1.2); }
+          else if (e.height % 5 === 0) { splash(`${e.height}だん!`, 'gold'); sfx.chime(); react('cheer', 'happy'); game.showAll = 1.8; }
+          else if (game.resets > 0 && e.height > game.best && !game.recordShown && e.height >= 4) { splash('さいこう記録!', 'gold'); sfx.record(); react('cheer', 'happy', 1.2); game.recordShown = true; }
+          game.best = Math.max(game.best, e.height);
           break;
         case 'collapse':
           syncStack(s);
@@ -510,10 +545,13 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
           r.outT = 2.5;
           addCloud(r);
           game.outCard = { slot: e.slot, left: e.left, at: 1.0 };
+          if (e.left === 2) game.finalCall = 2.9; // 札のあとに「けっしょう!」
           break;
         }
         case 'reset':
           resetStack();
+          game.resets++;
+          game.recordShown = false;
           break;
         case 'finished':
           splash(e.winner === 0 ? 'あなたの勝ち!' : `${name(e.winner)}の勝ち!`, 'gold');
@@ -679,6 +717,49 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     if (c.t >= life) { v.holder.remove(c.g); v.cloud = null; }
   }
 
+  // ── 紙ふぶき: 10だんのお祝い。山のてっぺんから、ふきあがって ひらひら落ちる ─────
+  const CONF_N = 140;
+  const conf = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.1, 0.06), new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), CONF_N);
+  conf.frustumCulled = false;
+  conf.count = 0;
+  scene.add(conf);
+  const confP = Array.from({ length: CONF_N }, () => ({ p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Euler(), w: new THREE.Vector3(), t: 9 }));
+  const CONF_COLORS = [0xffd24a, 0xff6b5a, 0x6cc4ff, 0x8fdc6a, 0xff9ad5, 0xffffff].map((c) => new THREE.Color(c));
+  const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), ONE = new THREE.Vector3(1, 1, 1);
+  function confetti(pos) {
+    confP.forEach((c, i) => {
+      c.t = 0;
+      c.p.copy(pos);
+      const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 3;
+      c.v.set(Math.cos(a) * sp * 0.6, 3 + Math.random() * 3.5, Math.sin(a) * sp * 0.4 + 0.6);
+      c.w.set(Math.random() * 10, Math.random() * 10, Math.random() * 10);
+      conf.setColorAt(i, CONF_COLORS[i % CONF_COLORS.length]);
+    });
+    conf.instanceColor.needsUpdate = true;
+    conf.count = CONF_N;
+  }
+  function updateConfetti(dt) {
+    if (!conf.count) return;
+    let alive = 0;
+    confP.forEach((c, i) => {
+      c.t += dt;
+      if (c.t < 3.5) alive++;
+      // 重力と、空気にふわっと受けとめられる感じ(下へは ゆっくり)
+      c.v.y -= 9 * dt;
+      if (c.v.y < -1.1) c.v.y = -1.1;
+      c.v.x *= 1 - dt * 1.2;
+      c.v.z *= 1 - dt * 1.2;
+      c.p.addScaledVector(c.v, dt);
+      c.p.x += Math.sin(c.t * 5 + i) * dt * 0.4;
+      c.r.set(c.r.x + c.w.x * dt, c.r.y + c.w.y * dt, c.r.z + c.w.z * dt);
+      const k = c.t < 3 ? 1 : Math.max(0.001, (3.5 - c.t) / 0.5);
+      tmpM.compose(c.p, tmpQ.setFromEuler(c.r), ONE.clone().multiplyScalar(k));
+      conf.setMatrixAt(i, tmpM);
+    });
+    conf.instanceMatrix.needsUpdate = true;
+    if (!alive) conf.count = 0;
+  }
+
   // ── けむり: 落ちたものが はねたところに、ぽふっと ─────────────────
   const puffGeo = new THREE.IcosahedronGeometry(0.16, 1);
   const puffs = Array.from({ length: 24 }, () => {
@@ -814,6 +895,20 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
         game.acc -= STEP;
       }
       if (game.outCard && (game.outCard.at -= dt) <= 0) { showOutCard(game.outCard); game.outCard = null; }
+      if (game.finalCall && (game.finalCall -= dt) <= 0) {
+        game.finalCall = null;
+        splash('けっしょう!', 'gold');
+        sfx.final();
+        react('cheer', 'happy', 2);
+        $('hudT').classList.add('final');
+      }
+      // ドキドキ: ぐらぐらしている・高いとき、ねらっているあいだ(高いほど速く)
+      if (s.phase === 'play' && s.stage === 'aim' && (wobble || s.stack.length >= 8)) {
+        game.beatT -= dt;
+        if (game.beatT <= 0) { game.beatT = Math.max(0.42, 0.8 - s.stack.length * 0.025); sfx.heart(s.cur === 0 ? 1 : 0.6); }
+      } else game.beatT = 0.3;
+      // 森の鳥
+      if ((game.birdT -= dt) <= 0) { game.birdT = 4 + Math.random() * 6; sfx.bird(); }
       if (game.endTimer !== null) {
         game.endTimer -= dt;
         if (game.endTimer <= 0) { game.endTimer = null; showResult(); }
@@ -824,6 +919,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       updateHanging(dt);
       updatePieces(dt);
       updatePuffs(dt);
+      updateConfetti(dt);
       updateRunners(dt);
     }
     if (!paused) {
