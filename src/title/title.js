@@ -135,6 +135,9 @@ owl.play('idle');
 owl.setFace('normal');
 scene.add(owl.root);
 
+// 図鑑の人数は、のっている子の数から(ゲストも なかま)
+$('zukanCount').textContent = `${shownCharacters().length}人の なかまを 見る`;
+
 const actors = await Promise.all(ROLES.map(async (role, i) => {
   const m = await createModel(role.key);
   m.setPlayerColor(PLAYER_COLORS[i % PLAYER_COLORS.length].hex);

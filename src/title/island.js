@@ -427,4 +427,6 @@ export const ROLES = [
   { key: 'penne', x: 0.9, z: 1.9, act: 'wave', face: 'happy' },
   { key: 'mimi', x: 0, z: 0, act: 'chase', lead: true },
   { key: 'konko', x: 0, z: 0, act: 'chase' },
+  // ゲストのレイも なかま。手前の右で手をふる
+  { key: 'ray', x: 2.1, z: 2.5, act: 'wave', face: 'happy' },
 ];
