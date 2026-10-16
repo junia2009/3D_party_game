@@ -15,6 +15,7 @@ import { RULES, STEP, createGame, ranking, step } from './rules.js';
 import { LENGTH, LOGS, LOG_R, TUNNEL, currentAt, logX } from './course.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, buildStage, coursePoint, courseHeading, seatPoint } from './stage.js';
+import { PADDLE_TIP, makePaddle, makeRaft, wakeTexture } from './raft.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 import { buildScenery } from './scenery.js';
 
@@ -181,45 +182,45 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     }
   }
 
-  // ── いかだ ──────────────────────────────────────────
-  // 丸太5本をなわでしばった いかだ。うしろに自分の色の小さな旗。かいを1本持つ
-  const raftLogGeo = new THREE.CylinderGeometry(0.15, 0.16, 1.7, 8);
-  raftLogGeo.rotateX(Math.PI / 2);
-  const ropeGeo = new THREE.TorusGeometry(0.17, 0.025, 4, 10);
-  const raftWood = [0x9a6a3e, 0x8a5a32, 0xa8784a];
-  function makeRaft(slot) {
-    const g = new THREE.Group();
-    for (let i = 0; i < 5; i++) {
-      const lg = new THREE.Mesh(raftLogGeo, toonMaterial(raftWood[i % 3]));
-      lg.position.set((i - 2) * 0.29, 0.05, (i % 2) * 0.06 - 0.03);
-      g.add(lg);
-    }
-    for (const z of [-0.55, 0.55]) {
-      const rope = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.05, 0.08), toonMaterial(0xd8c08a));
-      rope.position.set(0, 0.2, z);
-      g.add(rope);
-    }
-    // 旗
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.3, 5), toonMaterial(0x6b4a30));
-    pole.position.set(0.55, 0.75, 0.7);
-    g.add(pole);
-    const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.28), new THREE.MeshToonMaterial({ color: PLAYER_COLORS[slot].hex, gradientMap: toonGradient, side: THREE.DoubleSide }));
-    flag.position.set(0.55, 1.25, 0.9);
-    flag.rotation.y = Math.PI / 2;
-    g.add(flag);
-    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    return { g, flag };
+  // ── 波紋(かいが水に入ったところ・いかだのまわり) ─────────────────
+  const rippleTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(32, 32, 14, 32, 32, 31);
+    grd.addColorStop(0, 'rgba(255,255,255,0)');
+    grd.addColorStop(0.6, 'rgba(255,255,255,0.9)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const ripples = Array.from({ length: 40 }, () => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: rippleTex, transparent: true, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    m.visible = false;
+    scene.add(m);
+    return { m, t: 1, size: 1 };
+  });
+  let rippleNext = 0;
+  function ripple(pos, size = 1) {
+    const r = ripples[rippleNext++ % ripples.length];
+    r.m.position.copy(pos);
+    r.t = 0;
+    r.size = size;
+    r.m.visible = true;
   }
-  function makePaddle() {
-    const g = new THREE.Group();
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 6), toonMaterial(0xc89a62));
-    shaft.position.y = -0.3;
-    g.add(shaft);
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.42, 0.04), toonMaterial(0xb07a44));
-    blade.position.y = -1.05;
-    g.add(blade);
-    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    return g;
+  function updateRipples(dt) {
+    for (const r of ripples) {
+      if (!r.m.visible) continue;
+      r.t += dt / 0.8;
+      const k = 0.3 + r.t * 1.2;
+      r.m.scale.set(k * r.size, k * r.size, 1);
+      r.m.material.opacity = 0.55 * (1 - r.t);
+      if (r.t >= 1) r.m.visible = false;
+    }
   }
 
   // ── ゲームの進行 ────────────────────────────────────
@@ -244,20 +245,27 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       const holder = new THREE.Group();
       const body = new THREE.Group(); // かたむける・ゆれる
       holder.add(body);
-      const raft = makeRaft(slot);
+      const raft = makeRaft(PLAYER_COLORS[slot].hex, slot + 1);
       body.add(raft.g);
       const seat = new THREE.Group();
-      seat.position.set(0, 0.2, 0.1);
+      seat.position.set(0, 0.2, 0.0);
       body.add(seat);
       seat.add(model.root);
-      const paddle = makePaddle();
+      // かいは、むねの前で両手で持つ(左右にかたむけて、はしを水に入れる)
+      const paddle = makePaddle(PLAYER_COLORS[slot].hex);
+      paddle.rotation.order = 'YZX';
       seat.add(paddle);
+      // 引き波(いかだのうしろ)
+      const wake = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 4.2), new THREE.MeshBasicMaterial({ map: wakeTexture(), transparent: true, depthWrite: false, opacity: 0 }));
+      wake.rotation.x = -Math.PI / 2;
+      wake.position.set(0, 0.0, -2.75);
+      holder.add(wake);
       const def = CHARACTERS.find((c) => c.key === p.character);
       scene.add(holder);
       const node = (n) => model.node(n);
       return {
-        model, holder, body, raft, seat, paddle, size: def.size || 1, time: Math.random() * 10,
-        strokeT: 9, strokeSide: 1, spinDir: 1, air: 0, lastSpin: 0,
+        model, holder, body, raft, seat, paddle, wake, size: def.size || 1, time: Math.random() * 10, dur: 0.28, lean: 0,
+        strokeT: 9, strokeSide: 1, spinDir: 1, air: 0, lastSpin: 0, planted: true,
         arms: [node('arm_L'), node('arm_R')], legs: [node('leg_L'), node('leg_R')], head: node('head'),
       };
     }));
@@ -273,6 +281,8 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     atmosphere.sun.target.position.copy(coursePoint(LENGTH / 2, 0));
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     taps.length = 0;
+    $('comboK').textContent = '0';
+    $('powK').style.width = '0%';
     buildBoard();
     setMode('playing');
     intro = fromSky ? 0 : 1;
@@ -367,6 +377,39 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       return d;
     }));
   }
+  // こぐリズム: 左右のランプ・こうごの数・ひとかきの強さ。コツを ことばで教える
+  function rhythm(e) {
+    const g = game;
+    const now = g.state.t;
+    const alt = e.alt && now - (g.lastStroke ?? -9) < 0.9;
+    g.combo = alt ? (g.combo || 0) + 1 : 1;
+    g.lastStroke = now;
+    const lamp = $(e.side < 0 ? 'lampLK' : 'lampRK');
+    lamp.classList.remove('on');
+    void lamp.offsetWidth;
+    lamp.classList.add('on');
+    const c = $('comboK');
+    c.textContent = g.combo;
+    c.parentElement.classList.toggle('hot', g.combo >= 10);
+    const pw = $('powK');
+    pw.style.width = `${Math.round(e.power * 100)}%`;
+    pw.className = e.power >= 0.75 ? 'good' : e.power >= 0.45 ? 'ok' : 'weak';
+    // ことば(同じものは続けて出さない)
+    g.fast = e.power < 0.45 && e.alt ? (g.fast || 0) + 1 : 0;
+    let tip = null;
+    if (!e.alt && e.side !== 0) tip = ['おなじがわ! こうごに', 'warn'];
+    else if (g.fast >= 3) { tip = ['はやすぎ! ぐいっと', 'warn']; g.fast = 0; }
+    else if (g.combo > 0 && g.combo % 10 === 0) tip = [`いいリズム! ${g.combo}`, 'good'];
+    if (tip && (tip[0] !== g.lastTip || now - (g.tipAt ?? -9) > 2.5)) {
+      const el = $('tipK');
+      el.textContent = tip[0];
+      el.className = 'rtip ' + tip[1];
+      void el.offsetWidth;
+      el.classList.add('show');
+      g.lastTip = tip[0];
+      g.tipAt = now;
+    }
+  }
   function renderHud() {
     const s = game.state;
     const rank = ranking(s).indexOf(0);
@@ -400,9 +443,12 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
           break;
         case 'stroke': {
           const v = game.runners[e.slot];
+          // ひとかきの長さは、前のかきからの間に合わせる(速くこぐと、動きも速く)
+          v.dur = Math.max(0.17, Math.min(0.34, v.strokeT * 0.95));
           v.strokeT = 0;
+          v.planted = false;
           v.strokeSide = e.side || (v.strokeSide > 0 ? -1 : 1);
-          if (e.slot === 0) sfx.paddle(v.strokeSide);
+          if (e.slot === 0) { sfx.paddle(v.strokeSide); rhythm(e); }
           else if (Math.random() < 0.15) sfx.paddle(v.strokeSide, 0.35);
           break;
         }
@@ -478,24 +524,36 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
   }
 
   // ── 見た目を state に合わせる ─────────────────────────
-  // いかだの上に座って、かいを持つ。こいだがわへ、かいを前から うしろへ かく
-  function rowPose(v, r) {
-    const k = Math.min(1, v.strokeT / 0.32); // 0 → 1 で ひとかき
-    const side = v.strokeSide; // -1 左 / 1 右(進む向きから見て)
-    const sweep = k < 1 ? Math.sin(k * Math.PI) : 0;
-    // かい: 体の横で、前(-)から うしろ(+)へ。水に入れて かく。キャラの右は -x(キャラは +z を向いている)
-    const px = -side * 0.5;
-    v.paddle.position.set(px, 0.85 * v.size, 0.05 + (k < 1 ? (k - 0.5) * 0.5 : 0));
-    v.paddle.rotation.set((k < 1 ? 0.9 - k * 1.5 : 0.25), 0, -side * (0.45 + sweep * 0.25));
+  // いかだの上に座って、カヤックのかいを両手で持つ。ひとかき: はしを前で水に入れて(plant)→ うしろへかいて(pull)→ 上げる(exit)。
+  // 左をこぐときは、キャラの左(+x)のはしを下げる。体も、こぐがわへ ひねって 前後にゆれる
+  const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
+  function rowPose(v, dt) {
+    const sd = v.strokeSide; // -1 左 / 1 右
+    const k = v.strokeT / v.dur;
+    let tilt, sweep, lean;
+    // tilt 0.9 で、はしが水面の下まで とどく(かいのまん中は いかだから 0.7m ほど上)
+    if (k < 0.15) { const t = k / 0.15; tilt = lerp(0.3, 0.92, t); sweep = sd * 0.6; lean = lerp(0, 0.18, t); }
+    else if (k < 0.75) { const t = (k - 0.15) / 0.6; tilt = 0.92; sweep = lerp(sd * 0.6, -sd * 0.5, t * t * (3 - 2 * t)); lean = lerp(0.18, -0.06, t); }
+    else if (k < 1) { const t = (k - 0.75) / 0.25; tilt = lerp(0.92, 0.25, t); sweep = lerp(-sd * 0.5, -sd * 0.2, t); lean = lerp(-0.06, 0, t); }
+    else { tilt = 0.12; sweep = 0; lean = 0; }
+    // 休むときは ゆっくり もとへ(ひとかきの中は すぐに)
+    const a = k < 1 ? 1 : 1 - Math.exp(-dt * 5);
+    v.pt = lerp(v.pt ?? 0, sd * tilt, a);
+    v.ps = lerp(v.ps ?? 0, sweep, a);
+    v.lean = lerp(v.lean, lean, a);
+    v.paddle.position.set(0, 0.45 * v.size, 0.42 * v.size);
+    v.paddle.rotation.set(0, v.ps, v.pt);
+    // 体: こぐがわへ ひねる・前へ かがむ
+    v.model.root.rotation.set(v.lean, v.ps * 0.45, 0);
     const mix = (node, x, y, z) => { if (node) node.rotation.set(x, y, z); };
-    v.legs.forEach((leg, j) => mix(leg, -1.35, 0, (j === 0 ? 1 : -1) * 0.18));
+    v.legs.forEach((leg, j) => mix(leg, -1.35, 0, (j === 0 ? 1 : -1) * 0.2));
     v.arms.forEach((arm, j) => {
       const s2 = j === 0 ? 1 : -1; // L はキャラの左(+x)
-      // こぐがわへ両手をのばす
-      const toward = s2 === -side ? 1 : 0.5;
-      mix(arm, -0.9 - sweep * 0.4 * toward, 0, s2 * 0.25 - side * 0.35);
+      // 両手で かいをにぎる。かいの下がっているがわの手は下へ、上がっているがわは上へ
+      const down = -v.pt * s2; // + でこの腕のがわが下がっている(左をこぐと pt < 0、L(+x)が下がる)
+      mix(arm, -1.15 + down * 0.5, 0, s2 * (0.15 + v.ps * s2 * 0.3));
     });
-    if (v.head) v.head.rotation.set(0.05, side * 0.08 * sweep, 0);
+    if (v.head) v.head.rotation.set(0.05 - v.lean * 0.5, -v.ps * 0.25, 0);
   }
   function updateRunners(dt) {
     const s = game.state;
@@ -523,10 +581,24 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       v.model.setFace(face);
       v.model.update(dt);
       v.model.root.position.y = -0.05 * v.size;
-      if (r.finish === null) rowPose(v, r);
-      else { v.paddle.rotation.set(0.3, 0, 0.3); v.paddle.position.set(-0.4, 0.8 * v.size, 0); }
-      // かいが水に入るとき、しぶき
-      if (v.strokeT < dt * 1.5 && i === 0) spray(coursePoint(r.s - 0.2, r.x + v.strokeSide * 0.9, 0.1, tmp), 3, 1.2, 0.7);
+      if (r.finish === null) rowPose(v, dt);
+      else { v.paddle.rotation.set(0, 0, 0.5); v.paddle.position.set(0, 1.2 * v.size, 0.2); v.model.root.rotation.set(0, 0, 0); }
+      // かいが水に入るとき(ひとかきの はじめ)、しぶきと波紋。水からぬくときも少し
+      const k = v.strokeT / v.dur;
+      if (v.planted === false && k >= 0.12 && k < 1) {
+        v.planted = true;
+        v.paddle.updateMatrixWorld(true);
+        const tip = v.paddle.localToWorld(tmp.set(-v.strokeSide * PADDLE_TIP, 0, 0));
+        const wy = coursePoint(r.s, r.x, 0).y;
+        tip.y = wy + 0.05;
+        if (i === 0 || v.holder.position.distanceTo(camera.position) < 12) ripple(tip, 0.9);
+        if (i === 0 || v.holder.position.distanceTo(camera.position) < 14) spray(tip, i === 0 ? 5 : 2, 0.8, 0.7);
+      }
+      // 引き波: 進む速さで こく、長く
+      const sp = Math.max(0, r.v) + (r.finish === null ? 0.5 : 0);
+      v.wake.material.opacity = Math.min(0.75, sp * 0.13) * (r.air > 0 ? 0 : 1);
+      v.wake.scale.set(1, 0.6 + Math.min(0.6, sp * 0.1), 1);
+      v.wake.position.z = -1.0 - 2.1 * v.wake.scale.y + 0.4;
       // うずの中・急流では、まわりに白いしぶき
       if ((r.whirl >= 0 || currentAt(r.s) > 3.5) && Math.random() < dt * 8) spray(tmp.copy(v.holder.position).setY(v.holder.position.y + 0.1), 1, 1.2, 0.6);
       if (v.marker) v.marker.position.set(0, 2.2 * v.size + 0.08 * Math.sin(performance.now() / 180), 0);

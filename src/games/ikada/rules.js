@@ -79,7 +79,8 @@ function stroke(s, r, side, ev, slot) {
   const alt = side === 0 || r.last === null || r.last !== side;
   // かいが水をとらえるには間がいる: 前のかきから間がないほど弱い(連打の速さだけで決まりすぎないように)
   const gap = s.t - r.lastT;
-  let push = RULES.stroke * (alt ? 1 : RULES.sameSide) * (1 - Math.exp(-gap / RULES.catchTime));
+  const power = (alt ? 1 : RULES.sameSide) * (1 - Math.exp(-gap / RULES.catchTime)); // ひとかきの強さ(0〜1)
+  let push = RULES.stroke * power;
   r.lastT = s.t;
   if (r.spin > 0) push *= 0.5;
   r.v += push;
@@ -91,7 +92,7 @@ function stroke(s, r, side, ev, slot) {
   r.last = side === 0 ? null : side;
   r.cool = RULES.strokeCool;
   r.strokes++;
-  ev.push({ type: 'stroke', slot, side });
+  ev.push({ type: 'stroke', slot, side, alt, power });
 }
 
 // inputs[slot]: { left: bool, right: bool }(その瞬間にたたいたかどうか)

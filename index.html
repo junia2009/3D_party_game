@@ -745,8 +745,33 @@
   #hudK .pad small { display: block; font: 700 11px var(--font-body); opacity: .85; }
   #hudK .pad.hit { animation: padhit .2s ease-out; }
   @keyframes padhit { 0% { background: rgba(110,200,255,.75); transform: scale(.88); } 100% { background: rgba(31,42,51,.18); transform: scale(1); } }
-  #hudK .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 118px); }
+  #hudK .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 112px); }
   #hudK .progress { top: calc(env(safe-area-inset-top, 0px) + 96px); bottom: calc(env(safe-area-inset-bottom, 0px) + 130px); }
+  /* こぐリズム: 左右のランプ・こうごの数・ひとかきの強さ */
+  .rhythm {
+    position: absolute; left: 50%; translate: -50% 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px;
+    background: rgba(255,255,255,.88); box-shadow: 0 3px 0 rgba(31,42,51,.18);
+  }
+  .rhythm .lamp { width: 16px; height: 16px; border-radius: 50%; background: #cfd8dc; box-shadow: inset 0 -2px 0 rgba(0,0,0,.12); }
+  .rhythm .lamp.on { animation: lampon .35s ease-out; }
+  @keyframes lampon { 0% { background: #5ab8ff; transform: scale(1.35); box-shadow: 0 0 10px #5ab8ff; } 100% { background: #cfd8dc; transform: scale(1); } }
+  .rhythm .mid { display: grid; grid-template-columns: auto auto; align-items: baseline; column-gap: 3px; min-width: 64px; }
+  .rhythm .mid b { font: 400 22px/1 var(--font-display); color: var(--hud-ink); text-align: right; font-variant-numeric: tabular-nums; }
+  .rhythm .mid small { font: 700 10px var(--font-body); color: #6b7a84; }
+  .rhythm .mid.hot b { color: #e88a12; }
+  .rhythm .pow { grid-column: span 2; height: 6px; margin-top: 3px; border-radius: 3px; background: #e3e9ec; overflow: hidden; }
+  .rhythm .pow em { display: block; height: 100%; width: 0; border-radius: 3px; transition: width .08s; background: #7bd158; }
+  .rhythm .pow em.ok { background: #f2c230; }
+  .rhythm .pow em.weak { background: var(--watch); }
+  .rtip {
+    position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 74px); margin: 0; text-align: center;
+    font: 400 19px var(--font-display); color: #fff; -webkit-text-stroke: 5px var(--hud-ink); paint-order: stroke fill; opacity: 0;
+  }
+  .rtip.warn { color: #ffb0a8; }
+  .rtip.good { color: #ffd24a; }
+  .rtip.show { animation: rtip 1.4s ease-out forwards; }
+  @keyframes rtip { 0% { opacity: 0; transform: translateY(8px) scale(.8); } 15% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-6px); } }
   .sprayfx {
     position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .5s;
     background:
@@ -972,6 +997,12 @@
   <div class="progress" id="trackK"></div>
   <div class="splash" id="splashK"></div>
   <p class="howto" id="howtoK">左・右を こうごに たたいて こぐ</p>
+  <div class="rhythm" aria-hidden="true">
+    <i class="lamp" id="lampLK"></i>
+    <div class="mid"><b id="comboK">0</b><small>こうご</small><span class="pow"><em id="powK"></em></span></div>
+    <i class="lamp" id="lampRK"></i>
+  </div>
+  <p class="rtip" id="tipK"></p>
   <div class="pad left" id="padLK" aria-hidden="true">こぐ<small>ひだり</small></div>
   <div class="pad right" id="padRK" aria-hidden="true">こぐ<small>みぎ</small></div>
 </div>
