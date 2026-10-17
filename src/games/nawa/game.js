@@ -18,8 +18,11 @@ const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const SLOTS = 5;
 const params = new URLSearchParams(location.search);
-const HIGH_AMP = AXIS_Y - RULES.clearHigh - 0.08; // 大なみの なわの ふれはば(足もとより 高い ところを 通る)
-const LOW_AMP = AXIS_Y - 0.03;
+// なわの ふれはば。ふつうは 軸の 高さより 大きく、いちばん 下では まん中が 地面を たたく
+const LOW_AMP = 1.5;
+const LAG = 0.4; // まん中ほど 手もとより おくれて ついてくる(しなる なわ)
+const HIGH_AMP = AXIS_Y - RULES.clearHigh - 0.12; // 大なみ: まん中でも 足もとより 高い ところを 通る
+const ROPE_FLOOR = 0.03;
 const SIDE = Math.PI / 2; // とぶ子の 向き(右を 向いて 1列に ならぶ)
 
 export async function createNawa({ renderer, settings, getAudio, onExit }) {
@@ -114,16 +117,18 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   const rope = new THREE.Mesh(new THREE.BufferGeometry(), toonMaterial(0xf5c86a));
   rope.castShadow = true;
   scene.add(rope);
-  const ropePts = Array.from({ length: 25 }, () => new THREE.Vector3());
+  const ropePts = Array.from({ length: 41 }, () => new THREE.Vector3());
   let amp = LOW_AMP;
   function shapeRope(theta) {
     for (let i = 0; i < ropePts.length; i++) {
       const u = i / (ropePts.length - 1);
-      const f = Math.min(1, Math.sin(u * Math.PI) * 3.5); // まん中は 平ら(5人みんなの 足もとを 通る)
-      ropePts[i].set((u * 2 - 1) * (TURN_X - 0.3), AXIS_Y - amp * f * Math.cos(theta), amp * f * Math.sin(theta) * 0.9);
+      const f = Math.sin(u * Math.PI); // ふつうの 弧
+      const th = theta - LAG * f;
+      const y = Math.max(ROPE_FLOOR, AXIS_Y - amp * f * Math.cos(th)); // 地面より 下には いかない(地面を たたく)
+      ropePts[i].set((u * 2 - 1) * (TURN_X - 0.3), y, amp * f * Math.sin(th) * 0.8);
     }
     rope.geometry.dispose();
-    rope.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ropePts), 48, 0.045, 6);
+    rope.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ropePts), 64, 0.055, 6);
   }
 
   // ── じゃまのカエル(小さな みどりの カエル) ─────────────────
@@ -507,8 +512,8 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    const pos = portrait ? new THREE.Vector3(0, 3.0, 14.2) : new THREE.Vector3(0, 2.3, 8.0);
-    const look = new THREE.Vector3(0, portrait ? 1.9 : 1.2, -1.2);
+    const pos = portrait ? new THREE.Vector3(0, 3.6, 18.6) : new THREE.Vector3(0, 2.8, 10.6);
+    const look = new THREE.Vector3(0, portrait ? 2.3 : 1.4, -1.2);
     camera.fov = portrait ? 58 : 44;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();

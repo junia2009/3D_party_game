@@ -12,7 +12,7 @@ import { mergeStatic } from '../../runtime/merge.js';
 import { grassTexture } from '../daruma/ground.js';
 import { buildForestTrees, makeRand } from '../daruma/trees.js';
 
-export const TURN_X = 3.1; // 回す子の 立つ ところ(x)
+export const TURN_X = 4.3; // 回す子の 間は ひろく(なわが 自然な 弧で 5人の 足もとに とどく) // 回す子の 立つ ところ(x)
 export const AXIS_Y = 1.05; // なわの 回る 軸の 高さ(回す子の 手)
 export const YAGURA = { x: 0, z: -5.2, top: 2.3 }; // やぐらの 床の 高さ
 export const slotX = (slot, n) => (slot - (n - 1) / 2) * Math.min(1.05, 4.2 / Math.max(1, n - 1)); // となりと 重ならない 間
