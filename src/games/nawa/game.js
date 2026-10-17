@@ -20,6 +20,7 @@ const SLOTS = 5;
 const params = new URLSearchParams(location.search);
 const HIGH_AMP = AXIS_Y - RULES.clearHigh - 0.08; // 大なみの なわの ふれはば(足もとより 高い ところを 通る)
 const LOW_AMP = AXIS_Y - 0.03;
+const SIDE = Math.PI / 2; // とぶ子の 向き(右を 向いて 1列に ならぶ)
 
 export async function createNawa({ renderer, settings, getAudio, onExit }) {
   const scene = new THREE.Scene();
@@ -99,13 +100,13 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   scene.add(owl.root);
   const turners = await Promise.all([['risu', -1], ['harinezumi', 1]].map(async ([kind, sx]) => {
     const m = await createModel(kind);
-    // 正面を 向いて、内がわの 手で なわを 回す
     m.root.position.set(sx * TURN_X, 0, 0);
+    m.root.rotation.y = -sx * Math.PI / 2;
     m.root.scale.setScalar(1.35);
     m.play('idle');
     m.setFace('happy');
     scene.add(m.root);
-    return { model: m, sx, arm: m.node(sx < 0 ? 'arm_L' : 'arm_R') };
+    return { model: m, sx, arm: m.node(sx < 0 ? 'arm_R' : 'arm_L') || m.node('arm_R') };
   }));
   atmosphere.setupShadows([stage.group, owl.root, ...turners.map((t) => t.model.root)], [stage.group]);
 
@@ -443,7 +444,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     for (const u of game.units) {
       const r = s.runners[u.slot];
       u.squash = Math.max(0, u.squash - dt * 6);
-      let clip = 'idle', face = 'normal', x = u.home, y = r.y, z = 0, rotY = 0;
+      let clip = 'idle', face = 'normal', x = u.home, y = r.y, z = 0, rotY = SIDE; // とぶ子は みんな 同じ 横向き
       if (u.out) {
         // ひっかかった: その場で ころんで、うしろの ベンチへ
         u.out.t += dt;
@@ -453,10 +454,10 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
         y = 0;
         clip = u.out.t < 1.0 ? 'dizzy' : k < 1 ? 'run' : 'idle';
         face = u.out.t < 1.0 ? 'frustrated' : 'normal';
-        rotY = k > 0 && k < 1 ? Math.atan2(u.out.bench.x - u.home, u.out.bench.z) : 0;
+        rotY = k <= 0 ? SIDE : k < 1 ? Math.atan2(u.out.bench.x - u.home, u.out.bench.z) : 0;
         if (s.phase === 'finished') { clip = 'wave'; face = 'happy'; }
       } else if (s.phase === 'finished') {
-        clip = 'cheer'; face = 'happy';
+        clip = 'cheer'; face = 'happy'; rotY = 0; // 勝った子は こちらを 向いて よろこぶ
         y = Math.abs(Math.sin(time * 6)) * 0.3;
       } else if (r.air) {
         clip = 'cheer'; face = r.vy > 0 ? 'happy' : 'surprised';
@@ -482,11 +483,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     amp += (target - amp) * Math.min(1, dt * 6);
     shapeRope(s.phase === 'ready' ? Math.PI : r.theta);
     for (const t of turners) {
-      if (t.arm) {
-        // 腕を 内がわへ のばして、なわと いっしょに 小さく 回す
-        t.arm.rotation.z = -t.sx * (1.2 - Math.cos(r.theta) * 0.25);
-        t.arm.rotation.x = -Math.sin(r.theta) * 0.5;
-      }
+      if (t.arm) t.arm.rotation.x = -1.2 + Math.sin(r.theta) * 0.6 * t.sx;
       t.model.update(dt);
     }
     // カエル: くずれた リズムで ぴょこぴょこ
