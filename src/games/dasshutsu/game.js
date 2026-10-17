@@ -94,17 +94,6 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
 
   // ── ドア(階ごとに、試合のたびに作る) ───────────────────
   const doorGroups = {}; // floor → [door group]
-  const marks = []; // まちがいの しるし
-  const markTex = (() => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    const g = c.getContext('2d');
-    g.strokeStyle = 'rgba(255,255,255,.9)';
-    g.lineWidth = 9;
-    g.lineCap = 'round';
-    g.beginPath(); g.moveTo(14, 14); g.lineTo(50, 50); g.moveTo(50, 14); g.lineTo(14, 50); g.stroke();
-    return new THREE.CanvasTexture(c);
-  })();
   const glowTex = (() => {
     const c = document.createElement('canvas');
     c.width = c.height = 64;
@@ -124,7 +113,6 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
   const hintSprites = [];
   function buildDoors(s) {
     for (const f of Object.keys(doorGroups)) for (const d of doorGroups[f]) scene.remove(d);
-    for (const m of marks.splice(0)) scene.remove(m);
     for (const h of hintSprites.splice(0)) scene.remove(h);
     for (let f = TOP; f >= 1; f--) {
       doorGroups[f] = s.floors[f].doors.map((d, i) => {
@@ -144,16 +132,7 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
     }
     atmosphere.setupShadows(Object.values(doorGroups).flat(), []);
   }
-  function markDoor(f, i) {
-    const d = doorGroups[f]?.[i];
-    if (!d || d.userData.marked) return;
-    d.userData.marked = true;
-    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: markTex, color: 0xff6a5a, transparent: true, depthWrite: false }));
-    m.position.set(d.position.x, d.position.y + DOOR_H + 0.3, 0.12);
-    m.scale.setScalar(0.42);
-    scene.add(m);
-    marks.push(m);
-  }
+
 
   // ── きらきら・紙ふぶき ───────────────────────────────
   const sparkleTex = (() => {
@@ -245,7 +224,8 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
       const def = CHARACTERS.find((c) => c.key === p.character);
       return { model, holder, size: def.size || 1, face: Math.PI, lastAct: null, happyT: 0 };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    // 引きの絵でも 自分が分かるように、しるしは 大きめ
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.48, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
     runners[0].holder.add(marker);
     runners[0].marker = marker;
@@ -459,7 +439,6 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
         case 'wrong':
           break;
         case 'out': {
-          markDoor(e.floor, e.door);
           sfx.fushigi(volFor(e.slot, e.floor));
           pop(e.slot === 0 ? 'あれれ? もどってきた…' : '?', r.x, floorY(e.floor) + 2.0, r.z, e.slot === 0 ? 'me' : '');
           break;
@@ -474,7 +453,6 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
           else notice(`${game.players[e.slot].name}が すべり台!`, e.slot);
           break;
         case 'upstairs':
-          markDoor(e.floor, e.door);
           sfx.up(volFor(e.slot, e.floor));
           if (e.slot === 0) splash('上の階に もどった!', 'red');
           break;
@@ -595,18 +573,11 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
     const s = game?.state;
     const me = s?.runners[0];
     let pos, look;
-    if (!me || me.done || s.phase === 'finished' || mode === 'result') {
-      // ゴールしたら(おわったら)マンションぜんたいを 引いて見せる
-      pos = portrait ? new THREE.Vector3(0, 9.5, 27) : new THREE.Vector3(0, 8.5, 19);
-      look = new THREE.Vector3(0, portrait ? 8.2 : 7.8, 0);
-    } else {
-      // 自分の階を 前から。左右は自分を追う(ろうかの はしは 少し内がわまで)
-      const lim = HALL_W - (portrait ? 2.6 : 3.6);
-      const x = Math.max(-lim, Math.min(lim, me.x * 0.8));
-      const y = floorY(me.floor);
-      pos = portrait ? new THREE.Vector3(x, y + 2.4, 12.5) : new THREE.Vector3(x, y + 2.0, 8.6);
-      look = new THREE.Vector3(x, y + 1.2, 0);
-    }
+    // いつも マンションぜんたいを 引いて見せる(ほかの階の子の ようすも 見える)。
+    // あそんでいるあいだは、自分の階のほうへ ほんの少しだけ 寄せる
+    const lean = me && !me.done && s.phase === 'play' ? (floorY(me.floor) + 1.5 - 8) * 0.12 : 0;
+    pos = portrait ? new THREE.Vector3(0, 9.5 + lean, 27) : new THREE.Vector3(0, 8.5 + lean, 19);
+    look = new THREE.Vector3(0, (portrait ? 8.2 : 7.8) + lean, 0);
     camera.fov = portrait ? 58 : 46;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
