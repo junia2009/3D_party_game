@@ -165,6 +165,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   scene.add(rope);
   const ropePts = Array.from({ length: 41 }, () => new THREE.Vector3());
   let amp = LOW_AMP;
+  let windUp = 0;
   function shapeRope(theta) {
     for (let i = 0; i < ropePts.length; i++) {
       const u = i / (ropePts.length - 1);
@@ -198,6 +199,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
       leg.scale.set(1, 0.6, 1.5);
       frog.add(eye, pupil, leg);
     }
+    frog.scale.setScalar(1.6);
     frog.visible = false;
     scene.add(frog);
   }
@@ -409,13 +411,18 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
             for (const t of turners) t.model.setFace('surprised');
           } else for (const t of turners) t.model.setFace('happy');
           break;
-        case 'jump':
+        case 'jump': {
+          const u = game.units[e.who];
+          u.stretch = 1; // ふみきりで ぐっと のびる
+          puff(u.holder.position.x, 0.04, 0, 1);
           if (e.who === 0) sfx.jump();
           break;
+        }
         case 'big': {
           const u = game.units[e.who];
           if (e.who === 0) { sfx.big(); game.bigAt = s.runners[0].jumps; }
           puff(u.holder.position.x, 0.05, 0, 3, 0xffe8a8);
+          u.spin = 1; // 大ジャンプは くるりんと 1回転
           break;
         }
         case 'land':
@@ -427,6 +434,15 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
           owl.play('flap', { fade: 0.05 });
           $('countJ').textContent = String(e.n);
           fans.forEach((f, i) => { if ((i + e.n) % 2 === 0) f.hop = 1; });
+          // なわが 地面を たたいた ところに 土けむり
+          if (e.kind === 'low') for (let x = -2.2; x <= 2.2; x += 0.55) puff(x + (Math.random() - 0.5) * 0.3, 0.04, (Math.random() - 0.5) * 0.3, 1, 0xc8a878);
+          // カエルが 地面に いたら なわに ひっかかって ころりん
+          if (frog.visible && !frogFx.leaving && frogFx.y < 0.15 && !frogFx.roll) {
+            frogFx.roll = 1;
+            frogFx.vy = 3.2;
+            sfx.croak();
+            pop('ゲコッ!', frogFx.x, 0.8, 0.25, 'frog');
+          }
           for (const i of e.caught) {
             const u = game.units[i];
             if (e.redo) { pop('あっ!', u.holder.position.x, 1.6 * u.size, 0, 'out'); continue; }
@@ -443,6 +459,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
           frog.visible = true;
           frogFx.leaving = false;
           frogFx.enter = 0;
+          frogFx.roll = 0;
           frogFx.targetX = gapX(e.gap);
           frogFx.x = frogFx.targetX + (frogFx.targetX < 0 ? -4 : 4);
           sfx.croak();
@@ -499,6 +516,9 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     for (const u of game.units) {
       const r = s.runners[u.slot];
       u.squash = Math.max(0, u.squash - dt * 6);
+      u.stretch = Math.max(0, (u.stretch || 0) - dt * 5);
+      u.spin = Math.max(0, (u.spin || 0) - dt * 2.4);
+      let tilt = 0;
       let clip = 'idle', face = 'normal', x = u.home, y = r.y, z = 0, rotY = SIDE; // とぶ子は みんな 同じ 横向き
       if (u.out) {
         // ひっかかった: その場で ころんで、うしろの ベンチへ
@@ -508,6 +528,8 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
         z = u.out.bench.z * k;
         y = 0;
         clip = u.out.t < 1.0 ? 'dizzy' : k < 1 ? 'run' : 'idle';
+        // なわに 足を とられて つんのめる → おきあがる
+        if (u.out.t < 0.8) tilt = Math.sin(Math.min(1, u.out.t / 0.8) * Math.PI) * 0.9;
         face = u.out.t < 1.0 ? 'frustrated' : 'normal';
         rotY = k <= 0 ? SIDE : k < 1 ? Math.atan2(u.out.bench.x - u.home, u.out.bench.z) : 0;
         if (s.phase === 'finished') { clip = 'wave'; face = 'happy'; }
@@ -521,8 +543,9 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
         face = 'normal';
       }
       u.holder.position.set(x, y, z);
-      u.holder.rotation.y = rotY;
-      const sq = u.squash * 0.18;
+      u.holder.rotation.y = rotY + (u.spin > 0 ? (1 - u.spin) ** 0.7 * Math.PI * 2 : 0);
+      u.model.root.rotation.x = tilt;
+      const sq = u.squash * 0.18 - u.stretch * 0.12;
       u.model.root.scale.set(1 + sq * 0.6, 1 - sq, 1 + sq * 0.6);
       u.model.play(clip, { timeScale: clip === 'cheer' && r.air ? 0.3 : 1 });
       u.model.setFace(face);
@@ -537,8 +560,14 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     const target = s.phase === 'play' && r.kind === 'high' ? HIGH_AMP : LOW_AMP;
     amp += (target - amp) * Math.min(1, dt * 6);
     shapeRope(s.phase === 'ready' ? Math.PI : r.theta);
+    // 回す2人: 大なみの 1回は 腕を 大きく ふりかぶって、体も うしろへ
+    windUp += ((s.phase === 'play' && r.kind === 'high' ? 1 : 0) - windUp) * Math.min(1, dt * 8);
     for (const t of turners) {
-      if (t.arm) t.arm.rotation.x = -1.2 + Math.sin(r.theta) * 0.6 * t.sx;
+      if (t.arm) {
+        t.arm.rotation.x = -1.2 - windUp * 0.9 + Math.sin(r.theta) * (0.6 + windUp * 0.5) * t.sx;
+        t.arm.rotation.z = -t.sx * windUp * 0.5;
+      }
+      t.model.root.rotation.z = t.sx * windUp * 0.12;
       t.model.update(dt);
     }
     // カエル: くずれた リズムで ぴょこぴょこ
@@ -553,6 +582,13 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
       }
       frog.position.set(frogFx.x, frogFx.y, 0.25);
       frog.rotation.y = frogFx.leaving ? (frogFx.x < 0 ? -Math.PI / 2 : Math.PI / 2) : Math.sin(time * 3) * 0.4;
+      // なわに ひっかかった: くるくる ころがって、また もどってくる
+      if (frogFx.roll) {
+        frogFx.roll = Math.max(0, frogFx.roll - dt * 1.2);
+        frog.rotation.x = (1 - frogFx.roll) * Math.PI * 4;
+        frog.position.z = 0.25 + Math.sin((1 - frogFx.roll) * Math.PI) * 0.8;
+        if (frogFx.roll <= 0) frog.rotation.x = 0;
+      }
       if (Math.abs(frogFx.x) > 8) frog.visible = false;
     }
   }
