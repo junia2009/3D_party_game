@@ -385,6 +385,11 @@
   .call.show { animation: call .45s ease-out forwards; }
   @keyframes call { 0% { opacity: 1; transform: scale(1.25); } 60% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1); } }
   #hudN .splash.small { font-size: clamp(26px, 8.5vw, 50px); white-space: pre-line; line-height: 1.15; }
+  #hudN .splash.count { font-size: clamp(70px, 24vw, 130px); color: #ffd24a; top: 26%; }
+  #hudN .splash.gold.small { color: #ffd24a; }
+  .tug.edge { animation: tugshake .12s infinite; }
+  .tug.edge i { box-shadow: 0 0 0 4px rgba(255,210,74,.8), 0 2px 3px rgba(0,0,0,.3); }
+  @keyframes tugshake { 50% { translate: 1.5px 1px; } }
   .pop.sync { color: #ffd24a; font-size: 30px; -webkit-text-stroke: 6px #6a3a10; }
   .pop.sync.them { color: #fff; font-size: 20px; -webkit-text-stroke: 5px var(--hud-ink); }
   .pop.owl {
