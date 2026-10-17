@@ -2,14 +2,14 @@
 //
 // ルールは rules.js、CPU は cpu.js。ここは「入力を集めて rules.step を回し、結果を3Dと HUD に映す」だけ。
 //
-// 動かし方: 画面のどこでも タップ(パソコンは スペース / エンター)。「せーの!」の リズムに 合わせて。
+// 動かし方: 画面のどこでも 連打(パソコンは スペース / エンター)。先生の「せーの!」で 力が 2倍。
 
 import * as THREE from 'three';
 import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
-import { RULES, STEP, cheer, createGame, nearestBeat, ranking, step, timeLeft } from './rules.js';
+import { RULES, STEP, cheer, createGame, ranking, seenoOn, step, timeLeft } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { FRONT, GAP, HOST, SEATS, STREAM_W, STUMP_TOP, WATER_Y, buildStage, groundY } from './stage.js';
 import { createAtmosphere, windify } from '../daruma/atmosphere.js';
@@ -75,12 +75,10 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     src.start(t);
   }
   const sfx = {
-    // ドン: 太鼓(ビート)。速い・ゆっくりで 高さを かえる
-    drum(kind) { voice({ type: 'triangle', pts: [[0, kind === 'fast' ? 150 : kind === 'slow' ? 90 : 120], [0.1, 60]], len: 0.16, gain: 0.16 }); noise({ len: 0.05, gain: 0.05, freq: [800, 200], type: 'lowpass' }); },
-    // ぴったり / いいね / ずれ
-    perfect() { voice({ pts: [[0, 1046], [0.05, 1318]], len: 0.12, gain: 0.07 }); },
-    good() { voice({ pts: [[0, 784]], len: 0.08, gain: 0.05 }); },
-    miss() { voice({ type: 'square', pts: [[0, 220]], len: 0.06, gain: 0.03 }); },
+    // ドン: 太鼓(「せーの!」)
+    drum() { voice({ type: 'triangle', pts: [[0, 130], [0.1, 60]], len: 0.16, gain: 0.16 }); noise({ len: 0.05, gain: 0.05, freq: [800, 200], type: 'lowpass' }); },
+    // 自分の タップ(せーのの あいだは 明るい音)
+    tap(on) { voice({ type: 'triangle', pts: [[0, on ? 660 : 330 + Math.random() * 40], [0.04, on ? 880 : 260]], len: 0.05, gain: on ? 0.05 : 0.035 }); },
     sync() { [0, 0.06].forEach((at, i) => voice({ type: 'triangle', pts: [[0, 660 + i * 220], [0.08, 880 + i * 220]], len: 0.14, gain: 0.07, at })); },
     hoot() { voice({ pts: [[0, 420], [0.12, 380]], len: 0.18, gain: 0.08 }); voice({ pts: [[0, 420], [0.12, 360]], len: 0.22, gain: 0.08, at: 0.22 }); },
     plop() { noise({ len: 0.4, gain: 0.14, freq: [1200, 300], type: 'lowpass', attack: 0.005 }); },
@@ -303,7 +301,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     me.holder.add(marker);
     me.marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, sync: { L: { beat: -1, n: 0 }, R: { beat: -1, n: 0 } }, warned: -1, count: null, roll: 0, edgeSide: null, slow: 0 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, seenoPull: { L: 0, R: 0 }, myTaps: [], rate: 0, count: null, roll: 0, edgeSide: null, slow: 0 };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(units.map((u) => u.holder), []);
     pressed = false;
@@ -391,16 +389,14 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     // つなの 目じるし(まん中が 0、はしが 勝ち)
     $('meterN').style.setProperty('--p', (s.p / RULES.win).toFixed(3));
     $('timeN').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
-    // ビートの 輪: つぎの ビートへ むかって 縮む
-    const b = s.beats[s.nextBeat];
-    const prev = s.beats[s.nextBeat - 1];
-    if (b && s.phase === 'play') {
-      const span = prev ? b.t - prev.t : RULES.beat;
-      const k = Math.max(0, Math.min(1, (b.t - s.t) / span));
-      $('ringN').style.setProperty('--k', k.toFixed(3));
-      $('beatN').className = 'beat ' + b.kind;
-    }
-    $('beatN').hidden = s.phase !== 'play';
+    // 連打の メーター: いまの 1秒あたりの タップ(上限で いっぱい)
+    const taps = game.myTaps;
+    while (taps.length && taps[0] < s.t - 1) taps.shift();
+    game.rate += (taps.length - game.rate) * 0.2;
+    $('mashN').style.setProperty('--k', Math.min(1, game.rate / RULES.tapCap).toFixed(3));
+    $('mashN').classList.toggle('max', game.rate > RULES.tapCap * 0.8);
+    $('mashN').hidden = s.phase !== 'play';
+    $('hudN').classList.toggle('seeno', s.phase === 'play' && seenoOn(s));
     for (const side of ['L', 'R']) $(`cheer${side}N`).classList.toggle('on', s.phase === 'play' && cheer(s, side) > 1.05);
   }
   const tmpV = new THREE.Vector3();
@@ -417,8 +413,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
   const unitOf = (who) => game.units.find((u) => u.id === who);
 
   // ── できごと ────────────────────────────────────────
-  const GRADE = { perfect: 'ぴったり!', good: 'いいね', miss: 'ずれた', spam: '' };
-  function onEvents(events) {
+    function onEvents(events) {
     const s = game.state;
     for (const e of events) {
       switch (e.type) {
@@ -426,43 +421,53 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
           splash('はじめ!');
           setTimeout(() => $('howtoN').classList.remove('show'), 6000);
           break;
-        case 'beat':
-          sfx.drum(e.kind);
-          call('よいしょ!', e.kind);
-          if (owl.current !== 'chant') owl.play('flap', { fade: 0.05 });
+        case 'seenoWarn':
+          // 先生が 羽を あげて、すうっと 息を すう
+          owl.play('chant', { fade: 0.1 });
+          owl.setFace('glare');
+          owlTalk = RULES.seenoWarn + 0.2;
+          pop('せーの…', HOST.x, HOST.top + 2.9, HOST.z, 'owl', 700);
+          sfx.hoot();
           break;
-        case 'tempo':
-          splash(e.kind === 'fast' ? 'はやく なるよ!' : e.kind === 'slow' ? 'ゆっくり…' : 'もとに もどるよ', e.kind === 'fast' ? 'red' : '');
+        case 'seeno':
+          game.seenoPull = { L: 0, R: 0 };
+          call('せーの!', 'seeno');
+          sfx.drum();
+          owl.play('flap', { fade: 0.05 });
+          owl.setFace('normal');
           break;
+        case 'seenoEnd': {
+          // せーので よく引いた チームに「そろった!」
+          const g = game.seenoPull;
+          const side = g.L === g.R ? null : g.L > g.R ? 'L' : 'R';
+          if (side && Math.max(g.L, g.R) > 6) {
+            const team = game.units.filter((v) => v.side === side);
+            for (const v of team) { v.yank = 1.5; puff(v.holder.position.x, 0.05, v.holder.position.z, 2); }
+            tension = 1;
+            const mid = team.reduce((a, v) => a + v.holder.position.x, 0) / team.length;
+            const mine = side === s.runners[0].side;
+            pop('そろった!', mid, 2.3, 0, mine ? 'sync' : 'sync them');
+            if (mine) sfx.sync();
+          }
+          break;
+        }
         case 'pull': {
           const u = unitOf(e.who);
-          if (u) u.yank = 1;
-          tension = Math.min(1, tension + (e.grade === 'perfect' ? 0.35 : e.grade === 'good' ? 0.22 : 0.06));
-          // 同じ ビートで チームの 2人以上が ぴったり → 「そろった!」 みんなで ぐいっ
-          if (e.grade === 'perfect') {
-            const bi = nearestBeat(s);
-            const sync = game.sync[e.side];
-            if (sync.beat !== bi) { sync.beat = bi; sync.n = 0; }
-            if (++sync.n === 2) {
-              const team = game.units.filter((v) => v.side === e.side);
-              for (const v of team) { v.yank = 1.5; puff(v.holder.position.x, 0.05, v.holder.position.z, 2); }
-              tension = 1;
-              const mid = team.reduce((a, v) => a + v.holder.position.x, 0) / team.length;
-              pop('そろった!', mid, 2.3, 0, e.side === s.runners[0].side ? 'sync' : 'sync them');
-              if (e.side === s.runners[0].side) sfx.sync();
-            }
-          }
+          if (u) u.yank = Math.max(u.yank, e.seeno ? 1.2 : 0.7);
+          tension = Math.min(1, tension + (e.seeno ? 0.12 : 0.05));
+          if (e.seeno) game.seenoPull[e.side] += e.pull;
           if (e.who === 0) {
-            if (e.grade === 'perfect') sfx.perfect(); else if (e.grade === 'good') sfx.good(); else if (e.grade === 'miss') sfx.miss();
-            if (GRADE[e.grade]) pop(GRADE[e.grade], u.holder.position.x, 2.0 * u.size, u.holder.position.z, e.grade === 'perfect' ? 'gold' : e.grade === 'miss' ? 'out' : 'me');
+            game.myTaps.push(s.t);
+            sfx.tap(e.seeno);
+            if (e.seeno && Math.random() < 0.5) pop('×2', u.holder.position.x + (Math.random() - 0.5) * 0.4, 1.9 * u.size, u.holder.position.z, 'gold');
           }
-          if (e.grade === 'perfect' && u) puff(u.holder.position.x, 0.05, u.holder.position.z, 1);
+          if (e.seeno && u && Math.random() < 0.3) puff(u.holder.position.x, 0.05, u.holder.position.z, 1);
           break;
         }
         case 'slip': {
           const u = unitOf(e.who);
           if (u) u.slip = true;
-          if (e.who === 0) { splash('つるっ!\nタップで ふんばれ!', 'red small'); sfx.slip(); }
+          if (e.who === 0) { splash('つるっ!\n連打で ふんばれ!', 'red small'); sfx.slip(); }
           if (u) mudAt(u.holder.position.x, u.holder.position.z);
           break;
         }
@@ -514,7 +519,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
       const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
-        `<span>${def.name}<small>${who}・${r.side === s.winner ? 'かち' : 'まけ'}</small></span><span class="dist">ちから ${Math.round(r.pull * 10)}<small>ぴったり ${r.perfect}</small></span>`;
+        `<span>${def.name}<small>${who}・${r.side === s.winner ? 'かち' : 'まけ'}</small></span><span class="dist">ちから ${Math.round(r.pull * 10)}<small>れんだ ${r.taps}</small></span>`;
       return li;
     }));
     setMode('result');
@@ -527,7 +532,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
       const dir = u.side === 'L' ? -1 : 1;
       let x = dir * (FRONT + u.k * GAP) + s.p;
       let y = 0, z = 0;
-      u.yank = Math.max(0, u.yank - dt * 4);
+      u.yank = Math.max(0, u.yank - dt * 6);
       u.downT = Math.max(0, (u.downT || 0) - dt);
       let clip = 'run', face = 'frustrated', timeScale = 0.4;
       let lean = 0.32 + Math.min(1.5, u.yank) * 0.28;
@@ -698,23 +703,13 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
       if (edge > 0.72) {
         game.roll -= dt;
         if (game.roll <= 0) { sfx.roll(); game.roll = 0.09; }
-        const near = s.p > 0 ? 'R' : 'L'; // 目じるしが 来ている がわ = 負けそうな チーム
+        const near = s.p > 0 ? 'L' : 'R'; // 目じるしが 相手がわへ 行っている = 負けそうな チーム
         if (game.edgeSide !== near) {
           game.edgeSide = near;
           const mine = s.runners[0].side;
           splash(near === mine ? 'ふんばれ!' : 'あと すこし!', near === mine ? 'red small' : 'gold small');
         }
       } else if (edge < 0.5) game.edgeSide = null;
-      // 先生の 予告: つぎの 拍から リズムが かわるとき、1拍 まえに 羽を あげて 知らせる
-      const cur = s.beats[s.nextBeat], nx = s.beats[s.nextBeat + 1];
-      if (s.phase === 'play' && cur && nx && nx.kind !== cur.kind && game.warned !== s.nextBeat + 1) {
-        game.warned = s.nextBeat + 1;
-        owl.play('chant', { fade: 0.1 });
-        owl.setFace(nx.kind === 'fast' ? 'glare' : 'normal');
-        owlTalk = 1.1;
-        pop(nx.kind === 'fast' ? 'はやく なるぞ!' : nx.kind === 'slow' ? 'ゆっくり いくぞ〜' : 'もとに もどすぞ', HOST.x, HOST.top + 2.9, HOST.z, 'owl ' + nx.kind, 1150);
-        sfx.hoot();
-      }
       if (game.endTimer !== null) {
         game.endTimer -= dt;
         if (game.endTimer <= 0) {

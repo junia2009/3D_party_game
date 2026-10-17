@@ -18,17 +18,17 @@ function run(seed, { personalities = PLAYERS.map((_, i) => kinds[(i + seed) % 3]
   return { s, events };
 }
 const toPlay = (s) => { while (s.phase !== 'play') step(s, s.runners.map(() => false)); };
-// slot のチームだけ タップ(ぴったり / ずらす)
-function pullFor(s, slot, offset, sec) {
+// slot だけ 1秒に rate 回 連打
+function mash(s, slot, rate, sec) {
   const end = s.t + sec;
-  let done = -1;
+  let next = s.t;
   while (s.t < end && s.phase === 'play') {
-    const b = s.beats[s.nextBeat];
-    const press = b && done !== s.nextBeat && s.t >= b.t + offset;
-    if (press) done = s.nextBeat;
+    const press = s.t >= next;
+    if (press) next += 1 / rate;
     step(s, s.runners.map((_, i) => (i === slot ? press : false)));
   }
 }
+const quiet = (s) => { s.helpers.forEach((h) => { h.down = 1e9; }); s.runners.forEach((r) => { r.nextSlip = 1e9; }); s.seeno.at = 1e9; };
 
 test('チームは 3人ずつ(たりないぶんは すけっと)。5人なら 3人と 2人+すけっと', () => {
   const s = createGame(PLAYERS, 3);
@@ -56,48 +56,62 @@ test('2人でも決着する。同じシードなら同じ試合', () => {
   assert.deepEqual(run(7).s.p, run(7).s.p);
 });
 
-test('ビートに ぴったり タップすると、でたらめより 強く引ける', () => {
-  const just = createGame(PLAYERS.slice(0, 2), 4);
-  toPlay(just);
-  const off = createGame(PLAYERS.slice(0, 2), 4);
-  toPlay(off);
-  just.helpers.forEach((h) => { h.down = 99; }); off.helpers.forEach((h) => { h.down = 99; });
-  just.runners[1].down = off.runners[1].down = 99;
-  just.runners[0].nextSlip = off.runners[0].nextSlip = 1e9;
-  pullFor(just, 0, 0, 4);
-  pullFor(off, 0, 0.3, 4);
-  assert.ok(just.runners[0].pull > off.runners[0].pull * 2.5, `${just.runners[0].pull} / ${off.runners[0].pull}`);
-  const dir = just.runners[0].side === 'R' ? 1 : -1;
-  assert.ok(just.p * dir > 0, 'じぶんの がわへ つなが動く');
+test('連打するほど 強く引ける。ただし 速すぎても 上限まで', () => {
+  const pull = (rate) => {
+    const s = createGame(PLAYERS.slice(0, 2), 4);
+    toPlay(s);
+    quiet(s);
+    mash(s, 0, rate, 3);
+    return s;
+  };
+  const slow = pull(3), fast = pull(8), crazy = pull(30);
+  assert.ok(fast.runners[0].pull > slow.runners[0].pull * 2.2, `${fast.runners[0].pull} / ${slow.runners[0].pull}`);
+  assert.ok(crazy.runners[0].pull <= RULES.tapCap * 3 + RULES.tapBurst + 0.01, `上限 ${crazy.runners[0].pull}`);
+  const dir = fast.runners[0].side === 'R' ? 1 : -1;
+  assert.ok(fast.p * dir > 0, 'じぶんの がわへ つなが動く');
 });
 
-test('すべったら、すぐ タップで ふんばれる。まにあわないと 少し 引けない', () => {
+test('「せーの!」の あいだは 2倍の 力。予告のあとに 来る', () => {
+  const s = createGame(PLAYERS.slice(0, 2), 9);
+  toPlay(s);
+  quiet(s);
+  s.seeno.at = s.t + 0.05;
+  const kinds = [];
+  let doubled = 0, normal = 0;
+  for (let i = 0; i < 2 / STEP; i++) {
+    for (const e of step(s, [i % 8 === 0, false])) {
+      if (e.type.startsWith('seeno')) kinds.push(e.type);
+      if (e.type === 'pull') (e.seeno ? doubled++ : normal++, assert.equal(e.pull, e.seeno ? 2 : 1));
+    }
+  }
+  assert.deepEqual(kinds, ['seenoWarn', 'seeno', 'seenoEnd']);
+  assert.ok(doubled > 0 && normal > 0);
+});
+
+test('すべったら、すばやく 連打で ふんばれる。まにあわないと 少し 引けない', () => {
   const s = createGame(PLAYERS.slice(0, 2), 5);
   toPlay(s);
+  quiet(s);
   const r = s.runners[0];
   r.nextSlip = s.t;
   let ev = step(s, [false, false]);
   assert.ok(ev.some((e) => e.type === 'slip' && e.who === 0));
-  ev = step(s, [true, false]);
-  assert.ok(ev.some((e) => e.type === 'save' && e.who === 0) && r.down === 0);
+  const before = r.pull;
+  let saved = false;
+  for (let i = 0; i < RULES.slipTaps; i++) { step(s, [false, false]); saved ||= step(s, [true, false]).some((e) => e.type === 'save' && e.who === 0); }
+  assert.ok(saved && r.slip === null && r.down === 0);
+  assert.equal(r.pull, before, 'ふんばる 連打では 引けない');
   r.nextSlip = s.t;
   step(s, [false, false]);
-  for (let i = 0; i < (RULES.slipSave + 0.1) / STEP; i++) step(s, [false, false]);
+  for (let i = 0; i < (RULES.slipSave + 0.1) / STEP; i++) step(s, [i % 40 === 0, false]); // ゆっくりの タップでは まにあわない
   assert.ok(r.down > 0, 'ころんで 引けない');
 });
 
 test('負けている チームは 応援で 少し 強くなる', async () => {
   const { cheer } = await import('../src/games/tsuna/rules.js');
   const s = createGame(PLAYERS.slice(0, 2), 6);
-  s.p = 1.2;
-  assert.ok(cheer(s, 'R') > 1 && cheer(s, 'L') === 1);
-});
-
-test('リズムが ときどき 速く・ゆっくりに なる', () => {
-  const s = createGame(PLAYERS, 8);
-  const kinds = new Set(s.beats.map((b) => b.kind));
-  assert.ok(kinds.has('fast') || kinds.has('slow'));
-  assert.ok(kinds.has('normal'));
+  s.p = 1.2; // R が 勝ちそう
+  assert.ok(cheer(s, 'L') > 1 && cheer(s, 'R') === 1);
 });
 
 test('同じ性格どうしなら、どの席も勝てる(かたよりすぎない)', () => {
@@ -107,8 +121,9 @@ test('同じ性格どうしなら、どの席も勝てる(かたよりすぎな�
   for (const w of wins) assert.ok(w > NN * 0.08 && w < NN * 0.34, `席ごとの勝ち数 ${wins}`);
 });
 
-test('人くらいの リズム感でも、CPU と互角に戦える', () => {
-  PERSONALITIES.human = { label: 'ひと', sd: 0.095, bias: 0.03, spam: 0.2, react: [0.35, 0.9] };
+test('人くらいの 連打でも、CPU と互角に戦える', () => {
+  // スマホで 1秒に 6回くらい・「せーの!」に 気づくのは 少し おそめ
+  PERSONALITIES.human = { label: 'ひと', rate: 6.0, wobble: 0.2, react: [0.25, 0.45], boost: 1.2, slipReact: [0.25, 0.5] };
   try {
     let rankSum = 0, wins = 0;
     const NN = 200;
