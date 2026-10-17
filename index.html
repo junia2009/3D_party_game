@@ -339,6 +339,58 @@
   #hudD .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
   .tame.open { background: #6a8aa0; font-size: 22px; transition: background .15s; }
   .tame.open.near { background: #ff8a3d; box-shadow: 0 7px 0 rgba(31,42,51,.25), 0 0 0 5px rgba(255,210,74,.7); animation: tamefull .5s infinite; }
+  /* 川原の つなひき: 上に 2チームの札と 時間、その下に つなの 目じるし。下に リズムの 輪(ちぢんで 重なったら タップ) */
+  #hudN { --tL: #4a9ae8; --tR: #ff8a3d; }
+  #hudN .team { flex: 1; min-width: 0; display: flex; gap: 3px; align-items: center; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.7); box-shadow: 0 3px 0 rgba(31,42,51,.18); }
+  #hudN .team.L { justify-content: flex-start; border: 3px solid var(--tL); }
+  #hudN .team.R { justify-content: flex-end; flex-direction: row-reverse; border: 3px solid var(--tR); }
+  #hudN[data-side="L"] .team.L, #hudN[data-side="R"] .team.R { background: #fff; }
+  #hudN .chip { padding: 3px; box-shadow: none; background: transparent; }
+  #hudN .chip i { width: 18px; height: 18px; }
+  #hudN .chip.me i { border: 3px solid var(--hud-ink); }
+  #hudN .chip.me { outline: 0; }
+  #hudN .chip.helper b { font: 800 10px var(--font-body); background: var(--c); color: #fff; border-radius: 999px; padding: 2px 5px; white-space: nowrap; }
+  #hudN .timer { width: 2.6em; font-size: 18px; padding: 6px 0; align-self: center; }
+  #hudN .timer:empty { visibility: hidden; }
+  .tug {
+    position: absolute; left: max(18px, env(safe-area-inset-left, 0px)); right: max(18px, env(safe-area-inset-right, 0px));
+    top: calc(env(safe-area-inset-top, 0px) + 66px); height: 14px; border-radius: 7px;
+    background: linear-gradient(90deg, var(--tL) 0 6%, rgba(255,255,255,.75) 6% 94%, var(--tR) 94%); box-shadow: 0 2px 0 rgba(31,42,51,.18);
+  }
+  .tug::after { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--hud-ink); opacity: .35; }
+  .tug i {
+    position: absolute; top: 50%; left: calc(50% + var(--p, 0) * 44%); width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%;
+    background: #e8344a; border: 3px solid #fff; box-shadow: 0 2px 3px rgba(0,0,0,.3); transition: left .08s linear; z-index: 1;
+  }
+  .cheer {
+    position: absolute; top: calc(env(safe-area-inset-top, 0px) + 88px); font: 800 13px var(--font-body); color: #fff; padding: 3px 10px; border-radius: 999px;
+    opacity: 0; transform: scale(.6); transition: opacity .2s, transform .2s;
+  }
+  .cheer.L { left: max(18px, env(safe-area-inset-left, 0px)); background: var(--tL); }
+  .cheer.R { right: max(18px, env(safe-area-inset-right, 0px)); background: var(--tR); }
+  .cheer.on { opacity: 1; transform: scale(1); animation: pulse .6s ease-in-out infinite; }
+  #hudN .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 196px); }
+  .beat {
+    position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 40px); width: 96px; height: 96px; margin-left: -48px;
+    --col: #ffd24a;
+  }
+  .beat.fast { --col: #ff5a4e; } .beat.slow { --col: #6ac0e8; }
+  .beat b { position: absolute; inset: 18px; border-radius: 50%; background: var(--col); border: 4px solid #fff; box-shadow: 0 4px 0 rgba(31,42,51,.25); }
+  .beat i { position: absolute; inset: 14px; border-radius: 50%; border: 5px solid var(--col); transform: scale(calc(1 + var(--k, 1) * 1.3)); opacity: calc(1 - var(--k, 1) * .5); filter: drop-shadow(0 0 2px rgba(31,42,51,.6)); }
+  .call {
+    position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 140px); margin: 0; text-align: center;
+    font-family: var(--font-display); font-size: clamp(26px, 8vw, 44px); color: #ffd24a; -webkit-text-stroke: 5px var(--hud-ink); paint-order: stroke fill; opacity: 0;
+  }
+  .call.fast { color: #ff7a6a; } .call.slow { color: #8ad0f0; }
+  .call.show { animation: call .45s ease-out forwards; }
+  @keyframes call { 0% { opacity: 1; transform: scale(1.25); } 60% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1); } }
+  #hudN .splash.small { font-size: clamp(26px, 8.5vw, 50px); }
+  @media (orientation: landscape) and (max-height: 560px) {
+    #hudN .howto { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 112px); font-size: 14px; }
+    .beat { width: 80px; height: 80px; margin-left: -40px; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+    .call { bottom: calc(env(safe-area-inset-bottom, 0px) + 98px); font-size: 30px; }
+    #hudN .splash { top: 24%; }
+  }
   /* おぼえて かくれんぼ: まん中に 先生の ことば(こたえる時間の帯つき)。まっくらは 画面ごと暗く */
   #hudZ .timer { width: auto; min-width: 3em; padding: 8px 8px; font-size: 16px; }
   #hudZ .chip.done { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px var(--c); }
@@ -1036,6 +1088,11 @@
       <span class="name">どんぐりマンション だっしゅつ</span>
       <span class="meta"><span>30〜60びょう</span></span>
     </button>
+    <button class="card" type="button" data-open="tsuna">
+      <span class="thumb"><img src="./assets/thumbs/tsuna.jpg" alt="" width="640" height="360"><span class="ribbon">第12競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">川原の つなひき</span>
+      <span class="meta"><span>20〜40びょう</span></span>
+    </button>
   </div>
 </section>
 
@@ -1167,6 +1224,23 @@
   <p class="howto" id="howtoD">ゆびを おいて ずらすと はしる<br>ドアの前で「あける」! 1かいの出口をめざそう</p>
   <div class="stick" id="stickD" hidden><i></i></div>
   <button class="tame open" id="openD" type="button">あける</button>
+</div>
+
+<div class="hud" id="hudN" hidden>
+  <div class="top">
+    <div class="team L" id="teamLN" aria-label="ひだりの チーム"></div>
+    <div class="timer" id="timeN"></div>
+    <div class="team R" id="teamRN" aria-label="みぎの チーム"></div>
+    <button class="pausebtn" id="pauseBtnN" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="tug" id="meterN" aria-hidden="true"><span class="end L"></span><span class="end R"></span><i></i></div>
+  <div class="cheer L" id="cheerLN">おうえん!</div>
+  <div class="cheer R" id="cheerRN">おうえん!</div>
+  <div class="pops" id="popsN"></div>
+  <div class="splash" id="splashN"></div>
+  <p class="call" id="callN"></p>
+  <p class="howto" id="howtoN">「よいしょ!」に あわせて どこでも タップ!<br>わっかが ちぢんで 重なったときが ぴったり</p>
+  <div class="beat normal" id="beatN" hidden aria-hidden="true"><i id="ringN"></i><b></b></div>
 </div>
 
 <div class="hud" id="hudS" hidden>
