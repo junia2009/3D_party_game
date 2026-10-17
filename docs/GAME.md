@@ -64,3 +64,4 @@
 | おぼえて かくれんぼ | 作成中 | [minigames/kakure.md](minigames/kakure.md) |
 | どんぐりマンション だっしゅつ | 作成中 | [minigames/dasshutsu.md](minigames/dasshutsu.md) |
 | 川原の つなひき | 作成中 | [minigames/tsuna.md](minigames/tsuna.md) |
+| お祭りの 大なわとび | 作成中 | [minigames/nawa.md](minigames/nawa.md) |

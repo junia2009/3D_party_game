@@ -414,6 +414,21 @@
     .call { bottom: calc(env(safe-area-inset-bottom, 0px) + 98px); font-size: 30px; }
     #hudN .splash { top: 24%; }
   }
+  /* お祭りの 大なわとび: 上に のこっている子と とんだ回数、下に 長おしの 輪(大ジャンプまで) */
+  #hudJ .chip { padding: 4px; }
+  #hudJ .chip i { width: 18px; height: 18px; }
+  #hudJ .chip.out { opacity: .35; filter: grayscale(1); }
+  #hudJ .timer { font-family: var(--font-display); font-weight: 400; font-size: 22px; }
+  #hudJ .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
+  #hudJ .splash.small { font-size: clamp(26px, 8.5vw, 50px); white-space: pre-line; line-height: 1.15; }
+  .call.high { color: #ff6a5a; font-size: clamp(40px, 13vw, 64px); }
+  .hold {
+    position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 34px); width: 88px; height: 88px; margin-left: -44px; border-radius: 50%;
+    background: conic-gradient(#ffd24a calc(var(--k, 0) * 360deg), rgba(255,255,255,.5) 0); box-shadow: 0 4px 0 rgba(31,42,51,.25);
+  }
+  .hold b { position: absolute; inset: 10px; border-radius: 50%; background: #fff; display: grid; place-items: center; font: 800 13px var(--font-body); color: var(--hud-ink); }
+  .hold.full b { background: #ffd24a; }
+  .hold.full b::after { content: '大ジャンプ!'; position: absolute; top: -28px; white-space: nowrap; font: 400 20px var(--font-display); color: #ffd24a; -webkit-text-stroke: 5px var(--hud-ink); paint-order: stroke fill; }
   /* おぼえて かくれんぼ: まん中に 先生の ことば(こたえる時間の帯つき)。まっくらは 画面ごと暗く */
   #hudZ .timer { width: auto; min-width: 3em; padding: 8px 8px; font-size: 16px; }
   #hudZ .chip.done { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px var(--c); }
@@ -1116,6 +1131,11 @@
       <span class="name">川原の つなひき</span>
       <span class="meta"><span>20〜40びょう</span></span>
     </button>
+    <button class="card" type="button" data-open="nawa">
+      <span class="thumb"><img src="./assets/thumbs/nawa.jpg" alt="" width="640" height="360"><span class="ribbon">第13競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">お祭りの 大なわとび</span>
+      <span class="meta"><span>20〜40びょう</span></span>
+    </button>
   </div>
 </section>
 
@@ -1264,6 +1284,19 @@
   <p class="call" id="callN"></p>
   <p class="howto" id="howtoN">どこでも 連打で つなを ひけ!<br>先生の「せーの!」で 力が 2ばい</p>
   <div class="mash" id="mashN" hidden aria-hidden="true"><i></i><b>れんだ!</b></div>
+</div>
+
+<div class="hud" id="hudJ" hidden>
+  <div class="top">
+    <div class="scores" id="chipsJ" aria-label="のこっている子"></div>
+    <div class="timer" id="countJ" aria-label="とんだ回数">0</div>
+    <button class="pausebtn" id="pauseBtnJ" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsJ"></div>
+  <div class="splash" id="splashJ"></div>
+  <p class="call" id="callJ"></p>
+  <p class="howto" id="howtoJ">なわが 来たら タップで ジャンプ!<br>「大なみ!」は 長おしで 大ジャンプ</p>
+  <div class="hold" id="holdJ" hidden aria-hidden="true"><b>ジャンプ</b></div>
 </div>
 
 <div class="hud" id="hudS" hidden>
