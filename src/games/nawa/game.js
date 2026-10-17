@@ -512,8 +512,10 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    const pos = portrait ? new THREE.Vector3(0, 3.6, 18.6) : new THREE.Vector3(0, 2.8, 10.6);
-    const look = new THREE.Vector3(0, portrait ? 2.3 : 1.4, -1.2);
+    // 斜め前(とぶ子が 向いている 右がわの 手前)から 列を 見る
+    const az = portrait ? 0.62 : 0.55, dist = portrait ? 17.8 : 10.6;
+    const pos = new THREE.Vector3(Math.sin(az) * dist, portrait ? 3.8 : 3.0, Math.cos(az) * dist);
+    const look = new THREE.Vector3(0.3, portrait ? 1.8 : 1.6, -0.4);
     camera.fov = portrait ? 58 : 44;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();

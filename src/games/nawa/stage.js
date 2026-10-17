@@ -202,6 +202,7 @@ export function buildStage(scene) {
     const a = rand() * Math.PI * 2, r = 11 + rand() * 40;
     const x = Math.cos(a) * r, z = Math.sin(a) * r - 3;
     if (z > 3 && Math.abs(x) < 12) continue; // カメラの 前は あける
+    if (Math.abs(Math.atan2(x, z + 3) - 0.6) < 0.6 && r < 34) continue; // 斜め前の カメラから 見る 向きも あける
     spots.push({ x, y: 0, z, h: 5 + rand() * 4, kind: rand() < 0.3 ? 'pine' : 'broad' });
   }
   buildForestTrees(g, spots);

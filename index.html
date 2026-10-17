@@ -420,6 +420,11 @@
   #hudJ .chip.out { opacity: .35; filter: grayscale(1); }
   #hudJ .timer { font-family: var(--font-display); font-weight: 400; font-size: 22px; }
   #hudJ .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
+  @media (orientation: landscape) and (max-height: 560px) {
+    #hudJ .howto { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 62px); font-size: 14px; }
+    #hudJ .call { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 58px); font-size: 36px; }
+    #hudJ .hold { width: 74px; height: 74px; left: auto; margin-left: 0; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+  }
   #hudJ .splash.small { font-size: clamp(26px, 8.5vw, 50px); white-space: pre-line; line-height: 1.15; }
   .call.high { color: #ff6a5a; font-size: clamp(40px, 13vw, 64px); }
   .hold {
