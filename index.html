@@ -427,6 +427,9 @@
   }
   #hudJ .splash.small { font-size: clamp(26px, 8.5vw, 50px); white-space: pre-line; line-height: 1.15; }
   .pop.frog { color: #8ae07a; font-size: 20px; -webkit-text-stroke: 5px #1f4a1a; }
+  #hudJ .timer.tenpop { animation: tenpop .6s ease-out; }
+  @keyframes tenpop { 30% { transform: scale(1.35); background: #ffd24a; color: var(--hud-ink); } }
+  #hudJ .splash.gold.small { color: #ffd24a; }
   .call.high { color: #ff6a5a; font-size: clamp(40px, 13vw, 64px); }
   .hold {
     position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 34px); width: 88px; height: 88px; margin-left: -44px; border-radius: 50%;

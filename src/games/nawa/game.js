@@ -81,6 +81,12 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   const sfx = {
     // ドン: やぐらの 大太鼓(なわが 足もとを 通るたび)
     drum() { voice({ type: 'triangle', pts: [[0, 110], [0.12, 55]], len: 0.2, gain: 0.18 }); noise({ len: 0.06, gain: 0.06, freq: [700, 160], type: 'lowpass' }); },
+    // トン: 速くなってきたら 太鼓の 合いの手(早打ち)
+    drumLight() { voice({ type: 'triangle', pts: [[0, 150], [0.08, 90]], len: 0.1, gain: 0.08 }); },
+    // ヒュ〜 … パーン(花火)
+    rocket() { voice({ pts: [[0, 400], [0.8, 1400]], len: 0.85, gain: 0.03 }); },
+    boom() { noise({ len: 0.7, gain: 0.25, freq: [900, 120], type: 'lowpass', attack: 0.005 }); noise({ len: 0.9, gain: 0.05, freq: [4000, 2000], q: 0.5, at: 0.1 }); },
+    combo() { [0, 0.08, 0.16].forEach((at, i) => voice({ type: 'square', pts: [[0, 784 + i * 196]], len: 0.1, gain: 0.04, at })); },
     // ひゅん: なわが 地面を たたく
     swish() { noise({ len: 0.12, gain: 0.05, freq: [2400, 900], q: 2 }); },
     jump() { voice({ pts: [[0, 520], [0.08, 780]], len: 0.1, gain: 0.05 }); },
@@ -226,13 +232,43 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 3 + Math.random() * 1.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, -(0.7 + Math.random() * 0.6), (Math.random() - 0.5) * 0.6), spin: new THREE.Vector3(Math.random() * 8, Math.random() * 8, 0), kind: 'confetti' });
     }
   }
+  // 花火: やぐらの うしろから 打ち上げて、空で ぱっと ひらく
+  const sparkGeo = new THREE.SphereGeometry(0.09, 6, 4);
+  const FIRE = [0xff5a6a, 0xffd23c, 0x7ad8ff, 0xb08aff, 0x8aff9a, 0xffffff];
+  function launch() {
+    const m = new THREE.Mesh(sparkGeo, new THREE.MeshBasicMaterial({ color: 0xffe8b0, transparent: true }));
+    m.position.set(-4 + Math.random() * 8, 1, -9 - Math.random() * 4);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.9, vel: new THREE.Vector3((Math.random() - 0.5) * 1.5, 11 + Math.random() * 3, 0), kind: 'rocket' });
+    sfx.rocket();
+  }
+  function burst(at) {
+    const col = FIRE[Math.floor(Math.random() * FIRE.length)];
+    const col2 = FIRE[Math.floor(Math.random() * FIRE.length)];
+    for (let i = 0; i < 70; i++) {
+      const m = new THREE.Mesh(sparkGeo, new THREE.MeshBasicMaterial({ color: i % 3 ? col : col2, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+      m.position.copy(at);
+      scene.add(m);
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize().multiplyScalar(4.5 + Math.random() * 1.2);
+      fx.push({ obj: m, t: 0, life: 1.6 + Math.random() * 0.4, vel: v, kind: 'spark' });
+    }
+    sfx.boom();
+  }
   function updateFx(dt) {
     for (let i = fx.length - 1; i >= 0; i--) {
       const f = fx[i];
       f.t += dt;
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
-      if (f.kind === 'steam') {
+      if (f.kind === 'rocket') {
+        f.vel.y -= 6 * dt;
+        if (f.t + dt >= f.life) burst(f.obj.position.clone());
+      } else if (f.kind === 'spark') {
+        f.vel.multiplyScalar(Math.exp(-1.6 * dt));
+        f.vel.y -= 2.2 * dt;
+        f.obj.material.opacity = Math.min(1, (1 - k) * 2);
+        f.obj.scale.setScalar(1 - k * 0.5);
+      } else if (f.kind === 'steam') {
         f.obj.scale.setScalar(0.6 + k * 2.2);
         f.obj.material.opacity = 0.35 * Math.sin(Math.min(1, k) * Math.PI);
       } else if (f.kind === 'puff') {
@@ -410,6 +446,9 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
             sfx.high();
             for (const t of turners) t.model.setFace('surprised');
           } else for (const t of turners) t.model.setFace('happy');
+          // なわが 速くなってきたら、頭の上でも トン(太鼓の 早打ち)
+          if (e.period < 0.95) sfx.drumLight();
+          if (e.period < 0.72) setTimeout(() => sfx.drumLight(), e.period * 250);
           break;
         case 'jump': {
           const u = game.units[e.who];
@@ -450,6 +489,20 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
             pop('あうっ!', u.holder.position.x, 1.6 * u.size, 0, i === 0 ? 'red' : 'out');
             puff(u.holder.position.x, 0.05, 0, 4);
           }
+          // 10回ごとに「すごい!」
+          if (!e.redo && e.n % 10 === 0 && !e.caught.includes(0)) {
+            splash(`${e.n}かい! すごい!`, 'gold small');
+            sfx.combo();
+            fans.forEach((f) => { f.hop = 1; f.model.play('cheer'); });
+            $('countJ').classList.remove('tenpop');
+            void $('countJ').offsetWidth;
+            $('countJ').classList.add('tenpop');
+          }
+          // のこり 2人: いっきうち
+          if (!e.redo && e.caught.length && s.alive.filter(Boolean).length === 2 && s.phase === 'play') {
+            setTimeout(() => splash('いっきうち!', 'red small'), 700);
+            game.duel = true;
+          }
           if (e.redo) { splash('みんな ひっかかった!\nもう1回', 'small'); sfx.safe(); }
           else if (e.caught.includes(0)) { splash('ひっかかった…', 'red small'); sfx.caught(); }
           else if (e.caught.length) sfx.caught();
@@ -468,11 +521,14 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
           frogFx.leaving = true;
           break;
         case 'finished': {
-          game.endTimer = 4.5;
+          game.endTimer = 6.0;
           const win = e.winner === 0;
           splash(win ? 'さいごの 1人!' : 'しゅうりょう!', win ? 'gold' : '');
           if (win) sfx.fanfare();
           confetti(game.units[e.winner].holder.position.x, 0);
+          // 打ち上げ花火
+          for (let i = 0; i < 6; i++) setTimeout(() => launch(), 400 + i * 520);
+          for (const f of fans) f.model.play('cheer');
           break;
         }
       }
@@ -602,6 +658,15 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     const az = portrait ? 0.62 : 0.55, dist = portrait ? 17.8 : 10.6;
     const pos = new THREE.Vector3(Math.sin(az) * dist, portrait ? 3.8 : 3.0, Math.cos(az) * dist);
     const look = new THREE.Vector3(0.3, portrait ? 1.8 : 1.6, -0.4);
+    const s = game?.state;
+    if (s && s.phase !== 'ready' && (game.duel || s.phase === 'finished')) {
+      // いっきうち: のこった 2人(決着後は 勝った子)へ 寄る。決着後は 花火の 空も 入れる
+      const xs = s.phase === 'finished' ? [game.units[s.winner].home] : game.units.filter((u) => !u.out).map((u) => u.home);
+      const mid = xs.reduce((a, b) => a + b, 0) / xs.length;
+      const near = s.phase === 'finished' ? 0.75 : 0.62;
+      pos.set(mid + Math.sin(az) * dist * near, (portrait ? 3.0 : 2.4) + (s.phase === 'finished' ? 0.6 : 0), Math.cos(az) * dist * near);
+      look.set(mid, s.phase === 'finished' ? (portrait ? 3.2 : 2.6) : (portrait ? 1.4 : 1.2), -0.4);
+    }
     camera.fov = portrait ? 58 : 44;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
@@ -613,7 +678,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
       camera.lookAt(camera.userData.look);
       return;
     }
-    const k = snap ? 1 : 1 - Math.exp(-dt * 4);
+    const k = snap ? 1 : 1 - Math.exp(-dt * 2.5);
     camera.position.lerp(pos, k);
     camera.userData.look = camera.userData.look ? camera.userData.look.lerp(look, k) : look.clone();
     camera.lookAt(camera.userData.look);
