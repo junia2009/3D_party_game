@@ -171,13 +171,88 @@ function buildSurroundings(g) {
   }
 }
 
+
+// 森の中で 光る目(どうぶつが のぞいている)。画面側で まばたきさせる
+function buildEyes(scene) {
+  const rand = makeRand(88);
+  const mat = new THREE.SpriteMaterial({ map: glowTexture(), color: 0xd8ff8a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  const dot = new THREE.MeshBasicMaterial({ color: 0xf4ffc8 });
+  const eyes = [];
+  for (let i = 0; i < 9; i++) {
+    const a = -Math.PI * 0.95 + rand() * Math.PI * 0.9, d = 9 + rand() * 7;
+    const g = new THREE.Group();
+    for (const s of [-1, 1]) {
+      const sp = new THREE.Sprite(mat);
+      sp.scale.setScalar(0.35);
+      sp.position.x = s * 0.12;
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 4), dot);
+      m.position.x = s * 0.12;
+      g.add(sp, m);
+    }
+    g.position.set(Math.cos(a) * d, 0.4 + rand() * 1.6, Math.sin(a) * d);
+    g.userData = { ph: rand() * 10, every: 2.5 + rand() * 4 };
+    scene.add(g);
+    eyes.push(g);
+  }
+  return eyes;
+}
+
+// 広場のふちの しだ(くるっと まいた葉)
+function buildFerns(g) {
+  const rand = makeRand(5);
+  const mat = toonMaterial(0x3f7a44), mat2 = toonMaterial(0x528f4c);
+  for (let i = 0; i < 40; i++) {
+    const a = rand() * Math.PI * 2, d = 6.2 + rand() * 1.6;
+    if (Math.sin(a) > 0.55 && Math.abs(Math.cos(a)) < 0.7) continue; // 手前は あける
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    for (let k = 0; k < 5; k++) {
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.22, 6, 4), k % 2 ? mat : mat2);
+      leaf.scale.set(0.35, 0.08, 1.4);
+      const ra = (k / 5) * Math.PI * 2 + rand();
+      leaf.position.set(x + Math.cos(ra) * 0.18, 0.18, z + Math.sin(ra) * 0.18);
+      leaf.rotation.set(0.5, -ra + Math.PI / 2, 0);
+      g.add(leaf);
+    }
+  }
+}
+
+// 看板「かくれんぼ」(広場の左手前)
+function buildSign(g) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 180;
+  const x = c.getContext('2d');
+  x.fillStyle = '#a8784a';
+  x.fillRect(0, 0, 512, 180);
+  for (let i = 0; i < 4; i++) { x.fillStyle = 'rgba(70,40,20,.35)'; x.fillRect(0, i * 45 + 43, 512, 2); }
+  x.font = '400 76px "Dela Gothic One", sans-serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.lineWidth = 12;
+  x.strokeStyle = '#3a2412';
+  x.strokeText('かくれんぼ', 256, 96);
+  x.fillStyle = '#ffe2a8';
+  x.fillText('かくれんぼ', 256, 96);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const wood = toonMaterial(0x6a4426);
+  const board = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.52, 0.06), [wood, wood, wood, wood, new THREE.MeshToonMaterial({ map: tex, gradientMap: toonGradient }), wood]);
+  board.position.set(-4.4, 1.15, 1.2);
+  board.rotation.y = 0.5;
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.4, 0.1), wood);
+  post.position.set(-4.4, 0.7, 1.15);
+  g.add(board, post);
+}
+
 export function buildStage(scene) {
   const g = new THREE.Group();
   buildGround(g);
   buildSurroundings(g);
   buildMushrooms(g);
+  buildFerns(g);
+  buildSign(g);
   const lights = buildLanterns(scene, g);
   mergeStatic(g);
   scene.add(g);
-  return { group: g, ...lights, lanternMat };
+  const eyes = buildEyes(scene);
+  return { group: g, ...lights, lanternMat, eyes };
 }

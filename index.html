@@ -337,6 +337,8 @@
   #hudZ .ask.show { opacity: 1; }
   #hudZ .ask i { position: absolute; left: 14px; right: 14px; bottom: 5px; height: 4px; border-radius: 2px;
     background: linear-gradient(90deg, #ff8a3d calc(var(--k) * 100%), transparent 0); }
+  #hudZ .notice { top: calc(env(safe-area-inset-top, 0px) + 128px); display: flex; align-items: center; gap: 5px; }
+  #hudZ .notice i { width: 12px; height: 12px; border-radius: 50%; }
   #hudZ .dark { position: absolute; inset: 0; background: #05060f; opacity: 0; }
   /* 切り株ずもう: 右下に「ためる」ボタン(まわりの輪が たまり具合) */
   #hudU .chip { font-size: clamp(11px, 3.2vw, 15px); padding: 3px 7px 3px 3px; white-space: nowrap; }
@@ -1129,6 +1131,7 @@
   <p class="ask" id="askZ"> <i></i></p>
   <div class="pops" id="popsZ"></div>
   <div class="splash" id="splashZ"></div>
+  <div class="notice" id="noticeZ"></div>
   <p class="howto" id="howtoZ">リスが かくれた かごを 目で追って<br>「リスは どこ?」で タップ!</p>
 </div>
 

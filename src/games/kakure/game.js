@@ -20,6 +20,7 @@ const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const SLOTS = 5;
 const MAX_N = 5;
 const params = new URLSearchParams(location.search);
+const REVEAL_AT = 1.05; // こたえあわせで リスの かごが あがる時刻(ほかの かごは 先に)
 const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
 
 export async function createKakure({ renderer, settings, getAudio, onExit }) {
@@ -79,10 +80,10 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
     pyoko() { voice({ pts: [[0, 600], [0.08, 1100]], len: 0.12, gain: 0.08 }); },
     jan() { [523, 659, 784].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.35, gain: 0.07, at: i * 0.02 })); },
     tap() { voice({ pts: [[0, 880], [0.05, 660]], len: 0.08, gain: 0.08 }); },
-    drum() { for (let i = 0; i < 10; i++) voice({ type: 'triangle', pts: [[0, 120], [0.06, 80]], len: 0.08, gain: 0.04 + i * 0.006, at: i * 0.06 }); },
-    hit() { [784, 988, 1175, 1568].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.25, gain: 0.08, at: 0.62 + i * 0.07 })); },
-    miss() { voice({ type: 'square', pts: [[0, 220], [0.3, 180]], len: 0.35, gain: 0.05, at: 0.62 }); },
-    kon() { [0, 0.18].forEach((at) => voice({ type: 'sawtooth', pts: [[0, 900], [0.08, 650]], len: 0.1, gain: 0.05, at: 0.62 + at })); },
+    drum() { for (let i = 0; i < 16; i++) voice({ type: 'triangle', pts: [[0, 120], [0.06, 80]], len: 0.08, gain: 0.04 + i * 0.006, at: i * 0.06 }); },
+    hit() { [784, 988, 1175, 1568].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.25, gain: 0.08, at: 1.08 + i * 0.07 })); },
+    miss() { voice({ type: 'square', pts: [[0, 220], [0.3, 180]], len: 0.35, gain: 0.05, at: 1.08 }); },
+    kon() { [0, 0.18].forEach((at) => voice({ type: 'sawtooth', pts: [[0, 900], [0.08, 650]], len: 0.1, gain: 0.05, at: 1.08 + at })); },
     off() { noise({ len: 0.3, gain: 0.08, freq: [1200, 300], type: 'lowpass' }); },
     on() { voice({ pts: [[0, 300], [0.1, 500]], len: 0.15, gain: 0.05 }); },
   };
@@ -220,6 +221,15 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: sp, t: 0, life: 0.6, vel: new THREE.Vector3(Math.cos(a) * 1.6, 1.4 + Math.random(), Math.sin(a) * 1.6), size, kind: 'sparkle' });
     }
   }
+  const puffGeo = new THREE.IcosahedronGeometry(0.12, 1);
+  function puffAt(x, z) {
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0xc8a882, transparent: true, opacity: 0.7 }));
+      m.position.set(x + (Math.random() - 0.5) * 0.6, 0.08, z + (Math.random() - 0.5) * 0.4);
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 0.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.4 + Math.random() * 0.3, (Math.random() - 0.5) * 0.5), kind: 'puff' });
+    }
+  }
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
   function confetti(x, z) {
     const colors = [...PLAYER_COLORS.map((c) => c.hex), 0xffd24a, 0xffffff];
@@ -240,6 +250,10 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
         f.obj.position.addScaledVector(f.vel, dt);
         f.obj.material.opacity = 1 - k;
         f.obj.scale.setScalar(f.size * (1 - k * 0.6));
+      } else if (f.kind === 'puff') {
+        f.obj.position.addScaledVector(f.vel, dt);
+        f.obj.scale.setScalar(1 + k * 1.6);
+        f.obj.material.opacity = 0.7 * (1 - k);
       } else if (f.kind === 'confetti') {
         f.obj.position.addScaledVector(f.vel, dt);
         f.obj.rotation.x += f.spin.x * dt;
@@ -288,7 +302,7 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     runners[0].holder.add(marker);
     runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, darkK: 0, lastSec: null };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, darkK: 0, lastSec: null, leader: null, swapSeen: -1 };
     atmosphere.apply(params.get('time') || 'night');
     atmosphere.setupShadows(runners.map((r) => r.holder), []);
     myPick = null;
@@ -378,6 +392,13 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
     el.firstChild.nodeValue = text;
     el.classList.toggle('show', !!text);
   }
+  function notice(text, slot) {
+    const el = $('noticeZ');
+    el.innerHTML = `<i style="background:${css(PLAYER_COLORS[slot].hex)}"></i>${text}`;
+    el.className = 'notice ' + (slot === 0 ? 'up' : '');
+    void el.offsetWidth;
+    el.classList.add('show');
+  }
   function buildChips() {
     $('chipsZ').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
@@ -433,6 +454,9 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
           ask(R.fox ? 'リスと キツネが かくれるよ' : 'リスが かくれるよ');
           if (R.fox && !ROUNDS[e.round - 1]?.fox) setTimeout(() => splash('キツネも まぎれた!', 'red'), 900);
           if (R.dark && !ROUNDS[e.round - 1]?.dark) setTimeout(() => splash('まっくらに なるかも!', 'red'), 900);
+          if (e.round === ROUNDS.length - 1) setTimeout(() => splash('さいごは いちばん はやいよ!', 'red'), 900);
+          // キツネは かくれる前に にやっと
+          if (R.fox) setTimeout(() => { if (fox.visible) pop('コンコン♪', fox.position.x, 1.2, fox.position.z, 'red'); }, 700);
           setTimeout(() => sfx.pyoko(), 300);
           break;
         }
@@ -480,10 +504,16 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
               v.reactT = 1.8;
             });
             const hb = baskets[s.hider];
-            sparkle(hb.g.position.clone().setY(0.8), 0xffe27a, 10, 0.4);
+            sparkle(hb.g.position.clone().setY(0.8), 0xffe27a, 14, 0.45);
             if (me?.result === 'fox') splash('キツネだった!', 'red');
             else if (me?.result === 'hit') splash(me.gain > RULES.hit + 1 ? 'いちばん!' : 'あたり!', 'gold');
-          }, 650);
+            // トップが 入れかわったら「ぎゃくてん!」
+            const lead = ranking(game.state)[0];
+            if (game.leader !== null && lead !== game.leader && game.state.runners[lead].score > game.state.runners[game.leader].score) {
+              setTimeout(() => notice(lead === 0 ? 'ぎゃくてん! トップ!' : `${game.players[lead].name}が ぎゃくてん!`, lead), 600);
+            }
+            game.leader = lead;
+          }, 1050);
           break;
         }
         case 'finished': {
@@ -542,8 +572,19 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
     return out.set(x, y, z);
   }
   const posV = new THREE.Vector3();
+  // いれかわりの はじまりに シュッ、おわりに 土ぼこり
+  function swapFx(s) {
+    if (s.phase !== 'shuffle' || s.nextSwap >= s.swaps.length) return;
+    const w = s.swaps[s.nextSwap];
+    if (s.phaseT < w.t0 || game.swapSeen === s.nextSwap + s.round * 100) return;
+    game.swapSeen = s.nextSwap + s.round * 100;
+    if (!(s.dark?.on && !s.dark.off)) sfx.swish();
+    const n = roundInfo(s).n;
+    for (const slot of [w.a, w.b]) puffAt(slotX(slot, n), 0);
+  }
   function updateBaskets(dt) {
     const s = game.state;
+    swapFx(s);
     const n = s.round >= 0 ? roundInfo(s).n : 0;
     baskets.forEach((b, i) => {
       b.g.visible = i < n && s.round >= 0;
@@ -556,7 +597,7 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
         const t = s.phaseT;
         const up = (i === s.hider || i === s.fox) && t > 0.25 && t < RULES.showTime - 0.15;
         want = up ? 1 : 0;
-      } else if (s.phase === 'reveal') want = s.phaseT > 0.55 ? 1 : 0;
+      } else if (s.phase === 'reveal') want = s.phaseT > (i === s.hider ? REVEAL_AT : 0.45) ? 1 : 0;
       else if (s.phase === 'finished') want = 1;
       // ばねで ぴょこっと
       b.liftV = (b.liftV + (want - b.lift) * 220 * dt) * Math.exp(-dt * 13);
@@ -565,6 +606,12 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
       b.g.rotation.z = Math.max(0, b.lift) * 0.25 * (i % 2 ? 1 : -1);
       // ためらうように かごが ゆれる(こたえるあいだ)
       if (s.phase === 'ask') b.g.rotation.z = Math.sin(time * 3 + i) * 0.03;
+      // こたえあわせ: リスの かごは あがる前に ぶるぶる
+      if (s.phase === 'reveal' && i === s.hider && s.phaseT > 0.45 && s.phaseT < REVEAL_AT) {
+        const k = (s.phaseT - 0.45) / (REVEAL_AT - 0.45);
+        b.g.rotation.z = Math.sin(time * 60) * 0.06 * k;
+        b.g.position.y += Math.abs(Math.sin(time * 30)) * 0.05 * k;
+      }
     });
     // リス・キツネは かくれた かごの下に
     const vis = s.round >= 0 && (s.phase === 'show' || s.phase === 'reveal' || s.phase === 'finished');
@@ -575,8 +622,10 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
     if (s.fox !== null) {
       const fb = baskets[s.fox];
       fox.visible = vis && fb.lift > 0.15;
-      fox.position.set(fb.g.position.x, Math.abs(Math.sin(time * 8)) * 0.08, fb.g.position.z);
+      const jump = s.phase === 'reveal' && s.phaseT > 0.5 && s.phaseT < 1.6 ? Math.abs(Math.sin((s.phaseT - 0.5) * 9)) * 0.45 : 0;
+      fox.position.set(fb.g.position.x, Math.abs(Math.sin(time * 8)) * 0.08 + jump, fb.g.position.z);
       fox.rotation.y = Math.sin(time * 4) * 0.4;
+      fox.rotation.z = jump ? Math.sin(time * 20) * 0.2 : 0;
     } else fox.visible = false;
   }
   function updateRunners(dt) {
@@ -619,6 +668,13 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
     for (const L of stage.lights) L.intensity = 9 * (1 - game.darkK) * (0.92 + Math.sin(time * 7 + L.position.x) * 0.08);
     for (const g of stage.glows) g.visible = game.darkK < 0.5;
     for (const [k, l] of stage.string.entries()) l.rotation.z = Math.sin(time * 1.5 + k) * 0.1;
+    // 森の 光る目: ときどき まばたき。まっくらのときは よく光る
+    for (const e of stage.eyes) {
+      const u = e.userData;
+      const blink = ((time + u.ph) % u.every) < 0.15;
+      e.scale.y = blink ? 0.1 : 1;
+      e.visible = Math.sin(time * 0.3 + u.ph) > -0.3 || game.darkK > 0.3;
+    }
   }
 
   let freeCamera = false;
