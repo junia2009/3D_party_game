@@ -10,11 +10,12 @@
 // 版はファイルの中身から作るので、1つでも変われば sw.js が変わり、ブラウザが入れなおす。
 
 // <precache>
-const VERSION = 'ba5edac59ac7';
+const VERSION = 'd168ef33157c';
 const PRECACHE = [
   "./",
   "./assets/thumbs/catch.jpg",
   "./assets/thumbs/daruma.jpg",
+  "./assets/thumbs/dasshutsu.jpg",
   "./assets/thumbs/hana.jpg",
   "./assets/thumbs/hayauchi.jpg",
   "./assets/thumbs/ikada.jpg",
@@ -65,6 +66,10 @@ const PRECACHE = [
   "./src/games/daruma/rules.js",
   "./src/games/daruma/stage.js",
   "./src/games/daruma/trees.js",
+  "./src/games/dasshutsu/cpu.js",
+  "./src/games/dasshutsu/game.js",
+  "./src/games/dasshutsu/rules.js",
+  "./src/games/dasshutsu/stage.js",
   "./src/games/hana/cpu.js",
   "./src/games/hana/game.js",
   "./src/games/hana/rules.js",

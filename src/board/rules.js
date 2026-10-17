@@ -35,8 +35,8 @@ export const RULES = {
   happen: { springBack: 3, summerHit: 10, summerNear: 3, summerRange: 3, winterLoss: 5 },
 };
 export const TURNS = [5, 10, 15];
-export const MINIGAMES = ['daruma', 'catch', 'sled', 'mato', 'tsumi', 'ikada', 'hana', 'hayauchi', 'sumo', 'kakure'];
-export const DUEL_GAMES = ['mato', 'catch', 'daruma', 'tsumi', 'hana', 'hayauchi', 'sumo', 'kakure'];
+export const MINIGAMES = ['daruma', 'catch', 'sled', 'mato', 'tsumi', 'ikada', 'hana', 'hayauchi', 'sumo', 'kakure', 'dasshutsu'];
+export const DUEL_GAMES = ['mato', 'catch', 'daruma', 'tsumi', 'hana', 'hayauchi', 'sumo', 'kakure', 'dasshutsu'];
 
 // どうぐ。price はお店の値段(null はお店にない)。weight はどうぐマスで出る重み
 export const ITEMS = {

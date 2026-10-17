@@ -62,3 +62,4 @@
 | どんぐり早うち | 作成中 | [minigames/hayauchi.md](minigames/hayauchi.md) |
 | 切り株ずもう | 作成中 | [minigames/sumo.md](minigames/sumo.md) |
 | おぼえて かくれんぼ | 作成中 | [minigames/kakure.md](minigames/kakure.md) |
+| どんぐりマンション だっしゅつ | 作成中 | [minigames/dasshutsu.md](minigames/dasshutsu.md) |

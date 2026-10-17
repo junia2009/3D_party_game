@@ -21,6 +21,8 @@ import * as sumo from '../games/sumo/rules.js';
 import * as sumoCpu from '../games/sumo/cpu.js';
 import * as kakure from '../games/kakure/rules.js';
 import * as kakureCpu from '../games/kakure/cpu.js';
+import * as dasshutsu from '../games/dasshutsu/rules.js';
+import * as dasshutsuCpu from '../games/dasshutsu/cpu.js';
 
 export const GAMES = {
   daruma: { rules: daruma, createCpu: darumaCpu.createCpu, input: darumaCpu.cpuHold, picked: (s) => s.runners.map((r) => r.acorns) },
@@ -33,6 +35,7 @@ export const GAMES = {
   hayauchi: { rules: hayauchi, createCpu: hayauchiCpu.createCpu, input: hayauchiCpu.cpuInput, picked: () => null },
   sumo: { rules: sumo, createCpu: sumoCpu.createCpu, input: sumoCpu.cpuInput, picked: () => null },
   kakure: { rules: kakure, createCpu: kakureCpu.createCpu, input: kakureCpu.cpuInput, picked: () => null },
+  dasshutsu: { rules: dasshutsu, createCpu: dasshutsuCpu.createCpu, input: dasshutsuCpu.cpuInput, picked: () => null },
 };
 
 // lineup: [{ cpu: 性格 }]。返すのは { ranking(席の番号の順), picked }
