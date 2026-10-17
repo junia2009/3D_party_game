@@ -325,6 +325,19 @@
     box-shadow: 0 3px 0 rgba(31,42,51,.18); font: 800 clamp(13px, 3.8vw, 17px) var(--font-body); font-variant-numeric: tabular-nums; transition: transform .2s;
   }
   #hudC .timer { width: 2.7em; font-size: 18px; padding: 6px 0; }
+  /* おぼえて かくれんぼ: まん中に 先生の ことば(こたえる時間の帯つき)。まっくらは 画面ごと暗く */
+  #hudZ .timer { width: auto; min-width: 3em; padding: 8px 8px; font-size: 16px; }
+  #hudZ .chip.done { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px var(--c); }
+  #hudZ .ask {
+    position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 70px); transform: translateX(-50%);
+    margin: 0; padding: 8px 22px 12px; border-radius: 18px; background: var(--hud-paper); color: var(--hud-ink);
+    font: 400 clamp(20px, 6vw, 30px) var(--font-display); white-space: nowrap; box-shadow: 0 4px 0 rgba(31,42,51,.2);
+    opacity: 0; transition: opacity .25s; --k: 0;
+  }
+  #hudZ .ask.show { opacity: 1; }
+  #hudZ .ask i { position: absolute; left: 14px; right: 14px; bottom: 5px; height: 4px; border-radius: 2px;
+    background: linear-gradient(90deg, #ff8a3d calc(var(--k) * 100%), transparent 0); }
+  #hudZ .dark { position: absolute; inset: 0; background: #05060f; opacity: 0; }
   /* 切り株ずもう: 右下に「ためる」ボタン(まわりの輪が たまり具合) */
   #hudU .chip { font-size: clamp(11px, 3.2vw, 15px); padding: 3px 7px 3px 3px; white-space: nowrap; }
   #hudU .chip b:empty { display: none; }
@@ -997,6 +1010,11 @@
       <span class="name">切り株ずもう</span>
       <span class="meta"><span>30〜60びょう</span></span>
     </button>
+    <button class="card" type="button" data-open="kakure">
+      <span class="thumb"><img src="./assets/thumbs/kakure.jpg" alt="" width="640" height="360"><span class="ribbon">第10競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">おぼえて かくれんぼ</span>
+      <span class="meta"><span>1ぷん</span></span>
+    </button>
   </div>
 </section>
 
@@ -1099,6 +1117,19 @@
   <p class="howto" id="howtoU">ゆびを おいて ずらすと あるく<br>「ためる」を はなすと とっしん!</p>
   <div class="stick" id="stickU" hidden><i></i></div>
   <button class="tame" id="tameU" type="button">ためる<small>はなすと とっしん</small></button>
+</div>
+
+<div class="hud" id="hudZ" hidden>
+  <div class="dark" id="darkZ" aria-hidden="true"></div>
+  <div class="top">
+    <div class="scores" id="chipsZ" aria-label="点数"></div>
+    <div class="side"><div class="timer" id="roundZ"></div></div>
+    <button class="pausebtn" id="pauseBtnZ" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <p class="ask" id="askZ"> <i></i></p>
+  <div class="pops" id="popsZ"></div>
+  <div class="splash" id="splashZ"></div>
+  <p class="howto" id="howtoZ">リスが かくれた かごを 目で追って<br>「リスは どこ?」で タップ!</p>
 </div>
 
 <div class="hud" id="hudS" hidden>
