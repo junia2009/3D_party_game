@@ -1,7 +1,7 @@
 // どんぐりマンション だっしゅつ の CPU。
 //
 // 人と同じく「行き先」と「あけるボタン」だけを出す。
-// - 自分で ためした ドアは おぼえる(まちがい・上へのかいだん)。
+// - 自分で ためした ドアは おぼえる。
 // - 同じ階の ほかの子が ドアに入って どうなったか、watch の確率で 見ている(下へ行けた → そこへ / 出てきた → そこは ちがう)。
 // - ヒントの印が 光ったら、hint の確率で 気づく。
 // - わからないときは、まだ ためしていない ドアの うち 近いものへ(ときどき 気まぐれに 遠いほう)。
@@ -37,7 +37,7 @@ export function cpuInput(cpu, s, slot) {
   const me = s.runners[slot];
   if (me.done) return null;
   const p = PERSONALITIES[cpu.personality];
-  // 階が かわったら、その階で おぼえていたことを 思い出す(上へ もどされても わすれない)
+  // 階が かわったら、その階で おぼえていたことを 思い出す
   if (cpu.floor !== me.floor) {
     if (cpu.floor !== null) cpu.mem[cpu.floor] = { bad: cpu.bad, good: cpu.good };
     cpu.floor = me.floor;
@@ -69,7 +69,7 @@ export function cpuInput(cpu, s, slot) {
   }
   if (me.act) {
     // 自分の結果を おぼえる
-    if (me.act.kind === 'inside' || me.act.kind === 'up') { cpu.bad.add(me.act.door); if (cpu.good === me.act.door) cpu.good = null; cpu.target = null; }
+    if (me.act.kind === 'inside') { cpu.bad.add(me.act.door); if (cpu.good === me.act.door) cpu.good = null; cpu.target = null; }
     return null;
   }
   if (cpu.target === null || cpu.bad.has(cpu.target)) { cpu.target = choose(cpu, s, me, p); cpu.wait = null; }

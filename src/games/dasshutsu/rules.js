@@ -3,7 +3,6 @@
 // 大木の幹の中の 6 かいだての どんぐりマンション。5人は いちばん上(5かい)から、1かい(じめん)の出口をめざす。
 // どの階も、まっすぐな ろうかの奥の かべに ドアが ならぶ。下の階へ行ける ただしいドアは 1つだけ。
 // - まちがいのドア: 入ると、ふしぎなことに 同じドアから 出てきてしまう(少しのあいだ うごけない)。
-// - 上へのかいだん(まちがい): ひとつ上の階へ もどされる。
 // - ヒントの印: いくつかの階では、ときどき ただしいドアに どんぐりの印が きらっと光る。
 // 下の階へ ついたら、その階の はしの かいだんから 出てくる(階ごとに 右はし・左はしが 入れかわる)。
 // いちばん早く 1かい(floor 0)に ついた子の勝ち。
@@ -31,7 +30,6 @@ export const RULES = {
   wrongTime: 1.1, // まちがいのドアの中に いる時間
   dazeTime: 0.45, // 出てきて「あれ?」
   stairTime: 0.9, // かいだんを おりる
-  upTime: 1.0, // 上へのかいだん
   hintEvery: 5.0, // ヒントの印が光る間かく
   hintLen: 0.7,
 };
@@ -51,10 +49,7 @@ function makeFloor(s, f) {
     const j = Math.floor(nextRandom(s) * (i + 1));
     [order[i], order[j]] = [order[j], order[i]];
   }
-  let k = 0;
-  doors[order[k++]].kind = 'down';
-  // 上へのかいだん: いちばん上の階には ない
-  if (f < TOP && f >= 1 && nextRandom(s) < 0.4 && k < n) doors[order[k++]].kind = 'up';
+  doors[order[0]].kind = 'down';
   return { f, doors, hint: f < TOP && nextRandom(s) < 0.6, hintPhase: nextRandom(s) * RULES.hintEvery };
 }
 
@@ -70,8 +65,8 @@ export function createGame(players, seed) {
       const x = (slot - (players.length - 1) / 2) * 1.1;
       return {
         floor: TOP, x, z: 1.4, vx: 0, vz: 0, face: 0,
-        act: null, // { kind: 'enter' | 'inside' | 'daze' | 'stair' | 'up', t, door, to }
-        done: false, time: null, tries: 0, wrong: 0, ups: 0,
+        act: null, // { kind: 'enter' | 'inside' | 'daze' | 'stair', t, door, to }
+        done: false, time: null, tries: 0, wrong: 0,
       };
     }),
   };
@@ -135,7 +130,6 @@ export function step(s, inputs) {
       if (a.kind === 'enter') {
         door.tried.includes(slot) || door.tried.push(slot);
         if (door.kind === 'down') { r.act = { kind: 'stair', t: RULES.stairTime, door: a.door }; ev.push({ type: 'down', slot, floor: r.floor, door: a.door }); }
-        else if (door.kind === 'up') { r.ups++; r.act = { kind: 'up', t: RULES.upTime, door: a.door }; ev.push({ type: 'upstairs', slot, floor: r.floor, door: a.door }); }
         else { r.wrong++; r.act = { kind: 'inside', t: RULES.wrongTime, door: a.door }; ev.push({ type: 'wrong', slot, floor: r.floor, door: a.door }); }
       } else if (a.kind === 'inside') {
         // ふしぎ: 同じドアから 出てくる
@@ -147,9 +141,6 @@ export function step(s, inputs) {
       } else if (a.kind === 'stair') {
         r.act = null;
         arrive(s, r, slot, r.floor - 1, ev);
-      } else if (a.kind === 'up') {
-        r.act = null;
-        arrive(s, r, slot, r.floor + 1, ev);
       }
       return;
     }

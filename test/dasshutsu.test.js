@@ -72,21 +72,11 @@ test('まちがいのドアは、入っても 同じドアから 出てくる(�
   assert.ok(s.t - t0 >= RULES.enterTime + RULES.wrongTime + RULES.dazeTime - 0.05);
 });
 
-test('上へのかいだんは 1かい 上へ。すべり台は ない', () => {
-  let up = false;
-  for (let seed = 1; seed <= 20 && !up; seed++) {
+test('ドアは ただしいドアと まちがいのドアだけ(すべり台・上へのかいだんは ない)', () => {
+  for (let seed = 1; seed <= 20; seed++) {
     const s = ready(PLAYERS.slice(0, 2), seed);
-    for (let f = TOP; f >= 1; f--) assert.ok(s.floors[f].doors.every((d) => d.kind !== 'slide'));
-    for (let f = TOP - 1; f >= 1 && !up; f--) {
-      const du = s.floors[f].doors.findIndex((x) => x.kind === 'up');
-      if (du < 0) continue;
-      s.runners[0].floor = f;
-      tryDoor(s, du);
-      assert.equal(s.runners[0].floor, f + 1);
-      up = true;
-    }
+    for (let f = TOP; f >= 1; f--) assert.ok(s.floors[f].doors.every((d) => d.kind === 'down' || d.kind === 'wrong'));
   }
-  assert.ok(up, '上へのかいだんが どこかに ある');
 });
 
 test('正面から すれちがっても つっかえない', () => {
