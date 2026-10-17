@@ -12,12 +12,12 @@ import { mergeStatic } from '../../runtime/merge.js';
 import { grassTexture } from '../daruma/ground.js';
 import { buildForestTrees, makeRand } from '../daruma/trees.js';
 
-export const TURN_X = 2.55; // 回す子の 立つ ところ(x)
+export const TURN_X = 3.1; // 回す子の 立つ ところ(x)
 export const AXIS_Y = 1.05; // なわの 回る 軸の 高さ(回す子の 手)
 export const YAGURA = { x: 0, z: -5.2, top: 2.3 }; // やぐらの 床の 高さ
-export const slotX = (slot, n) => (slot - (n - 1) / 2) * Math.min(0.66, 2.64 / Math.max(1, n - 1));
+export const slotX = (slot, n) => (slot - (n - 1) / 2) * Math.min(1.05, 4.2 / Math.max(1, n - 1)); // となりと 重ならない 間
 // 脱落した子が すわって 見る ところ(列の うしろ)
-export const benchSpot = (k) => ({ x: (k % 2 ? 1 : -1) * (0.9 + Math.floor(k / 2) * 0.8), z: -3.0 });
+export const benchSpot = (k) => ({ x: (k % 2 ? 1 : -1) * (1.0 + Math.floor(k / 2) * 1.05), z: -3.0 });
 
 function canvasTex(w, h, draw) {
   const c = document.createElement('canvas');

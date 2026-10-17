@@ -99,13 +99,13 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   scene.add(owl.root);
   const turners = await Promise.all([['risu', -1], ['harinezumi', 1]].map(async ([kind, sx]) => {
     const m = await createModel(kind);
+    // 正面を 向いて、内がわの 手で なわを 回す
     m.root.position.set(sx * TURN_X, 0, 0);
-    m.root.rotation.y = -sx * Math.PI / 2;
     m.root.scale.setScalar(1.35);
     m.play('idle');
     m.setFace('happy');
     scene.add(m.root);
-    return { model: m, sx, arm: m.node(sx < 0 ? 'arm_R' : 'arm_L') || m.node('arm_R') };
+    return { model: m, sx, arm: m.node(sx < 0 ? 'arm_L' : 'arm_R') };
   }));
   atmosphere.setupShadows([stage.group, owl.root, ...turners.map((t) => t.model.root)], [stage.group]);
 
@@ -118,7 +118,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   function shapeRope(theta) {
     for (let i = 0; i < ropePts.length; i++) {
       const u = i / (ropePts.length - 1);
-      const f = Math.min(1, Math.sin(u * Math.PI) * 1.6); // まん中は 平ら(5人みんなの 足もとを 通る)
+      const f = Math.min(1, Math.sin(u * Math.PI) * 3.5); // まん中は 平ら(5人みんなの 足もとを 通る)
       ropePts[i].set((u * 2 - 1) * (TURN_X - 0.3), AXIS_Y - amp * f * Math.cos(theta), amp * f * Math.sin(theta) * 0.9);
     }
     rope.geometry.dispose();
@@ -482,7 +482,11 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     amp += (target - amp) * Math.min(1, dt * 6);
     shapeRope(s.phase === 'ready' ? Math.PI : r.theta);
     for (const t of turners) {
-      if (t.arm) t.arm.rotation.x = -1.2 + Math.sin(r.theta) * 0.6 * t.sx;
+      if (t.arm) {
+        // 腕を 内がわへ のばして、なわと いっしょに 小さく 回す
+        t.arm.rotation.z = -t.sx * (1.2 - Math.cos(r.theta) * 0.25);
+        t.arm.rotation.x = -Math.sin(r.theta) * 0.5;
+      }
       t.model.update(dt);
     }
     // カエル: くずれた リズムで ぴょこぴょこ
@@ -506,8 +510,8 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    const pos = portrait ? new THREE.Vector3(0, 2.6, 11.4) : new THREE.Vector3(0, 2.0, 6.6);
-    const look = new THREE.Vector3(0, portrait ? 1.35 : 1.15, -1.2);
+    const pos = portrait ? new THREE.Vector3(0, 3.0, 14.2) : new THREE.Vector3(0, 2.3, 8.0);
+    const look = new THREE.Vector3(0, portrait ? 1.9 : 1.2, -1.2);
     camera.fov = portrait ? 58 : 44;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
