@@ -80,8 +80,6 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
     fushigi(vol = 1) { voice({ pts: [[0, 500], [0.25, 900], [0.5, 600]], len: 0.55, gain: 0.08 * vol, vib: 30, vibRate: 9 }); },
     // トントントン: かいだんを おりる
     stairs(vol = 1) { for (let i = 0; i < 4; i++) voice({ type: 'triangle', pts: [[0, 660 - i * 80], [0.05, 500 - i * 60]], len: 0.07, gain: 0.07 * vol, at: i * 0.12 }); },
-    // シューッ: すべり台
-    slide(vol = 1) { noise({ len: 1.0, gain: 0.12 * vol, freq: [3000, 600], q: 0.8, attack: 0.05 }); voice({ pts: [[0, 1200], [0.9, 300]], len: 1.0, gain: 0.05 * vol }); },
     // ヒューン↑: 上へ もどされる
     up(vol = 1) { voice({ pts: [[0, 300], [0.5, 1000]], len: 0.6, gain: 0.07 * vol }); },
     // キラン: ヒントの印
@@ -447,11 +445,6 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
           sfx.stairs(volFor(e.slot, e.floor));
           if (e.slot === 0) pop('あたり!', r.x, floorY(e.floor) + 2.0, 0.4, 'gold');
           break;
-        case 'slide':
-          sfx.slide(volFor(e.slot, e.floor));
-          if (e.slot === 0) splash('すべり台! 2かい下へ', 'gold');
-          else notice(`${game.players[e.slot].name}が すべり台!`, e.slot);
-          break;
         case 'upstairs':
           sfx.up(volFor(e.slot, e.floor));
           if (e.slot === 0) splash('上の階に もどった!', 'red');
@@ -529,7 +522,7 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
           // 同じドアから 出てきて「あれれ?」
           if (a.t > RULES.dazeTime - 0.2) opening.add(`${r.floor}:${a.door}`);
           clip = 'dizzy'; face = 'surprised'; want = 0;
-        } else vis = false; // ドアの中・かいだん・すべり台
+        } else vis = false; // ドアの中・かいだん
       } else {
         const speed = Math.hypot(r.vx, r.vz);
         if (speed > 0.3) { clip = 'run'; timeScale = 0.6 + 0.6 * speed / RULES.maxSpeed; want = r.face; }

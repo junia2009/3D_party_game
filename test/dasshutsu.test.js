@@ -72,29 +72,29 @@ test('まちがいのドアは、入っても 同じドアから 出てくる(�
   assert.ok(s.t - t0 >= RULES.enterTime + RULES.wrongTime + RULES.dazeTime - 0.05);
 });
 
-test('すべり台は 2かい、上へのかいだんは 1かい 上へ', () => {
-  let slide = false, up = false;
-  for (let seed = 1; seed <= 30 && !(slide && up); seed++) {
+test('上へのかいだんは 1かい 上へ。すべり台は ない', () => {
+  let up = false;
+  for (let seed = 1; seed <= 20 && !up; seed++) {
     const s = ready(PLAYERS.slice(0, 2), seed);
-    for (let f = TOP - 1; f >= 1; f--) {
-      const ds = s.floors[f].doors.findIndex((x) => x.kind === 'slide');
+    for (let f = TOP; f >= 1; f--) assert.ok(s.floors[f].doors.every((d) => d.kind !== 'slide'));
+    for (let f = TOP - 1; f >= 1 && !up; f--) {
       const du = s.floors[f].doors.findIndex((x) => x.kind === 'up');
-      if (ds >= 0 && !slide) {
-        s.runners[0].floor = f;
-        tryDoor(s, ds);
-        assert.equal(s.runners[0].floor, f - 2);
-        slide = true;
-      }
-      if (du >= 0 && !up && !s.runners[0].done) {
-        s.runners[0].floor = f;
-        s.runners[0].act = null;
-        tryDoor(s, du);
-        assert.equal(s.runners[0].floor, f + 1);
-        up = true;
-      }
+      if (du < 0) continue;
+      s.runners[0].floor = f;
+      tryDoor(s, du);
+      assert.equal(s.runners[0].floor, f + 1);
+      up = true;
     }
   }
-  assert.ok(slide && up, 'すべり台と 上へのかいだんが どこかに ある');
+  assert.ok(up, '上へのかいだんが どこかに ある');
+});
+
+test('正面から すれちがっても つっかえない', () => {
+  const s = ready();
+  const [a, b] = s.runners;
+  a.x = -2; a.z = 0.6; b.x = 2; b.z = 0.6;
+  for (let i = 0; i < 3 / STEP; i++) step(s, [{ x: 4, z: 0.6, open: false }, { x: -4, z: 0.6, open: false }]);
+  assert.ok(a.x > 3 && b.x < -3, `a ${a.x.toFixed(2)} / b ${b.x.toFixed(2)}`);
 });
 
 test('1かいに ついたら ゴール。ゴールの順が 順位', () => {
@@ -129,4 +129,26 @@ test('人くらいの反応・見る力でも、CPU と互角に戦える', () =
   } finally {
     delete PERSONALITIES.human;
   }
+});
+
+test('CPU どうしが ドアの前などで 長く つっかえない', () => {
+  let longest = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const s = createGame(PLAYERS, seed);
+    const cpus = PLAYERS.map((_, i) => createCpu(kinds[(i + seed) % 3], seed, i));
+    const run = PLAYERS.map(() => 0), last = s.runners.map((r) => [r.x, r.z]);
+    while (s.phase !== 'finished') {
+      const inp = cpus.map((c, i) => cpuInput(c, s, i));
+      step(s, inp);
+      if (s.phase !== 'play') continue;
+      s.runners.forEach((r, i) => {
+        const m = Math.hypot(r.x - last[i][0], r.z - last[i][1]);
+        last[i] = [r.x, r.z];
+        const want = !r.done && !r.act && inp[i] && inp[i].x !== null && Math.hypot(inp[i].x - r.x, inp[i].z - r.z) > 0.3;
+        run[i] = want && m < 0.01 ? run[i] + 1 : 0;
+        longest = Math.max(longest, run[i] * STEP);
+      });
+    }
+  }
+  assert.ok(longest < 1.5, `いちばん長い つっかえ ${longest.toFixed(2)} 秒`);
 });

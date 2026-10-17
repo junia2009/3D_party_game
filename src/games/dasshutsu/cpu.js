@@ -19,7 +19,7 @@ export const PERSONALITIES = {
 };
 
 export function createCpu(personality, seed, slot) {
-  return { personality, rng: seedFrom(`${seed}:dasshutsu-cpu:${slot}`), floor: null, mem: {}, bad: new Set(), good: null, target: null, wait: null, seen: new Map(), hintSeen: false };
+  return { personality, rng: seedFrom(`${seed}:dasshutsu-cpu:${slot}`), floor: null, mem: {}, bad: new Set(), good: null, target: null, wait: null, seen: new Map(), hintSeen: false, stuckT: 0, lastX: 0, lastZ: 0, laneFlip: false };
 }
 
 function choose(cpu, s, me, p) {
@@ -56,7 +56,7 @@ export function cpuInput(cpu, s, slot) {
     if (cpu.seen.has(key)) return;
     cpu.seen.set(key, true);
     if (nextRandom(cpu) >= p.watch) return;
-    if (o.act.kind === 'stair' || o.act.kind === 'slide') { cpu.good = o.act.door; cpu.target = null; }
+    if (o.act.kind === 'stair') { cpu.good = o.act.door; cpu.target = null; }
     else cpu.bad.add(o.act.door);
   });
   // ヒントの印
@@ -74,14 +74,30 @@ export function cpuInput(cpu, s, slot) {
   }
   if (cpu.target === null || cpu.bad.has(cpu.target)) { cpu.target = choose(cpu, s, me, p); cpu.wait = null; }
   const door = s.floors[me.floor].doors[cpu.target];
-  const at = doorAt(s, me.floor, me.x, me.z) === cpu.target && Math.abs(me.x - door.x) < 0.25;
+  // ドアの前(あけられる はんい)に 入ったら あける。まん中まで 行こうとすると、同じドアを ねらう子と おしあって つっかえる
+  const at = doorAt(s, me.floor, me.x, me.z) === cpu.target;
   if (at) {
     if (cpu.wait === null) cpu.wait = randRange(cpu, p.react[0], p.react[1]);
     cpu.wait -= 1 / 60;
     if (cpu.wait <= 0) { cpu.wait = null; return { x: null, z: null, open: true }; }
     return { x: door.x, z: 0.5, open: false };
   }
+  // つっかえ: しばらく ほとんど動けていなければ、通り道(手前/奥)を かえる。それでもだめなら べつのドアへ
+  const moved = Math.hypot(me.x - cpu.lastX, me.z - cpu.lastZ);
+  cpu.lastX = me.x; cpu.lastZ = me.z;
+  cpu.stuckT = moved < 0.012 ? cpu.stuckT + 1 / 60 : Math.max(0, cpu.stuckT - 2 / 60);
+  if (cpu.stuckT > 0.5) {
+    cpu.stuckT = 0;
+    cpu.laneFlip = !cpu.laneFlip;
+    if (nextRandom(cpu) < 0.4 && cpu.good === null) { cpu.target = choose(cpu, s, me, p); cpu.wait = null; }
+  }
+  // 通り道: 右へ行く子は 奥、左へ行く子は 手前を 歩く(正面から ぶつからない)。ドアの近くで かべへ よる
+  const dx = door.x - me.x;
+  const far = Math.abs(dx) > 0.7;
+  let lane = dx > 0 ? 0.55 : 1.6;
+  if (cpu.laneFlip) lane = dx > 0 ? 1.6 : 0.55;
+  const z = far ? lane : RULES.doorDepth * 0.5;
   // ちょっとだけ ゆっくり(speed)
-  const tx = me.x + (door.x - me.x) * p.speed;
-  return { x: Math.abs(door.x - me.x) < 0.3 ? door.x : tx, z: RULES.doorDepth * 0.5, open: false };
+  const tx = me.x + dx * p.speed;
+  return { x: Math.abs(dx) < 0.3 ? door.x : tx, z, open: false };
 }
