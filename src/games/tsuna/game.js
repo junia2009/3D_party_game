@@ -597,6 +597,8 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
       owl.update(dt);
       if (owl.current === 'flap' && owl.actions.flap.time > 0.5) owl.play('idle');
       stage.water.material.map.offset.y -= dt * 0.25;
+      stage.sparkle.material.map.offset.y -= dt * 0.42;
+      stage.sparkle.material.opacity = 0.5 + Math.sin(time * 2.3) * 0.2;
     }
     atmosphere.update(dt);
     updateCamera(dt);
