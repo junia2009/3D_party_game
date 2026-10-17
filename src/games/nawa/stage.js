@@ -141,24 +141,84 @@ function buildStall(g, x, z, rotY, name, col) {
   }) }));
   sign.position.set(0, 1.72, 0.42);
   s.add(sign);
-  // 台の上の 品物(色の ついた 玉)
-  for (let i = 0; i < 5; i++) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), toonMaterial([0xffb0c8, 0xfff0f4, 0xff8a5a, 0x8ad0ff, 0xffd23c][i]));
-    m.position.set(-0.7 + i * 0.35, 0.95, 0.1);
-    s.add(m);
+  // 台の上に 小さな はだか電球(あたたかい 光の つぶ)
+  for (const sx of [-0.7, 0, 0.7]) {
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xfff0b0 }));
+    bulb.position.set(sx, 1.95, 0.45);
+    s.add(bulb);
   }
   s.position.set(x, 0, z);
   s.rotation.y = rotY;
   g.add(s);
+  return s;
+}
+
+// わたあめ: ぼうに ささった ふわふわと、つるした ふくろ
+function cottonCandy(s) {
+  const stick = toonMaterial(0xf0e0c0);
+  const fluff = [0xffc8dc, 0xfff4f8, 0xd8c8ff, 0xffc8dc];
+  fluff.forEach((c, i) => {
+    const x = -0.6 + i * 0.4;
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.35, 5), stick);
+    st.position.set(x, 1.0, 0.15);
+    const f = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 1), toonMaterial(c));
+    f.position.set(x, 1.27, 0.15);
+    f.scale.y = 1.15;
+    s.add(st, f);
+  });
+  for (let i = 0; i < 4; i++) {
+    const bag = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.3, 0.12), toonMaterial([0xff7aa0, 0x7ac8ff, 0xffd23c, 0x8ae07a][i]));
+    bag.position.set(-0.75 + i * 0.5, 1.62, 0.36);
+    s.add(bag);
+  }
+}
+// やきそば: 鉄板と 山もりの やきそば(湯気は 画面がわで)
+function yakisoba(s) {
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.06, 0.55), toonMaterial(0x2a2a2e));
+  plate.position.set(0, 0.88, 0.05);
+  const noodles = new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), toonMaterial(0xc8883a));
+  noodles.scale.set(1.2, 0.35, 0.55);
+  noodles.position.set(-0.1, 0.91, 0.05);
+  s.add(plate, noodles);
+  for (let i = 0; i < 6; i++) {
+    const bit = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.06), toonMaterial(i % 2 ? 0x5ab84a : 0xe8542a));
+    bit.position.set(-0.4 + (i % 3) * 0.3, 1.0, -0.05 + Math.floor(i / 3) * 0.15);
+    s.add(bit);
+  }
+  const steam = new THREE.Object3D();
+  steam.position.set(-0.1, 1.05, 0.05);
+  s.add(steam);
+  return steam;
+}
+// きんぎょ: 水そうと 泳ぐ 金魚(動かすので まとめない)
+function goldfish(s) {
+  const tank = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.22, 0.6), new THREE.MeshToonMaterial({ color: 0x6ab8e8, transparent: true, opacity: 0.7, gradientMap: toonGradient }));
+  tank.position.set(0, 0.97, 0.05);
+  tank.userData.noMerge = true;
+  s.add(tank);
+  const fishes = [];
+  const body = new THREE.SphereGeometry(0.05, 8, 6).scale(1.6, 0.8, 0.8);
+  const tail = new THREE.ConeGeometry(0.04, 0.06, 4).rotateZ(Math.PI / 2).translate(-0.1, 0, 0);
+  for (let i = 0; i < 7; i++) {
+    const f = new THREE.Group();
+    const mat = toonMaterial(i % 3 ? 0xff6a2a : 0xffffff);
+    f.add(new THREE.Mesh(body, mat), new THREE.Mesh(tail, mat));
+    f.position.set(0, 1.02, 0.05);
+    f.userData = { noMerge: true, cx: -0.5 + (i % 4) * 0.33, cz: -0.12 + Math.floor(i / 4) * 0.24 + 0.05, r: 0.08 + (i % 3) * 0.04, ph: i * 1.7, sp: 1 + (i % 3) * 0.4 };
+    f.traverse((o) => { o.userData.noMerge = true; });
+    s.add(f);
+    fishes.push(f);
+  }
+  return fishes;
 }
 
 export function buildStage(scene) {
   const g = new THREE.Group();
   buildGround(g);
   buildYagura(g);
-  buildStall(g, -5.6, -4.2, 0.5, 'わたあめ', '#e8508a');
-  buildStall(g, 5.6, -4.2, -0.5, 'やきそば', '#e8742a');
-  buildStall(g, -7.4, -0.8, 1.1, 'きんぎょ', '#3a8ae8');
+  cottonCandy(buildStall(g, -5.6, -4.2, 0.5, 'わたあめ', '#e8508a'));
+  const steam = yakisoba(buildStall(g, 5.6, -4.2, -0.5, 'やきそば', '#e8742a'));
+  const fishes = goldfish(buildStall(g, -7.4, -0.8, 1.1, 'きんぎょ', '#3a8ae8'));
   // ちょうちん: やぐらの てっぺんから まわりの 柱へ
   const lanterns = [];
   const post = toonMaterial(0x6a4a2a);
@@ -206,7 +266,9 @@ export function buildStage(scene) {
     spots.push({ x, y: 0, z, h: 5 + rand() * 4, kind: rand() < 0.3 ? 'pine' : 'broad' });
   }
   buildForestTrees(g, spots);
-  mergeStatic(g);
+  g.updateMatrixWorld(true);
+  const steamAt = steam.getWorldPosition(new THREE.Vector3());
+  mergeStatic(g, (o) => o.userData.noMerge && o.isGroup);
   scene.add(g);
   // ちょうちんの あかり(あたたかい 光を 2つだけ)
   const lights = [];
@@ -216,5 +278,5 @@ export function buildStage(scene) {
     scene.add(l);
     lights.push(l);
   }
-  return { group: g, lanterns, lights };
+  return { group: g, lanterns, lights, steamAt, fishes };
 }

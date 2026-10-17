@@ -28,7 +28,8 @@ const SIDE = Math.PI / 2; // とぶ子の 向き(右を 向いて 1列に なら
 export async function createNawa({ renderer, settings, getAudio, onExit }) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 700);
-  const atmosphere = createAtmosphere(scene, renderer, camera, { course: false });
+  // 月は やぐらの うしろの 空に(斜め前の カメラから 見える 向き)
+  const atmosphere = createAtmosphere(scene, renderer, camera, { course: false, sunDir: { night: [-0.85, 0.2, -0.48] } });
   const stage = buildStage(scene);
 
   // ── 音 ──────────────────────────────────────────
@@ -95,7 +96,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   };
 
   // ── 先生・回す子 ────────────────────────────────────
-  await preload([...CHARACTERS.map((c) => c.key), 'hoho', 'risu', 'harinezumi']);
+  await preload([...CHARACTERS.map((c) => c.key), 'hoho', 'risu', 'harinezumi', 'komadori', 'mogura']);
   const owl = await createModel('hoho');
   owl.root.position.set(YAGURA.x - 0.25, YAGURA.top + 0.07, YAGURA.z + 0.1);
   owl.play('idle');
@@ -111,7 +112,52 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     scene.add(m.root);
     return { model: m, sx, arm: m.node(sx < 0 ? 'arm_R' : 'arm_L') || m.node('arm_R') };
   }));
-  atmosphere.setupShadows([stage.group, owl.root, ...turners.map((t) => t.model.root)], [stage.group]);
+  // 見物の 森の なかま(列の うしろと 屋台の 前)
+  const FANS = [['komadori', -4.9, -1.2], ['mogura', -3.7, -2.9], ['risu', -6.1, 0.9], ['komadori', 3.3, -3.6], ['harinezumi', 4.7, -1.6], ['mogura', 2.0, -4.4]];
+  const fans = await Promise.all(FANS.map(async ([kind, x, z], i) => {
+    const m = await createModel(kind);
+    m.root.position.set(x, 0, z);
+    m.root.rotation.y = Math.atan2(-x, -z + 0.5) ;
+    m.play('idle');
+    m.actions.idle.time = i * 0.4;
+    m.setFace('happy');
+    scene.add(m.root);
+    return { model: m, x, z, hop: 0, ph: i * 1.3 };
+  }));
+  atmosphere.setupShadows([stage.group, owl.root, ...turners.map((t) => t.model.root), ...fans.map((f) => f.model.root)], [stage.group]);
+
+  // ぼんやり 光る 円の テクスチャ
+  function glowTex0() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,255,255,0.9)');
+    grd.addColorStop(0.35, 'rgba(255,255,255,0.35)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  }
+  // まんまるの お月さま(斜め前の カメラから 見える 空に)
+  {
+    const moon = new THREE.Mesh(new THREE.CircleGeometry(5.5, 32), new THREE.MeshBasicMaterial({ color: 0xfff4c8, fog: false }));
+    moon.position.set(-84, 21, -96);
+    moon.lookAt(10, 3, 14);
+    const halo = new THREE.Mesh(new THREE.CircleGeometry(12, 32), new THREE.MeshBasicMaterial({ map: glowTex0(), color: 0xfff0b0, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, fog: false, depthWrite: false }));
+    halo.position.set(0, 0, -0.5);
+    moon.add(halo);
+    moon.renderOrder = -1;
+    scene.add(moon);
+  }
+  // ちょうちんの ぼんやりした 光(ゆらゆら)
+  const glowTex = glowTex0();
+  const halos = stage.lanterns.map((l) => {
+    const h = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: l.material.color, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
+    h.scale.setScalar(1.1);
+    l.add(h);
+    return h;
+  });
 
   // ── なわ ───────────────────────────────────────────
   const rope = new THREE.Mesh(new THREE.BufferGeometry(), toonMaterial(0xf5c86a));
@@ -184,7 +230,10 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
       f.t += dt;
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
-      if (f.kind === 'puff') {
+      if (f.kind === 'steam') {
+        f.obj.scale.setScalar(0.6 + k * 2.2);
+        f.obj.material.opacity = 0.35 * Math.sin(Math.min(1, k) * Math.PI);
+      } else if (f.kind === 'puff') {
         f.obj.scale.setScalar(1 + k * 1.5);
         f.obj.material.opacity = 0.8 * (1 - k);
       } else if (f.kind === 'confetti') {
@@ -377,6 +426,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
           sfx.swish();
           owl.play('flap', { fade: 0.05 });
           $('countJ').textContent = String(e.n);
+          fans.forEach((f, i) => { if ((i + e.n) % 2 === 0) f.hop = 1; });
           for (const i of e.caught) {
             const u = game.units[i];
             if (e.redo) { pop('あっ!', u.holder.position.x, 1.6 * u.size, 0, 'out'); continue; }
@@ -560,6 +610,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   // ── 1フレーム ─────────────────────────────────────
   let time = 0;
   let frozen = false;
+  let steamT = 0;
   function frame(rawDt) {
     const dt = Math.min(rawDt, 0.1);
     time += dt;
@@ -595,8 +646,30 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
       for (const t of turners) if (!game) t.model.update(dt);
       owl.update(dt);
       if (owl.current === 'flap' && owl.actions.flap.time > 0.4) owl.play('idle');
-      // ちょうちんが ゆらゆら
+      // ちょうちんが ゆらゆら、光が ちらちら
       stage.lanterns.forEach((l, i) => { l.position.x += Math.sin(time * 1.3 + i) * 0.0008; });
+      halos.forEach((h, i) => { h.material.opacity = 0.45 + Math.sin(time * 3.1 + i * 2.3) * 0.08 + Math.sin(time * 7.7 + i) * 0.05; });
+      // やきそばの 湯気
+      steamT -= dt;
+      if (steamT <= 0) {
+        steamT = 0.22;
+        const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+        m.position.copy(stage.steamAt).add(new THREE.Vector3((Math.random() - 0.5) * 0.5, 0, (Math.random() - 0.5) * 0.2));
+        scene.add(m);
+        fx.push({ obj: m, t: 0, life: 1.6, vel: new THREE.Vector3((Math.random() - 0.5) * 0.1, 0.55, 0), kind: 'steam' });
+      }
+      // 金魚が すいすい
+      for (const f of stage.fishes) {
+        const d = f.userData, a = time * d.sp + d.ph;
+        f.position.set(d.cx + Math.cos(a) * d.r * 1.6, 1.02, d.cz + Math.sin(a) * d.r * 0.6);
+        f.rotation.y = -a - Math.PI / 2;
+      }
+      // 見物の なかま: なわが 通るたびに ぴょん
+      for (const f of fans) {
+        f.hop = Math.max(0, f.hop - dt * 3);
+        f.model.root.position.y = Math.sin(Math.min(1, 1 - f.hop) * Math.PI) * 0.18 * (f.hop > 0 ? 1 : 0);
+        f.model.update(dt);
+      }
     }
     atmosphere.update(dt);
     updateCamera(dt);
