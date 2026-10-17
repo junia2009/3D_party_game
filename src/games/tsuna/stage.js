@@ -16,7 +16,7 @@ import { buildForestTrees, makeRand } from '../daruma/trees.js';
 export const STREAM_W = 0.7; // 小川の はばの半分
 export const WATER_Y = -0.28;
 export const FRONT = 1.25; // いちばん前の子の 小川の まん中からの きょり
-export const GAP = 0.78; // チームの子どうしの間
+export const GAP = 0.68; // チームの子どうしの間
 export const HOST = { x: 0, z: -5.6, top: 0.95 };
 export const SEATS = [
   { x: -2.6, z: -4.4, kind: 'risu' }, { x: -4.0, z: -3.6, kind: 'komadori' },

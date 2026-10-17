@@ -9,7 +9,7 @@ import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
-import { RULES, STEP, cheer, createGame, ranking, step, timeLeft } from './rules.js';
+import { RULES, STEP, cheer, createGame, nearestBeat, ranking, step, timeLeft } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { FRONT, GAP, HOST, SEATS, STREAM_W, STUMP_TOP, WATER_Y, buildStage, groundY } from './stage.js';
 import { createAtmosphere, windify } from '../daruma/atmosphere.js';
@@ -81,6 +81,8 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     perfect() { voice({ pts: [[0, 1046], [0.05, 1318]], len: 0.12, gain: 0.07 }); },
     good() { voice({ pts: [[0, 784]], len: 0.08, gain: 0.05 }); },
     miss() { voice({ type: 'square', pts: [[0, 220]], len: 0.06, gain: 0.03 }); },
+    sync() { [0, 0.06].forEach((at, i) => voice({ type: 'triangle', pts: [[0, 660 + i * 220], [0.08, 880 + i * 220]], len: 0.14, gain: 0.07, at })); },
+    hoot() { voice({ pts: [[0, 420], [0.12, 380]], len: 0.18, gain: 0.08 }); voice({ pts: [[0, 420], [0.12, 360]], len: 0.22, gain: 0.08, at: 0.22 }); },
     slip() { voice({ pts: [[0, 900], [0.25, 300]], len: 0.3, gain: 0.08 }); },
     save() { voice({ type: 'triangle', pts: [[0, 440], [0.1, 660]], len: 0.15, gain: 0.08 }); },
     fall() { noise({ len: 0.25, gain: 0.12, freq: [600, 150], type: 'lowpass' }); },
@@ -126,9 +128,30 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     return t;
   })();
   const ROPE_LEN = (FRONT + GAP * 2 + 1.2) * 2;
-  const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, ROPE_LEN, 8, 1).rotateZ(Math.PI / 2), new THREE.MeshToonMaterial({ map: ropeTex }));
+  // つなは 毎フレーム 形を 作りなおす: ゆるむと まん中が たれて ゆれ、引いた 直後は ぴんと 張る
+  const rope = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshToonMaterial({ map: ropeTex }));
   rope.castShadow = true;
   scene.add(rope);
+  const ropePts = Array.from({ length: 17 }, () => new THREE.Vector3());
+  const ROPE_Y = 0.82;
+  const TAIL = FRONT + GAP * 2 + 0.25; // いちばん うしろの子の 手より 外は、地面へ たれる
+  let tension = 0;
+  let ropeSag = 0.1;
+  function shapeRope() {
+    const half = ROPE_LEN / 2;
+    ropeSag = 0.012 + 0.11 * (1 - tension);
+    const wob = 0.02 * (1 - tension);
+    for (let i = 0; i < ropePts.length; i++) {
+      const x = ((i / (ropePts.length - 1)) * 2 - 1) * half;
+      const ax = Math.abs(x);
+      let y = 0;
+      if (ax < FRONT) y = -(ropeSag + Math.sin(time * 6) * wob) * (1 - (x / FRONT) ** 2);
+      else if (ax > TAIL) y = -(((ax - TAIL) / (half - TAIL)) ** 1.6) * (ROPE_Y - 0.06);
+      ropePts[i].set(x, y, ax > TAIL ? (ax - TAIL) * 0.35 : 0);
+    }
+    rope.geometry.dispose();
+    rope.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ropePts), 40, 0.045, 6);
+  }
   // まん中の 赤い目じるし
   const ribbon = new THREE.Group();
   const knot = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), toonMaterial(0xe8344a));
@@ -153,14 +176,25 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
   const fx = [];
   const dropGeo = new THREE.SphereGeometry(0.05, 6, 4);
   const dropMat = new THREE.MeshBasicMaterial({ color: 0xdff4ff });
-  function splashAt(x, z, size = 1) {
+  const mudMat = new THREE.MeshBasicMaterial({ color: 0x6a4a2a });
+  function splashAt(x, z, size = 1, { y = WATER_Y + 0.1, mat = dropMat, up = 1 } = {}) {
     for (let i = 0; i < 30 * size; i++) {
-      const m = new THREE.Mesh(dropGeo, dropMat);
-      m.position.set(x, WATER_Y + 0.1, z);
+      const m = new THREE.Mesh(dropGeo, mat);
+      m.position.set(x, y, z);
       scene.add(m);
       const a = Math.random() * Math.PI * 2, sp = (0.5 + Math.random() * 1.5) * size;
-      fx.push({ obj: m, t: 0, life: 1.2, vel: new THREE.Vector3(Math.cos(a) * sp, 3 + Math.random() * 3, Math.sin(a) * sp), kind: 'drop' });
+      fx.push({ obj: m, t: 0, life: 1.2, vel: new THREE.Vector3(Math.cos(a) * sp, (3 + Math.random() * 3) * up, Math.sin(a) * sp), kind: 'drop', floor: y - 0.12 });
     }
+  }
+  // どろの 水たまり(すべった 足もと。少しずつ うすれる)
+  const puddleGeo = new THREE.CircleGeometry(0.6, 14).rotateX(-Math.PI / 2);
+  function mudAt(x, z) {
+    splashAt(x, z + 0.2, 0.5, { y: 0.1, mat: mudMat, up: 0.5 });
+    const m = new THREE.Mesh(puddleGeo, new THREE.MeshBasicMaterial({ color: 0x5a3e22, transparent: true, opacity: 0.85, depthWrite: false }));
+    m.position.set(x, 0.015, z + 0.15);
+    m.scale.set(0.6, 1, 0.45);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 2.6, vel: new THREE.Vector3(), kind: 'puddle' });
   }
   const puffGeo = new THREE.IcosahedronGeometry(0.12, 1);
   function puff(x, y, z, n = 3, color = 0xd8c8a0) {
@@ -189,11 +223,14 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
       if (f.kind === 'drop') {
         f.vel.y -= dt * 12;
         f.obj.position.addScaledVector(f.vel, dt);
-        if (f.obj.position.y < WATER_Y) f.t = f.life;
+        if (f.obj.position.y < Math.min(f.floor, WATER_Y)) f.t = f.life;
       } else if (f.kind === 'puff') {
         f.obj.position.addScaledVector(f.vel, dt);
         f.obj.scale.setScalar(1 + k * 1.5);
         f.obj.material.opacity = 0.8 * (1 - k);
+      } else if (f.kind === 'puddle') {
+        f.obj.scale.set(0.6 + Math.min(1, f.t * 6) * 0.6, 1, 0.45 + Math.min(1, f.t * 6) * 0.4);
+        f.obj.material.opacity = 0.85 * Math.min(1, (1 - k) * 2.5);
       } else if (f.kind === 'confetti') {
         f.obj.position.addScaledVector(f.vel, dt);
         f.obj.rotation.x += f.spin.x * dt;
@@ -248,7 +285,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     me.holder.add(marker);
     me.marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, sync: { L: { beat: -1, n: 0 }, R: { beat: -1, n: 0 } }, warned: -1 };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(units.map((u) => u.holder), []);
     pressed = false;
@@ -349,7 +386,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     for (const side of ['L', 'R']) $(`cheer${side}N`).classList.toggle('on', s.phase === 'play' && cheer(s, side) > 1.05);
   }
   const tmpV = new THREE.Vector3();
-  function pop(text, x, y, z, cls = '') {
+  function pop(text, x, y, z, cls = '', life = 800) {
     tmpV.set(x, y, z).project(camera);
     const el = document.createElement('div');
     el.className = 'pop ' + cls;
@@ -357,7 +394,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     el.style.left = `${((tmpV.x + 1) / 2) * 100}%`;
     el.style.top = `${((1 - tmpV.y) / 2) * 100}%`;
     $('popsN').append(el);
-    setTimeout(() => el.remove(), 800);
+    setTimeout(() => el.remove(), life);
   }
   const unitOf = (who) => game.units.find((u) => u.id === who);
 
@@ -374,7 +411,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
         case 'beat':
           sfx.drum(e.kind);
           call('よいしょ!', e.kind);
-          owl.play('flap', { fade: 0.05 });
+          if (owl.current !== 'chant') owl.play('flap', { fade: 0.05 });
           break;
         case 'tempo':
           splash(e.kind === 'fast' ? 'はやく なるよ!' : e.kind === 'slow' ? 'ゆっくり…' : 'もとに もどるよ', e.kind === 'fast' ? 'red' : '');
@@ -382,6 +419,21 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
         case 'pull': {
           const u = unitOf(e.who);
           if (u) u.yank = 1;
+          tension = Math.min(1, tension + (e.grade === 'perfect' ? 0.35 : e.grade === 'good' ? 0.22 : 0.06));
+          // 同じ ビートで チームの 2人以上が ぴったり → 「そろった!」 みんなで ぐいっ
+          if (e.grade === 'perfect') {
+            const bi = nearestBeat(s);
+            const sync = game.sync[e.side];
+            if (sync.beat !== bi) { sync.beat = bi; sync.n = 0; }
+            if (++sync.n === 2) {
+              const team = game.units.filter((v) => v.side === e.side);
+              for (const v of team) { v.yank = 1.5; puff(v.holder.position.x, 0.05, v.holder.position.z, 2); }
+              tension = 1;
+              const mid = team.reduce((a, v) => a + v.holder.position.x, 0) / team.length;
+              pop('そろった!', mid, 2.3, 0, e.side === s.runners[0].side ? 'sync' : 'sync them');
+              if (e.side === s.runners[0].side) sfx.sync();
+            }
+          }
           if (e.who === 0) {
             if (e.grade === 'perfect') sfx.perfect(); else if (e.grade === 'good') sfx.good(); else if (e.grade === 'miss') sfx.miss();
             if (GRADE[e.grade]) pop(GRADE[e.grade], u.holder.position.x, 2.0 * u.size, u.holder.position.z, e.grade === 'perfect' ? 'gold' : e.grade === 'miss' ? 'out' : 'me');
@@ -392,8 +444,8 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
         case 'slip': {
           const u = unitOf(e.who);
           if (u) u.slip = true;
-          if (e.who === 0) { splash('つるっ! タップで ふんばれ!', 'red small'); sfx.slip(); }
-          if (u) puff(u.holder.position.x, 0.05, u.holder.position.z, 3, 0x8a6a4a);
+          if (e.who === 0) { splash('つるっ!\nタップで ふんばれ!', 'red small'); sfx.slip(); }
+          if (u) mudAt(u.holder.position.x, u.holder.position.z);
           break;
         }
         case 'save': {
@@ -458,9 +510,9 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
       u.yank = Math.max(0, u.yank - dt * 4);
       u.downT = Math.max(0, (u.downT || 0) - dt);
       let clip = 'run', face = 'frustrated', timeScale = 0.4;
-      let lean = 0.32 + u.yank * 0.25;
+      let lean = 0.32 + Math.min(1.5, u.yank) * 0.28;
       if (s.phase === 'ready') { clip = 'idle'; face = 'normal'; lean = 0.1; }
-      if (u.slip) { lean = -0.25 + Math.sin(time * 30) * 0.1; face = 'surprised'; clip = 'idle'; }
+      if (u.slip) { lean = -0.25 + Math.sin(time * 30) * 0.1; face = 'surprised'; clip = 'idle'; x -= dir * 0.12; }
       if (u.downT > 0) { lean = 0.9; clip = 'dizzy'; face = 'frustrated'; }
       if (s.phase === 'finished') {
         if (u.side === s.winner) { clip = 'cheer'; face = 'happy'; lean = 0; }
@@ -490,16 +542,23 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
         u.arms.forEach((a, n) => {
           if (!a) return;
           const side = n === 0 ? 1 : -1;
-          a.rotation.x = -1.4;
-          a.rotation.z = side * 0.15;
+          if (u.slip) {
+            // つるっ: 片手で つなに しがみついて、もう片手を ばたばた
+            a.rotation.x = n === 0 ? -1.4 : -2.6 + Math.sin(time * 26) * 0.7;
+            a.rotation.z = side * (n === 0 ? 0.15 : 0.6 + Math.sin(time * 19) * 0.3);
+          } else {
+            a.rotation.x = -1.4 - u.yank * 0.15;
+            a.rotation.z = side * 0.15;
+          }
         });
       }
       if (u.marker) u.marker.position.set(0, 2.1 * u.size + 0.08 * Math.sin(performance.now() / 180), 0);
     }
     // つなと 目じるし
-    rope.position.set(s.p, 0.82, 0.12);
-    rope.rotation.x = Math.sin(time * 9) * 0.01;
-    ribbon.position.set(s.p, 0.82, 0.12);
+    tension = Math.max(0, tension - dt * 1.8);
+    shapeRope();
+    rope.position.set(s.p, ROPE_Y, 0.12);
+    ribbon.position.set(s.p, ROPE_Y - ropeSag - Math.sin(time * 6) * 0.02 * (1 - tension), 0.12);
     ribbon.rotation.z = Math.sin(time * 6) * 0.2;
     rope.visible = s.phase !== 'finished' || game.endTimer > 3.5;
   }
@@ -511,8 +570,9 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     const portrait = aspect < 1;
     const s = game?.state;
     // つなの まん中を 追って、左右に 少し ずれる
-    const cx = s ? s.p * 0.85 : 0;
-    const pos = portrait ? new THREE.Vector3(cx, 3.9, 11.6) : new THREE.Vector3(cx, 2.1, 6.4);
+    // 自分の チームの ほうへ 少し 寄せる
+    const cx = s ? s.p * 0.85 + (s.runners[0].side === 'L' ? -0.3 : 0.3) * (portrait ? 1 : 0.5) : 0;
+    const pos = portrait ? new THREE.Vector3(cx, 4.3, 13.0) : new THREE.Vector3(cx, 2.1, 6.4);
     const look = new THREE.Vector3(cx, portrait ? 0.9 : 1.15, -0.6);
     camera.fov = portrait ? 58 : 42;
     camera.aspect = aspect;
@@ -557,6 +617,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
 
   // ── 1フレーム ─────────────────────────────────────
   let time = 0;
+  let owlTalk = 0;
   function frame(rawDt) {
     const dt = Math.min(rawDt, 0.1);
     time += dt;
@@ -574,6 +635,16 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
         onEvents(step(s, inputs));
         game.acc -= STEP;
       }
+      // 先生の 予告: つぎの 拍から リズムが かわるとき、1拍 まえに 羽を あげて 知らせる
+      const cur = s.beats[s.nextBeat], nx = s.beats[s.nextBeat + 1];
+      if (s.phase === 'play' && cur && nx && nx.kind !== cur.kind && game.warned !== s.nextBeat + 1) {
+        game.warned = s.nextBeat + 1;
+        owl.play('chant', { fade: 0.1 });
+        owl.setFace(nx.kind === 'fast' ? 'glare' : 'normal');
+        owlTalk = 1.1;
+        pop(nx.kind === 'fast' ? 'はやく なるぞ!' : nx.kind === 'slow' ? 'ゆっくり いくぞ〜' : 'もとに もどすぞ', HOST.x, HOST.top + 2.9, HOST.z, 'owl ' + nx.kind, 1150);
+        sfx.hoot();
+      }
       if (game.endTimer !== null) {
         game.endTimer -= dt;
         if (game.endTimer <= 0) {
@@ -588,14 +659,19 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
       updateFx(dt);
     }
     if (!paused) {
-      for (const a of audience) {
-        // 負けている チームの がわの 観客は 応援
+      audience.forEach((a, n) => {
+        // 負けている チームの がわの 観客は 切り株の上で とびはねて 応援
         const on = game && game.state.phase === 'play' && cheer(game.state, a.side) > 1.05;
         if (game?.state.phase !== 'finished') { a.model.play(on ? 'cheer' : 'idle'); a.model.setFace(on ? 'happy' : 'normal'); }
+        a.hop = on ? 1 : Math.max(0, (a.hop || 0) - dt * 3);
+        a.model.root.position.y = STUMP_TOP + Math.abs(Math.sin(time * 7 + n * 1.3)) * 0.24 * a.hop;
+        if (on && Math.random() < dt * 0.5) pop(['がんばれー!', 'まけるなー!', 'ひけー!'][Math.floor(Math.random() * 3)], a.seat.x, 1.5, a.seat.z, 'fan ' + a.side);
         a.model.update(dt);
-      }
+      });
       owl.update(dt);
+      owlTalk = Math.max(0, owlTalk - dt);
       if (owl.current === 'flap' && owl.actions.flap.time > 0.5) owl.play('idle');
+      if (owl.current === 'chant' && owlTalk <= 0) { owl.play('idle'); owl.setFace('normal'); }
       stage.water.material.map.offset.y -= dt * 0.25;
       stage.sparkle.material.map.offset.y -= dt * 0.42;
       stage.sparkle.material.opacity = 0.5 + Math.sin(time * 2.3) * 0.2;
