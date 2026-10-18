@@ -65,3 +65,4 @@
 | どんぐりマンション だっしゅつ | 作成中 | [minigames/dasshutsu.md](minigames/dasshutsu.md) |
 | 川原の つなひき | 作成中 | [minigames/tsuna.md](minigames/tsuna.md) |
 | お祭りの 大なわとび | 作成中 | [minigames/nawa.md](minigames/nawa.md) |
+| 火山の 落ちものよけ | 作成中 | [minigames/kazan.md](minigames/kazan.md) |

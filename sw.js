@@ -10,7 +10,7 @@
 // 版はファイルの中身から作るので、1つでも変われば sw.js が変わり、ブラウザが入れなおす。
 
 // <precache>
-const VERSION = 'f69e5c905313';
+const VERSION = '69dfa8cc66a1';
 const PRECACHE = [
   "./",
   "./assets/thumbs/catch.jpg",
@@ -20,6 +20,7 @@ const PRECACHE = [
   "./assets/thumbs/hayauchi.jpg",
   "./assets/thumbs/ikada.jpg",
   "./assets/thumbs/kakure.jpg",
+  "./assets/thumbs/kazan.jpg",
   "./assets/thumbs/mato.jpg",
   "./assets/thumbs/nawa.jpg",
   "./assets/thumbs/sled.jpg",
@@ -91,6 +92,10 @@ const PRECACHE = [
   "./src/games/kakure/game.js",
   "./src/games/kakure/rules.js",
   "./src/games/kakure/stage.js",
+  "./src/games/kazan/cpu.js",
+  "./src/games/kazan/game.js",
+  "./src/games/kazan/rules.js",
+  "./src/games/kazan/stage.js",
   "./src/games/lineup.js",
   "./src/games/mato/cpu.js",
   "./src/games/mato/game.js",
