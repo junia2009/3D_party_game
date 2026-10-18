@@ -6,6 +6,7 @@
 // - 転がる 岩(roll): 岩場の はしから はしへ 転がってくる。ジャンプで とびこえられる。
 // - だんだん 激しく: ふってくる 間かくが みじかく、大岩が ふえる。
 // - 足場が くずれる: crumbleAt 秒から、外がわの かけらが ぐらぐら → くずれる。落ちたら 脱落。
+// - 大ふんか: eruptAt 秒ごろに 火山が 大ふんか。eruptTime 秒の あいだ、ふってくる 間かくが みじかく、火の玉が ふえる(予告 eruptWarn 秒)。
 // - おたすけの かさ: ときどき かさが 落ちている。ひろうと shieldTime 秒、1回だけ 当たっても だいじょうぶ。
 // - 時間ぎれ(timeLimit)まで のこった子は みんな 上位(まん中に 近い 子ほど 上)。
 //
@@ -44,6 +45,10 @@ export const RULES = {
   crumbleAt: 18,
   crumbleEvery: 1.6,
   crumbleWarn: 1.5,
+  eruptAt: [26, 48], // 大ふんかが はじまる(はじまってから)
+  eruptWarn: 1.6,
+  eruptTime: 5,
+  eruptRate: 0.5, // 間かくに かける
   itemEvery: [9, 14],
   itemFirst: 7,
   itemLife: 8,
@@ -77,6 +82,7 @@ export function createGame(players, seed) {
     nextDrop: 0.6,
     nextRoll: RULES.rollFrom,
     nextItem: RULES.itemFirst,
+    erupt: { n: 0, until: 0, warned: -1 }, // 大ふんか
     nextId: 1,
     winner: null,
     out: [], // 脱落した順
@@ -108,6 +114,7 @@ export function createGame(players, seed) {
 export const playTime = (s) => Math.max(0, s.t - RULES.readyTime);
 export const timeLeft = (s) => Math.max(0, RULES.timeLimit - playTime(s));
 export const intensity = (s) => Math.min(1, playTime(s) / RULES.rampTime);
+export const erupting = (s) => s.t < s.erupt.until;
 export const aliveSlots = (s) => s.runners.map((r, i) => (r.alive ? i : -1)).filter((i) => i >= 0);
 
 // (x, z) の下の かけら(まん中・外なら null)
@@ -145,7 +152,8 @@ function randomSpot(s) {
 function spawnDrop(s, ev) {
   const k = intensity(s);
   const roll = nextRandom(s);
-  const kind = roll < 0.12 + k * 0.18 ? 'big' : roll < 0.3 + k * 0.15 ? 'fire' : 'rock';
+  const fire = erupting(s) ? 0.3 : 0;
+  const kind = roll < 0.12 + k * 0.18 ? 'big' : roll < 0.3 + k * 0.15 + fire ? 'fire' : 'rock';
   const def = RULES.kinds[kind];
   let spot;
   const alive = aliveSlots(s);
@@ -201,10 +209,25 @@ export function step(s, inputs) {
   }
   const tp = playTime(s);
   const k = intensity(s);
+  // ── 大ふんか ──
+  const ei = s.erupt.n;
+  if (ei < RULES.eruptAt.length) {
+    const at = RULES.eruptAt[ei];
+    if (s.erupt.warned !== ei && tp >= at - RULES.eruptWarn) { s.erupt.warned = ei; ev.push({ type: 'eruptWarn' }); }
+    if (tp >= at) {
+      s.erupt.n++;
+      s.erupt.until = s.t + RULES.eruptTime;
+      ev.push({ type: 'erupt' });
+    }
+  }
+  if (s.erupt.until > 0 && s.t >= s.erupt.until) {
+    s.erupt.until = 0;
+    ev.push({ type: 'eruptEnd' });
+  }
   // ── 落ちもの・転がる岩・かさ を 出す ──
   if (tp >= s.nextDrop) {
     spawnDrop(s, ev);
-    s.nextDrop = tp + RULES.dropEvery[0] + (RULES.dropEvery[1] - RULES.dropEvery[0]) * k;
+    s.nextDrop = tp + (RULES.dropEvery[0] + (RULES.dropEvery[1] - RULES.dropEvery[0]) * k) * (erupting(s) ? RULES.eruptRate : 1);
   }
   if (tp >= s.nextRoll) {
     spawnRoll(s, ev);

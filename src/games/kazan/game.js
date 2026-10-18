@@ -85,6 +85,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
     out() { voice({ type: 'square', pts: [[0, 440], [0.4, 110]], len: 0.45, gain: 0.05 }); },
     crack() { noise({ len: 0.3, gain: 0.1, freq: [2000, 300], q: 2 }); },
     rumble() { noise({ len: 1.2, gain: 0.12, freq: [140, 50], type: 'lowpass', attack: 0.2 }); },
+    boom() { noise({ len: 1.4, gain: 0.35, freq: [400, 40], type: 'lowpass', attack: 0.01 }); },
     fanfare() {
       [[0, 523], [0.12, 659], [0.24, 784], [0.36, 1047]].forEach(([at, f]) => voice({ type: 'square', pts: [[0, f]], len: 0.12, gain: 0.05, at }));
       voice({ type: 'square', pts: [[0, 1047]], len: 0.6, gain: 0.05, at: 0.5, vib: 12, vibRate: 7 });
@@ -413,7 +414,8 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     runners[0].holder.add(marker);
     runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, quake: 0, duel: false };
+    $('hudV').classList.remove('erupt');
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows([...runners.map((r) => r.holder), pieceGroup], [stage.group, pieceGroup]);
     Object.assign(input, { touch: null, stick: null, jump: false, target: null });
@@ -585,6 +587,21 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
     const s = game.state;
     for (const e of events) {
       switch (e.type) {
+        case 'eruptWarn':
+          splash('ゴゴゴゴ…', 'red small');
+          sfx.rumble();
+          game.quake = 1.6;
+          break;
+        case 'erupt':
+          splash('大ふんか!', 'red');
+          sfx.boom();
+          game.shake = 0.6;
+          $('hudV').classList.add('erupt');
+          for (let i = 0; i < 40; i++) ember(true);
+          break;
+        case 'eruptEnd':
+          $('hudV').classList.remove('erupt');
+          break;
         case 'start':
           splash('はじめ!');
           sfx.rumble();
@@ -656,6 +673,11 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
           u.out = { t: 0, cause: e.cause, x: r.x, z: r.z, vx: r.x * 0.6, vz: r.z * 0.6 + 0.5, vy: e.cause === 'fall' ? 0 : 7, y: r.y };
           pop(CAUSE[e.cause] || 'あっ!', r.x, 2.0, r.z, e.who === 0 ? 'red' : 'out');
           if (e.who === 0) { splash('あたっちゃった…', 'red small'); sfx.out(); }
+          // のこり 2人: いっきうち
+          if (s.phase === 'play' && s.runners.filter((x) => x.alive).length === 2 && !game.duel) {
+            game.duel = true;
+            setTimeout(() => splash('いっきうち!', 'gold small'), 900);
+          }
           break;
         }
         case 'finished': {
@@ -665,6 +687,9 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
           if (win) sfx.fanfare();
           const r = s.runners[e.winner];
           confetti(r.x, r.z);
+          $('hudV').classList.remove('erupt');
+          // 火山が お祝いの 火の粉を ドーン
+          for (let i = 0; i < 6; i++) setTimeout(() => { for (let j = 0; j < 25; j++) ember(true); const a = Math.random() * Math.PI * 2; sparks(r.x + Math.cos(a) * 1.5, r.z + Math.sin(a) * 1.5, 30); sfx.boom(); }, 300 + i * 600);
           break;
         }
       }
@@ -809,6 +834,18 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
     const portrait = aspect < 1;
     const pos = portrait ? new THREE.Vector3(0, 17.5, 11.5) : new THREE.Vector3(0, 10.5, 10.5);
     const look = new THREE.Vector3(0, portrait ? -0.5 : -0.3, portrait ? 0.6 : 0.3);
+    const s = game?.state;
+    if (s && (game.duel || s.phase === 'finished')) {
+      // いっきうち: のこった 子(決着後は 勝った子)へ 寄る
+      const alive = s.runners.filter((r) => r.alive);
+      const target = s.phase === 'finished' && s.winner !== null ? [s.runners[s.winner]] : alive;
+      if (target.length) {
+        const mx = target.reduce((a, r) => a + r.x, 0) / target.length, mz = target.reduce((a, r) => a + r.z, 0) / target.length;
+        const near = s.phase === 'finished' ? 0.5 : 0.78;
+        look.set(mx * 0.6, 0.3, mz * 0.6);
+        pos.set(look.x, look.y + (pos.y - look.y) * near, look.z + (pos.z - look.z) * near);
+      }
+    }
     camera.fov = portrait ? 52 : 45;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
@@ -823,6 +860,11 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
     const k = snap ? 1 : 1 - Math.exp(-dt * 4);
     camera.position.lerp(pos, k);
     camera.userData.look = camera.userData.look ? camera.userData.look.lerp(look, k) : look.clone();
+    if (game?.quake > 0) {
+      game.quake = Math.max(0, game.quake - dt);
+      camera.position.x += (Math.random() - 0.5) * 0.12;
+      camera.position.y += (Math.random() - 0.5) * 0.08;
+    }
     if (game?.shake > 0) {
       game.shake = Math.max(0, game.shake - dt);
       camera.position.x += (Math.random() - 0.5) * game.shake * 0.6;

@@ -143,6 +143,27 @@ test('だんだん 激しく: 後半ほど ふってくる 間かくが みじ�
   assert.ok(events.some((e) => e.type === 'roll') && events.some((e) => e.type === 'item') && events.some((e) => e.type === 'crumble'));
 });
 
+test('大ふんか: 予告の あと しばらく、ふってくる 間かくが みじかく なる', () => {
+  const s = createGame(PLAYERS, 10);
+  toPlay(s);
+  for (const r of s.runners) r.shield = 1e9;
+  s.nextRoll = s.nextItem = s.nextCrumble = 1e9;
+  const kinds = [];
+  let inErupt = 0, before = 0;
+  while (s.phase === 'play' && s.t < RULES.readyTime + RULES.eruptAt[0] + RULES.eruptTime + 1) {
+    for (const e of step(s, s.runners.map(() => null))) {
+      if (e.type.startsWith('erupt')) kinds.push(e.type);
+      if (e.type === 'drop') { const tp = s.t - RULES.readyTime; if (tp > RULES.eruptAt[0] && tp < RULES.eruptAt[0] + RULES.eruptTime) inErupt++; else if (tp > RULES.eruptAt[0] - RULES.eruptTime && tp < RULES.eruptAt[0]) before++; }
+    }
+    for (const r of s.runners) { r.shield = 1e9; r.alive = true; r.falling = 0; r.x = r.z = 0; } // だれも 脱落させない
+    s.out = [];
+    s.drops = [];
+    s.fires = [];
+  }
+  assert.deepEqual(kinds, ['eruptWarn', 'erupt', 'eruptEnd']);
+  assert.ok(inErupt > before * 1.5, `ふんか前 ${before} / ふんか中 ${inErupt}`);
+});
+
 test('同じ性格どうしなら、どの席も勝てる(かたよりすぎない)', () => {
   const wins = [0, 0, 0, 0, 0];
   const NN = 100;

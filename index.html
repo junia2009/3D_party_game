@@ -451,6 +451,9 @@
   }
   #hudV .splash.small { font-size: clamp(26px, 8.5vw, 50px); }
   .pop.roll { color: #ffe0b0; font-size: 20px; -webkit-text-stroke: 5px #4a2a1a; }
+  #hudV.erupt::before { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 60px 20px rgba(255,60,20,.55); animation: eruptglow .5s ease-in-out infinite alternate; }
+  @keyframes eruptglow { from { opacity: .6; } to { opacity: 1; } }
+  #hudV .splash.gold.small { color: #ffd24a; }
   .tame.jump { background: #ff7a3a; font-size: 20px; }
   .tame.jump.down { transform: translateY(5px); }
   /* おぼえて かくれんぼ: まん中に 先生の ことば(こたえる時間の帯つき)。まっくらは 画面ごと暗く */
