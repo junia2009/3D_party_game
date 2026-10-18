@@ -231,6 +231,52 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 0.7, vel: new THREE.Vector3(Math.cos(a) * sp, 2 + Math.random() * 3, Math.sin(a) * sp), kind: 'spark' });
     }
   }
+  // 火口の けむり(大きな まるい スプライト)・火の粉・ようがんの 泡
+  const smokeTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(32, 32, 4, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,255,255,0.85)');
+    grd.addColorStop(0.6, 'rgba(255,255,255,0.4)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  function smoke(dark = false) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: dark ? 0x3a2a2a : 0x7a6a6a, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+    m.position.copy(stage.crater).add(new THREE.Vector3((Math.random() - 0.5) * 6, 0, (Math.random() - 0.5) * 6));
+    m.scale.setScalar(8);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 7 + Math.random() * 3, vel: new THREE.Vector3(1.5 + Math.random(), 3 + Math.random() * 1.5, 0), kind: 'smoke' });
+  }
+  const emberMat = [0xffd23c, 0xff8a2a, 0xff5a1a].map((c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, fog: false }));
+  const emberGeo = new THREE.SphereGeometry(0.4, 5, 4);
+  function ember(big = false) {
+    const m = new THREE.Mesh(emberGeo, emberMat[Math.floor(Math.random() * 3)].clone());
+    m.position.copy(stage.crater);
+    m.scale.setScalar(big ? 1.4 : 0.7 + Math.random() * 0.6);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, sp = (big ? 10 : 5) * (0.5 + Math.random());
+    fx.push({ obj: m, t: 0, life: 2.5 + Math.random(), vel: new THREE.Vector3(Math.cos(a) * sp, (big ? 22 : 14) + Math.random() * 8, Math.sin(a) * sp), kind: 'ember' });
+  }
+  const bubbleMat = new THREE.MeshBasicMaterial({ color: 0xffc04a, transparent: true });
+  function bubble() {
+    const a = Math.random() * Math.PI * 2, d = RULES.r0 + 1 + Math.random() * 9;
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.3 + Math.random() * 0.35, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), bubbleMat.clone());
+    m.position.set(Math.cos(a) * d, LAVA_Y, Math.sin(a) * d - 1);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 1.1, vel: new THREE.Vector3(), kind: 'bubble' });
+  }
+  // ようがんから ふわふわ 立ちのぼる 火の粉(遊んでいる カメラからも 見える)
+  function rise() {
+    const a = Math.random() * Math.PI * 2, d = RULES.r0 + 0.5 + Math.random() * 5;
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.05, 4, 3), emberMat[Math.floor(Math.random() * 3)].clone());
+    m.position.set(Math.cos(a) * d, LAVA_Y + 0.2, Math.sin(a) * d);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 2.5 + Math.random() * 1.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.4, 1.6 + Math.random(), (Math.random() - 0.5) * 0.4), kind: 'rise', ph: Math.random() * 6 });
+  }
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
   function confetti(x, z) {
     const colors = [...PLAYER_COLORS.map((c) => c.hex), 0xffd24a, 0xffffff];
@@ -247,7 +293,23 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       f.t += dt;
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
-      if (f.kind === 'puff') {
+      if (f.kind === 'smoke') {
+        f.vel.multiplyScalar(Math.exp(-0.15 * dt));
+        f.obj.scale.setScalar(8 + k * 22);
+        f.obj.material.opacity = 0.75 * Math.sin(Math.min(1, k) * Math.PI);
+      } else if (f.kind === 'ember') {
+        f.vel.y -= 14 * dt;
+        f.obj.material.opacity = Math.min(1, (1 - k) * 2);
+      } else if (f.kind === 'rise') {
+        f.obj.position.x += Math.sin(time * 3 + f.ph) * dt * 0.3;
+        f.obj.material.opacity = Math.sin(Math.min(1, k) * Math.PI);
+      } else if (f.kind === 'bubble') {
+        // ぷくっと ふくらんで ぱちん
+        const s = k < 0.8 ? k / 0.8 : 1 + (k - 0.8) * 3;
+        f.obj.scale.set(s, s * 0.9, s);
+        f.obj.material.opacity = k < 0.8 ? 1 : 1 - (k - 0.8) / 0.2;
+        if (!f.popped && k > 0.8) { f.popped = true; for (let j = 0; j < 3; j++) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.06, 4, 3), bubbleMat.clone()); e.position.copy(f.obj.position); scene.add(e); fx.push({ obj: e, t: 0, life: 0.6, vel: new THREE.Vector3((Math.random() - 0.5) * 2, 2 + Math.random() * 2, (Math.random() - 0.5) * 2), kind: 'spark' }); } }
+      } else if (f.kind === 'puff') {
         f.vel.multiplyScalar(Math.exp(-3 * dt));
         f.obj.scale.setScalar(f.size * (1 + k * 1.6));
         f.obj.material.opacity = 0.85 * (1 - k);
@@ -667,7 +729,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       const e = 1 - (1 - intro) ** 3;
       const sky = new THREE.Vector3(-6, 22, -30);
       camera.position.lerpVectors(sky, pos, e);
-      camera.userData.look = new THREE.Vector3().lerpVectors(new THREE.Vector3(-8, 20, -70), look, Math.min(1, e * 1.1));
+      camera.userData.look = new THREE.Vector3().lerpVectors(stage.crater, look, Math.min(1, e * 1.1));
       camera.lookAt(camera.userData.look);
       return;
     }
@@ -709,6 +771,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
   // ── 1フレーム ─────────────────────────────────────
   let time = 0;
   let dtLast = 0;
+  const amb = { smoke: 0, ember: 0, bubble: 0, rise: 0 };
   function frame(rawDt) {
     const dt = Math.min(rawDt, 0.1);
     dtLast = paused ? 0 : dt;
@@ -739,7 +802,19 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       updateWorld(dt);
       updateFx(dt);
     }
-    if (!paused) stage.lava.material.map.offset.x += dt * 0.01;
+    if (!paused) {
+      stage.lava.material.map.offset.x += dt * 0.01;
+      stage.lava.material.map.offset.y += Math.sin(time * 0.3) * dt * 0.004;
+      // ようがんの 光が ゆらゆら
+      const fl = Math.sin(time * 2.1) * 0.5 + Math.sin(time * 5.3) * 0.3;
+      stage.glow.intensity = 30 + fl * 8;
+      stage.rim.material.opacity = 0.85 + fl * 0.15;
+      amb.smoke -= dt; amb.ember -= dt; amb.bubble -= dt; amb.rise -= dt;
+      if (amb.rise <= 0) { amb.rise = 0.08; rise(); }
+      if (amb.smoke <= 0) { amb.smoke = 0.35; smoke(Math.random() < 0.5); }
+      if (amb.ember <= 0) { amb.ember = 0.25 + Math.random() * 0.4; ember(); }
+      if (amb.bubble <= 0) { amb.bubble = 0.25 + Math.random() * 0.35; bubble(); }
+    }
     atmosphere.update(dt);
     updateCamera(dt);
     renderer.render(scene, camera);

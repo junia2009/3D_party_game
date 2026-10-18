@@ -87,14 +87,18 @@ function lavaTexture() {
   return t;
 }
 
+// 火山の 位置(火口の まん中)
+export const CRATER = new THREE.Vector3(-8, 26, -105);
 function buildVolcano(g) {
   // 遠くの 大きな 火山: 黒い 山はだに ようがんの すじ、てっぺんは 赤く 光る
+  const { x: cx, y: top, z: cz } = CRATER;
+  const base = LAVA_Y, hgt = top - base, R0 = 10, R1 = 50;
   const mat = toonMaterial(0x3a2c2a);
-  const cone = new THREE.Mesh(new THREE.CylinderGeometry(9, 42, 34, 24, 1, true), mat);
-  cone.position.set(-8, 17 - 2, -70);
+  const cone = new THREE.Mesh(new THREE.CylinderGeometry(R0, R1, hgt, 24, 1, true), mat);
+  cone.position.set(cx, base + hgt / 2, cz);
   g.add(cone);
-  const crater = new THREE.Mesh(new THREE.CircleGeometry(9, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xff7a2a }));
-  crater.position.set(-8, 32, -70);
+  const crater = new THREE.Mesh(new THREE.CircleGeometry(R0, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xff7a2a }));
+  crater.position.set(cx, top, cz);
   g.add(crater);
   const glow = new THREE.MeshBasicMaterial({ color: 0xff6a1a });
   const rand = makeRand(12);
@@ -102,17 +106,17 @@ function buildVolcano(g) {
     const a = -0.9 + i * 0.35 + (rand() - 0.5) * 0.1;
     const pts = [];
     for (let k = 0; k <= 8; k++) {
-      const u = k / 8;
-      const r = 9 + u * 26, y = 32 - u * 26;
-      pts.push(new THREE.Vector3(-8 + Math.sin(a + Math.sin(u * 5 + i) * 0.05) * r, y, -70 + Math.cos(a + Math.sin(u * 5 + i) * 0.05) * r));
+      const u = (k / 8) * 0.8;
+      const r = R0 + u * (R1 - R0) + 0.3, y = top - u * hgt;
+      pts.push(new THREE.Vector3(cx + Math.sin(a + Math.sin(u * 5 + i) * 0.05) * r, y, cz + Math.cos(a + Math.sin(u * 5 + i) * 0.05) * r));
     }
-    g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.6 - i * 0.04, 5), glow));
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.8 - i * 0.05, 5), glow));
   }
   // 遠くの 山なみ
   const far = toonMaterial(0x4a3634);
   for (let i = 0; i < 9; i++) {
     const m = new THREE.Mesh(new THREE.ConeGeometry(10 + rand() * 10, 10 + rand() * 12, 6), far);
-    m.position.set(-90 + i * 22 + rand() * 6, 2, -95 - rand() * 20);
+    m.position.set(-90 + i * 22 + rand() * 6, 2, -125 - rand() * 20);
     g.add(m);
   }
 }
@@ -151,7 +155,23 @@ export function buildStage(scene) {
   const lava = new THREE.Mesh(new THREE.PlaneGeometry(300, 300).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: lavaTexture() }));
   lava.position.y = LAVA_Y;
   scene.add(lava);
-  return { group: g, lava, coreTop: core };
+  // ようがんの 光: 台の ふちと 柱を 下から 赤く てらす 輪
+  const rimTex = canvasTex(128, 128, (c, w) => {
+    const grd = c.createRadialGradient(w / 2, w / 2, w * 0.28, w / 2, w / 2, w / 2);
+    grd.addColorStop(0, 'rgba(255,120,40,0)');
+    grd.addColorStop(0.35, 'rgba(255,140,50,0.75)');
+    grd.addColorStop(1, 'rgba(255,90,20,0)');
+    c.fillStyle = grd;
+    c.fillRect(0, 0, w, w);
+  });
+  const rim = new THREE.Mesh(new THREE.PlaneGeometry(RULES.r0 * 3.2, RULES.r0 * 3.2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: rimTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  rim.position.y = LAVA_Y + 0.05;
+  scene.add(rim);
+  // 下から てらす あかり(ゆらゆら)
+  const glow = new THREE.PointLight(0xff6a2a, 30, 14, 1.4);
+  glow.position.set(0, LAVA_Y + 1.2, 2);
+  scene.add(glow);
+  return { group: g, lava, rim, glow, coreTop: core, crater: CRATER };
 }
 
 // くずれる かけら(扇形の 柱)
