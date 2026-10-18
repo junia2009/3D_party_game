@@ -103,6 +103,38 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
   const fireMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a });
   const fireCore = new THREE.MeshBasicMaterial({ color: 0xffe07a });
   const drops = new Map(); // id → { shadow, obj, d }
+  // 空で きらっ(落ちてくる 少し前に 見える)
+  const twinkleTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2, r = i % 2 ? 6 : 30;
+      g.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r);
+    }
+    g.fill();
+    return new THREE.CanvasTexture(c);
+  })();
+  // ぐらぐらの かけらに 走る ひび
+  const crackTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.strokeStyle = '#ff6a2a';
+    g.lineWidth = 5;
+    g.lineCap = 'round';
+    const branch = (x, y, a, len, d) => {
+      if (d > 3 || len < 6) return;
+      const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke();
+      branch(x2, y2, a + (Math.random() - 0.5) * 1.2, len * 0.7, d + 1);
+      if (Math.random() < 0.6) branch(x2, y2, a + (Math.random() < 0.5 ? 0.8 : -0.8), len * 0.5, d + 1);
+    };
+    for (let i = 0; i < 4; i++) branch(64, 64, (i / 4) * Math.PI * 2 + 0.3, 26, 0);
+    return new THREE.CanvasTexture(c);
+  })();
   function addDrop(e) {
     const shadow = new THREE.Mesh(shadowGeo, new THREE.MeshBasicMaterial({ color: e.kind === 'fire' ? 0x7a1a08 : 0x1a1010, transparent: true, opacity: 0, depthWrite: false }));
     shadow.position.set(e.x, 0.02, e.z);
@@ -121,13 +153,18 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
     }
     obj.visible = false;
     scene.add(obj);
-    drops.set(e.id, { shadow, obj, d: e, at: game.state.t + e.warn, warn: e.warn, spin: new THREE.Vector3(Math.random(), Math.random(), Math.random()) });
+    const tw = new THREE.Sprite(new THREE.SpriteMaterial({ map: twinkleTex, color: e.kind === 'fire' ? 0xffb050 : 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+    tw.position.set(e.x, FALL_H + 0.5, e.z);
+    tw.scale.setScalar(0.1);
+    scene.add(tw);
+    drops.set(e.id, { shadow, obj, tw, d: e, at: game.state.t + e.warn, warn: e.warn, spin: new THREE.Vector3(Math.random(), Math.random(), Math.random()), trail: 0 });
   }
   function removeDrop(id) {
     const v = drops.get(id);
     if (!v) return;
-    scene.remove(v.shadow, v.obj);
+    scene.remove(v.shadow, v.obj, v.tw);
     v.shadow.material.dispose();
+    v.tw.material.dispose();
     drops.delete(id);
   }
   // 火の 玉の あとの 火(state.fires を 映す)
@@ -172,6 +209,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       const ro = s.rolls.find((r) => r.id === id);
       if (!ro) { scene.remove(m); rolls.delete(id); continue; }
       const onRock = Math.hypot(ro.x, ro.z) <= RULES.r0;
+      if (onRock && Math.random() < dtLast * 18) puff(ro.x, 0.05, ro.z, 1, 0x8a7a70, 0.8);
       m.position.set(ro.x, (onRock ? 0 : -0.3) + RULES.rollR, ro.z);
       // 転がる 向きに くるくる
       const sp = Math.hypot(ro.dx, ro.dz);
@@ -563,14 +601,20 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
           game.shake = Math.max(game.shake, big ? 0.45 : 0.18);
           break;
         }
-        case 'roll':
+        case 'roll': {
           sfx.rumble();
+          // 台に 入る ところに「ゴロゴロ…」
+          const sp = Math.hypot(e.dx, e.dz);
+          const ex = e.x + (e.dx / sp) * 1.6, ez = e.z + (e.dz / sp) * 1.6;
+          pop('ゴロゴロ…', ex, 1.2, ez, 'roll', 1200);
           break;
+        }
         case 'item':
           break;
         case 'pick': {
           const r = s.runners[e.who];
           pop('かさ!', r.x, 2.0, r.z, 'gold');
+          game.runners[e.who].shieldPop = 0;
           if (e.who === 0) sfx.pick();
           break;
         }
@@ -585,9 +629,19 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
           if (e.who === 0) sfx.jump();
           puff(s.runners[e.who].x, 0.05, s.runners[e.who].z, 2);
           break;
-        case 'shaky':
+        case 'shaky': {
           sfx.crack();
+          // ひびが 走って、ふちから けむり
+          const m = pieces[e.id];
+          const p = m.userData.piece, mid = m.userData.mid, R = (p.outer + p.inner) / 2;
+          const crack = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: crackTex, transparent: true, opacity: 0, depthWrite: false }));
+          crack.position.set(Math.cos(mid) * R, 0.012, Math.sin(mid) * R);
+          crack.rotation.y = Math.random() * 6;
+          m.add(crack);
+          m.userData.crack = crack;
+          puff(Math.cos(mid) * p.outer, -0.2, Math.sin(mid) * p.outer, 3, 0x6a5a50);
           break;
+        }
         case 'crumble': {
           const m = pieces[e.id];
           m.userData.fall = { t: 0, vy: 0, spin: (Math.random() - 0.5) * 2 };
@@ -672,6 +726,12 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
         u.holder.position.set(r.x, r.y + fallY, r.z);
         u.holder.rotation.set(0, r.face, 0);
         u.shield.visible = r.shield > 0 && (r.shield > 1.5 || Math.floor(time * 8) % 2 === 0);
+        // かさが ぽんっと ひらく(ばねの ように 少し 大きく なってから もどる)
+        if (u.shieldPop !== undefined && u.shieldPop < 1) {
+          u.shieldPop = Math.min(1, u.shieldPop + dt * 2.5);
+          const k = u.shieldPop;
+          u.shield.scale.setScalar(1.3 * (1 + Math.sin(k * Math.PI * 2.5) * (1 - k) * 0.6) * Math.min(1, k * 4));
+        }
       }
       u.model.play(clip, { timeScale: clip === 'run' ? 1.3 : 1 });
       u.model.setFace(face);
@@ -687,12 +747,34 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       const k = 1 - Math.max(0, left) / v.warn;
       v.shadow.scale.setScalar(v.d.r * (0.4 + k * 0.6));
       v.shadow.material.opacity = 0.15 + k * 0.45;
+      // 落ちる 直前は 影が 赤く ちかちか
+      if (left < 0.4) v.shadow.material.color.setHex(Math.floor(time * 16) % 2 ? 0x8a1a0a : 0x1a1010);
+      // 空で きらっ
+      const tk = (FALL_T + 0.35 - left) / 0.35;
+      if (tk > 0 && tk < 1.2) {
+        v.tw.material.opacity = Math.sin(Math.min(1, tk) * Math.PI);
+        v.tw.scale.setScalar(0.4 + Math.sin(Math.min(1, tk) * Math.PI) * (0.8 + v.d.r * 0.6));
+        v.tw.material.rotation = tk * 2;
+      } else v.tw.material.opacity = 0;
       if (left < FALL_T) {
         v.obj.visible = true;
         const f = Math.max(0, left / FALL_T);
         v.obj.position.set(v.d.x, v.d.r * 0.6 + f * f * FALL_H, v.d.z);
         v.obj.rotation.x += v.spin.x * dt * 6;
         v.obj.rotation.y += v.spin.y * dt * 6;
+        // 火の玉は ほのおの 尾を ひく
+        if (v.d.kind === 'fire') {
+          v.trail -= dt;
+          if (v.trail <= 0) {
+            v.trail = 0.02;
+            const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xffb040 : 0xff5a1a, transparent: true, opacity: 0.9 }));
+            m.position.copy(v.obj.position).add(new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.2, (Math.random() - 0.5) * 0.3));
+            m.scale.setScalar(v.d.r * 2.5);
+            scene.add(m);
+            fx.push({ obj: m, t: 0, life: 0.35, vel: new THREE.Vector3(0, 1.5, 0), kind: 'puff', size: v.d.r * 2.5 });
+          }
+          v.obj.children[0].scale.setScalar(1 + Math.sin(time * 30) * 0.1);
+        }
       }
     }
     syncFlames(s);
@@ -710,6 +792,11 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
         m.visible = m.position.y > LAVA_Y - 3;
       } else if (p.state === 1) {
         const a = 0.03 + (1 - p.t / RULES.crumbleWarn) * 0.05;
+        if (m.userData.crack) {
+          const k = 1 - p.t / RULES.crumbleWarn;
+          m.userData.crack.material.opacity = Math.min(1, k * 2.5);
+          m.userData.crack.scale.setScalar(0.5 + k * 0.8);
+        }
         m.position.set(Math.sin(time * 40 + p.id) * a, Math.sin(time * 33 + p.id) * a * 0.5, Math.cos(time * 37 + p.id) * a);
       }
     }
