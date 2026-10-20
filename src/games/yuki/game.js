@@ -205,7 +205,10 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       f.t += dt;
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
-      if (f.kind === 'smoke') {
+      if (f.kind === 'toss') {
+        f.vel.y -= 12 * dt;
+        if (f.t + dt >= f.life) burst(f.obj.position.x, f.obj.position.y, f.obj.position.z, 8);
+      } else if (f.kind === 'smoke') {
         f.obj.scale.setScalar(0.4 + k * 1.8);
         f.obj.material.opacity = 0.7 * Math.sin(Math.min(1, k) * Math.PI);
       } else if (f.kind === 'chunk') {
@@ -223,7 +226,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       }
       if (k >= 1) {
         scene.remove(f.obj);
-        f.obj.material.dispose();
+        if (f.kind !== 'toss') f.obj.material.dispose();
         fx.splice(i, 1);
       }
     }
@@ -329,7 +332,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     arrow.position.set(0, 0.05, 0.75);
     me.holder.add(arrow);
     me.arrow = arrow;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, meIdx: state.units.findIndex((u) => u.slot === 0) };
+    game = { duel: false, toss: undefined, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, meIdx: state.units.findIndex((u) => u.slot === 0) };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows([...units.map((u) => u.holder), fieldGroup], [stage.group, fieldGroup]);
     Object.assign(input, { touch: null, stick: null, throw: false, target: null });
@@ -485,11 +488,13 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       [...$(`team${side}Y`).children].forEach((c, k) => {
         const u = s.units[s.teams[side][k]];
         c.classList.toggle('out', !u.alive);
+        c.classList.toggle('pinch', u.alive && u.hp === 1);
         c.querySelector('.hp').textContent = '●'.repeat(Math.max(0, u.hp)) + '○'.repeat(Math.max(0, RULES.hp - Math.max(0, u.hp)));
       });
     }
     $('timeY').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
     const me = s.units[game.meIdx];
+    $('hudY').classList.toggle('pinch', s.phase === 'play' && me.alive && me.hp === 1);
     $('throwY').hidden = s.phase === 'finished' || !me.alive;
     $('ammoY').hidden = $('throwY').hidden;
     $('ammoY').innerHTML = Array.from({ length: RULES.ammoMax }, (_, k) => `<i class="${k < me.ammo ? (me.gold && k === me.ammo - 1 ? 'on gold' : 'on') : ''}"></i>`).join('');
@@ -540,6 +545,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
           pop(e.gold ? 'ドカッ!' : 'ぺしゃ!', e.x, 2.0, e.z, e.who === game.meIdx ? 'red' : e.by === game.meIdx ? 'gold' : 'me');
           sfx.hit();
           if (e.who === game.meIdx) game.shake = 0.25;
+          if (e.hp === 1 && e.who === game.meIdx) splash('あと 1回で 雪だるま!', 'red small');
           break;
         }
         case 'out': {
@@ -552,6 +558,12 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
           pop('ゆきだるま!', s.units[e.who].x, 2.4, s.units[e.who].z, 'out', 1100);
           sfx.out();
           if (e.who === game.meIdx) splash('ゆきだるまに なっちゃった…', 'red small');
+          // おたがい のこり 1人: いっきうち
+          const left = (side) => s.teams[side].filter((j) => s.units[j].alive).length;
+          if (s.phase === 'play' && !game.duel && left('L') === 1 && left('R') === 1) {
+            game.duel = true;
+            setTimeout(() => splash('いっきうち!', 'gold small'), 800);
+          }
           break;
         }
         case 'wallHit': {
@@ -598,6 +610,18 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
           splash(e.timeUp ? (win ? 'じかんぎれ! かち!' : 'じかんぎれ… まけ') : win ? 'かった!' : 'まけた…', win ? 'gold' : 'red');
           if (win) sfx.fanfare();
           confetti(e.winner === 'L' ? -3 : 3, 0);
+          // 負けた チームは みんな 雪だるまに、勝った チームは 雪玉を 空へ ぽーん
+          s.units.forEach((su, j) => {
+            const u = game.units[j];
+            if (su.side !== e.winner && !u.snow) {
+              u.snow = { t: -0.3 - Math.random() * 0.4 };
+              const sm = snowman(TEAM_COLORS[su.side]);
+              sm.scale.setScalar(0.01);
+              u.holder.add(sm);
+              u.snowman = sm;
+            }
+          });
+          game.toss = 0;
           break;
         }
       }
@@ -641,7 +665,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       if (u.snow) {
         // 雪だるまに なる: 雪が もりあがって つつむ
         u.snow.t += dt;
-        const k = Math.min(1, u.snow.t / 0.5);
+        const k = Math.max(0.01, Math.min(1, u.snow.t / 0.5));
         u.snowman.scale.setScalar(k * (1 + Math.sin(k * Math.PI) * 0.2));
         u.model.root.visible = u.snow.t < 0.35;
         u.makeBall.visible = false;
@@ -656,6 +680,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       clip = su.stun > 0 ? 'dizzy' : moving ? 'run' : 'idle';
       if (su.stun > 0) face = 'surprised';
       if (s.phase === 'finished') { clip = su.side === s.winner ? 'cheer' : 'idle'; face = su.side === s.winner ? 'happy' : 'frustrated'; }
+      if (s.phase === 'finished' && su.side === s.winner) u.holder.position.y = Math.abs(Math.sin(time * 6 + i)) * 0.3;
       u.holder.rotation.y = su.face;
       const sliding = ice && moving;
       const making = su.make > 0 && s.phase === 'play';
@@ -708,6 +733,23 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     }
     syncBalls(s);
     syncGolds(s);
+    // 勝った チームが 雪玉を 空へ なげて よろこぶ
+    if (s.phase === 'finished' && game.toss !== undefined) {
+      game.toss -= dt;
+      if (game.toss <= 0) {
+        game.toss = 0.25;
+        const ws = s.units.map((su, j) => j).filter((j) => s.units[j].side === s.winner && s.units[j].alive);
+        const j = ws[Math.floor(Math.random() * ws.length)];
+        if (j !== undefined) {
+          const su = s.units[j];
+          game.units[j].throwT = 1;
+          const m = new THREE.Mesh(ballGeo, ballMat);
+          m.position.set(su.x, 1.2, su.z);
+          scene.add(m);
+          fx.push({ obj: m, t: 0, life: 1.2, vel: new THREE.Vector3((Math.random() - 0.5) * 1.5, 7 + Math.random() * 2, (Math.random() - 0.5) * 1.5), kind: 'toss' });
+        }
+      }
+    }
     // 旗が ゆれる
     stage.flags.forEach((f, k) => { f.rotation.y = Math.sin(time * 3 + k) * 0.3; });
   }
@@ -719,6 +761,17 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     const portrait = aspect < 1;
     const pos = portrait ? new THREE.Vector3(0, 21, 10.5) : new THREE.Vector3(0, 10.5, 9.0);
     const look = new THREE.Vector3(0, 0, portrait ? 0.9 : 0.4);
+    const s = game?.state;
+    if (s && (game.duel || s.phase === 'finished')) {
+      // いっきうち: のこった 2人へ 寄る / 決着: 勝った チームへ 寄る
+      const pick = s.phase === 'finished' ? s.units.filter((u) => u.side === s.winner) : s.units.filter((u) => u.alive);
+      if (pick.length) {
+        const mx = pick.reduce((a, u) => a + u.x, 0) / pick.length, mz = pick.reduce((a, u) => a + u.z, 0) / pick.length;
+        const near = s.phase === 'finished' ? 0.55 : 0.75;
+        look.set(mx * 0.7, 0.5, mz * 0.7);
+        pos.set(look.x, look.y + (pos.y - look.y) * near, look.z + (pos.z - look.z) * near);
+      }
+    }
     camera.fov = portrait ? 52 : 45;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
@@ -730,7 +783,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       camera.lookAt(camera.userData.look);
       return;
     }
-    const k = snap ? 1 : 1 - Math.exp(-dt * 4);
+    const k = snap ? 1 : 1 - Math.exp(-dt * 2.5);
     camera.position.lerp(pos, k);
     camera.userData.look = camera.userData.look ? camera.userData.look.lerp(look, k) : look.clone();
     if (game?.shake > 0) {
