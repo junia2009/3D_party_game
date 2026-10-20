@@ -123,6 +123,8 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     for (const g of s.golds) {
       if (golds.has(g.id)) continue;
       const m = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), goldMat);
+      const halo = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.025, 6, 24), new THREE.MeshBasicMaterial({ color: 0xfff2a0, transparent: true, opacity: 0.8 }));
+      m.add(halo);
       m.position.set(g.x, 0.25, g.z);
       scene.add(m);
       golds.set(g.id, m);
@@ -131,6 +133,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       const g = s.golds.find((x) => x.id === id);
       if (!g) { scene.remove(m); golds.delete(id); continue; }
       m.position.y = 0.3 + Math.sin(time * 4 + id) * 0.08;
+      m.children[0].rotation.set(time * 2, time * 3, 0);
       m.visible = g.until - s.t > 2 || Math.floor(time * 8) % 2 === 0;
       if (Math.random() < 0.08) sparkle(g.x, 0.5, g.z, 1);
     }
@@ -309,7 +312,12 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       holder.add(pips);
       scene.add(holder);
       const def = helper ? null : CHARACTERS.find((c) => c.key === key);
-      return { model, holder, ring, pips, size: def?.size || 1, snow: null, flash: 0, throwT: 0 };
+      // 雪玉を つくっている ときに 手もとで まるくなる 雪
+      const makeBall = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), ballMat);
+      makeBall.position.set(0, 0.18, 0.42);
+      makeBall.visible = false;
+      holder.add(makeBall);
+      return { model, holder, ring, pips, makeBall, size: def?.size || 1, snow: null, flash: 0, throwT: 0, splats: [], arms: [model.node('arm_L'), model.node('arm_R')] };
     }));
     const me = units[state.units.findIndex((u) => u.slot === 0)];
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
@@ -518,6 +526,16 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
         case 'hit': {
           const u = game.units[e.who];
           u.flash = 1;
+          // 体に 雪が べちゃっと つく(4こまで)
+          if (u.splats.length < 4) {
+            const sp = new THREE.Mesh(new THREE.SphereGeometry(0.13 + Math.random() * 0.06, 8, 6), e.gold ? goldMat : ballMat);
+            const a = Math.random() * Math.PI * 2;
+            sp.position.set(Math.cos(a) * 0.3 * u.size, (0.5 + Math.random() * 0.7) * u.size, Math.sin(a) * 0.3 * u.size);
+            sp.scale.set(1, 0.7, 0.55);
+            sp.lookAt(0, sp.position.y, 0);
+            u.model.root.add(sp);
+            u.splats.push(sp);
+          }
           burst(e.x, BALL_Y, e.z, e.gold ? 14 : 9, e.gold ? 0xffe07a : 0xffffff);
           pop(e.gold ? 'ドカッ!' : 'ぺしゃ!', e.x, 2.0, e.z, e.who === game.meIdx ? 'red' : e.by === game.meIdx ? 'gold' : 'me');
           sfx.hit();
@@ -547,7 +565,18 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
         }
         case 'wallBreak': {
           const v = walls.get(e.id);
-          if (v) { v.fall = 0.001; burst(v.w.x, 0.5, v.w.z, 18, 0xffffff, 3); }
+          if (v) {
+            v.fall = 0.001;
+            burst(v.w.x, 0.5, v.w.z, 18, 0xffffff, 3);
+            // 雪けむり
+            for (let k = 0; k < 6; k++) {
+              const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+              m.position.set(v.w.x + (Math.random() - 0.5) * 0.6, 0.3, v.w.z + (Math.random() - 0.5) * 1.2);
+              m.scale.setScalar(0.4);
+              scene.add(m);
+              fx.push({ obj: m, t: 0, life: 1.2, vel: new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.8, (Math.random() - 0.5) * 1.2), kind: 'smoke' });
+            }
+          }
           sfx.crumble();
           break;
         }
@@ -615,6 +644,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
         const k = Math.min(1, u.snow.t / 0.5);
         u.snowman.scale.setScalar(k * (1 + Math.sin(k * Math.PI) * 0.2));
         u.model.root.visible = u.snow.t < 0.35;
+        u.makeBall.visible = false;
         u.ring.visible = false;
         u.pips.visible = false;
         if (u.arrow) u.arrow.visible = false;
@@ -627,15 +657,31 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       if (su.stun > 0) face = 'surprised';
       if (s.phase === 'finished') { clip = su.side === s.winner ? 'cheer' : 'idle'; face = su.side === s.winner ? 'happy' : 'frustrated'; }
       u.holder.rotation.y = su.face;
-      // こおりの 上で すべっている ときは、体を かたむける
-      u.model.root.rotation.z = ice && moving ? Math.sin(time * 9 + i) * 0.15 : 0;
-      // なげた しゅんかん: ぐっと 前へ
-      u.model.root.rotation.x = u.throwT * 0.4;
-      u.model.play(clip, { timeScale: clip === 'run' ? 1.3 : 1 });
+      const sliding = ice && moving;
+      const making = su.make > 0 && s.phase === 'play';
+      if (sliding) face = 'surprised';
+      // こおりの 上で すべっている ときは、体を かたむけて ゆらゆら
+      u.model.root.rotation.z = sliding ? Math.sin(time * 9 + i) * 0.18 : 0;
+      // なげた しゅんかん: ぐっと 前へ。雪玉を つくる ときは しゃがむ
+      u.model.root.rotation.x = u.throwT * 0.45 + (making ? 0.45 : 0);
+      u.model.play(making ? 'idle' : clip, { timeScale: clip === 'run' ? 1.3 : 1 });
       u.model.setFace(face);
       u.model.update(dt);
-      // 当たったら 白く ぴかっ(体を ちぢめる)
-      const sq = u.flash * 0.15;
+      // 腕: なげる(うしろから 前へ ふりぬく)/ すべる(両手を ひろげる)/ つくる(手を 前へ)
+      const [aL, aR] = u.arms;
+      if (aR && u.throwT > 0) {
+        const k = 1 - u.throwT; // 0 → 1
+        aR.rotation.x = k < 0.25 ? -2.8 : -2.8 + ((k - 0.25) / 0.75) * 3.6;
+      } else if (sliding) {
+        if (aL) aL.rotation.z = 1.3;
+        if (aR) aR.rotation.z = -1.3;
+      } else if (making) {
+        for (const a of [aL, aR]) if (a) a.rotation.x = -1.1 + Math.sin(time * 14) * 0.25;
+      }
+      u.makeBall.visible = making;
+      if (making) u.makeBall.scale.setScalar(0.3 + (su.make / RULES.makeTime) * 0.7);
+      // 当たったら ぎゅっと ちぢむ。しゃがむと 低く
+      const sq = u.flash * 0.15 + (making ? 0.12 : 0);
       u.model.root.scale.set(1 + sq, 1 - sq, 1 + sq);
       // 頭の上の 雪玉の 数
       u.pips.position.set(0, 1.85 * u.size, 0);
