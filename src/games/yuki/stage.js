@@ -89,10 +89,53 @@ function cabin(g, x, z, rotY) {
   const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.6, 0.3), toonMaterial(0x7a7068));
   chimney.position.set(0.7, 2.2, -0.3);
   s.add(chimney);
+  const chimSnow = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.08, 0.36), toonMaterial(0xf4f8fc));
+  chimSnow.position.set(0.7, 2.52, -0.3);
+  s.add(chimSnow);
+  // のきの つらら
+  const ice = new THREE.MeshToonMaterial({ color: 0xbfe6fa, transparent: true, opacity: 0.9, gradientMap: toonGradient });
+  for (let i = 0; i < 9; i++) {
+    const len = 0.12 + ((i * 7) % 5) * 0.06;
+    const c = new THREE.Mesh(new THREE.ConeGeometry(0.035, len, 5).rotateX(Math.PI), ice);
+    c.position.set(-1.2 + i * 0.3, 1.43 - len / 2, 0.98);
+    s.add(c);
+  }
+  // まどの 下の 雪の つもり
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.06, 0.12), toonMaterial(0xf4f8fc));
+  sill.position.set(0.5, 0.65, 0.95);
+  s.add(sill);
+  s.userData.chimney = new THREE.Vector3(0.7, 2.6, -0.3);
   s.position.set(x, 0, z);
   s.rotation.y = rotY;
   g.add(s);
   return s;
+}
+
+// かざりの 雪だるま(村の あちこちに)
+function decoSnowman(g, x, z, rotY, scarf) {
+  const white = toonMaterial(0xf8fbff);
+  const b1 = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10), white);
+  b1.position.set(x, 0.45, z);
+  const b2 = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10), white);
+  b2.position.set(x, 1.1, z);
+  const sc = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.07, 6, 14).rotateX(Math.PI / 2), toonMaterial(scarf));
+  sc.position.set(x, 0.88, z);
+  const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.28, 10), toonMaterial(0x3a3a4a));
+  hat.position.set(x, 1.48, z);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.24, 6).rotateX(Math.PI / 2), toonMaterial(0xff8a3d));
+  nose.position.set(x + Math.sin(rotY) * 0.36, 1.1, z + Math.cos(rotY) * 0.36);
+  nose.rotation.y = rotY;
+  g.add(b1, b2, sc, hat, nose);
+  const black = toonMaterial(0x1a1a1a);
+  for (const s of [-1, 1]) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 4), black);
+    e.position.set(x + Math.sin(rotY) * 0.3 + Math.cos(rotY) * s * 0.12, 1.2, z + Math.cos(rotY) * 0.3 - Math.sin(rotY) * s * 0.12);
+    g.add(e);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.6, 4), toonMaterial(0x6a4a32));
+    arm.position.set(x + Math.cos(rotY) * s * 0.55, 1.0, z - Math.sin(rotY) * s * 0.55);
+    arm.rotation.set(0, rotY, s * 1.0);
+    g.add(arm);
+  }
 }
 
 // かまくら(チームの 陣地の おく)
@@ -153,9 +196,12 @@ export function buildStage(scene) {
   kamakura(g, -RULES.halfW - 1.6, -1.2, Math.PI / 2);
   kamakura(g, RULES.halfW + 1.6, -1.2, -Math.PI / 2);
   // 村: 小屋と もみの木
-  cabin(g, -6.5, -7.5, 0.3);
-  cabin(g, 6.8, -7.2, -0.35);
-  cabin(g, 0.5, -9.5, 0);
+  const cabins = [cabin(g, -6.5, -7.5, 0.3), cabin(g, 6.8, -7.2, -0.35), cabin(g, 0.5, -9.5, 0)];
+  g.updateMatrixWorld(true);
+  const chimneys = cabins.map((c) => c.localToWorld(c.userData.chimney.clone()));
+  decoSnowman(g, -3.6, -6.2, 0.4, 0xe8344a);
+  decoSnowman(g, 3.9, -6.0, -0.3, 0x34c47c);
+  decoSnowman(g, -8.6, -2.5, 1.0, 0xffc23c);
   for (let i = 0; i < 70; i++) {
     const a = rand() * Math.PI * 2, d = 9 + rand() * 25;
     const x = Math.cos(a) * d, z = Math.sin(a) * d - 3;
@@ -175,7 +221,31 @@ export function buildStage(scene) {
   }
   mergeStatic(g);
   scene.add(g);
-  return { group: g, flags };
+  // かまくらの 中の ろうそくの あかり(ぼんやり 光る)
+  const glowTex = canvasTex(64, 64, (c) => {
+    const grd = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,200,120,0.9)');
+    grd.addColorStop(1, 'rgba(255,160,60,0)');
+    c.fillStyle = grd;
+    c.fillRect(0, 0, 64, 64);
+  });
+  const glows = [];
+  for (const [x, z, rot] of [[-RULES.halfW - 1.6, -1.2, Math.PI / 2], [RULES.halfW + 1.6, -1.2, -Math.PI / 2]]) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    sp.position.set(x + Math.sin(rot) * 1.0, 0.35, z + Math.cos(rot) * 1.0);
+    sp.scale.setScalar(1.4);
+    scene.add(sp);
+    glows.push(sp);
+  }
+  for (const c of cabins) {
+    // まどの あかりも ぼんやり
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 }));
+    sp.position.copy(c.localToWorld(new THREE.Vector3(0.5, 0.9, 1.0)));
+    sp.scale.setScalar(1.2);
+    scene.add(sp);
+    glows.push(sp);
+  }
+  return { group: g, flags, chimneys, glows };
 }
 
 // 雪の かべ(state.walls から)。かたまりを 積んだ 形

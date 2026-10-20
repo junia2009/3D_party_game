@@ -157,6 +157,25 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 0.5, vel: new THREE.Vector3(0, 0.6, 0), kind: 'spark' });
     }
   }
+  // えんとつの けむり
+  const smokeTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,255,255,0.9)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  function smoke(at) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0xb8c0cc, transparent: true, opacity: 0, depthWrite: false }));
+    m.position.copy(at);
+    m.scale.setScalar(0.4);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 3.5, vel: new THREE.Vector3(0.25, 0.7, 0), kind: 'smoke' });
+  }
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
   function confetti(x, z) {
     const colors = [...PLAYER_COLORS.map((c) => c.hex), 0xffd24a, 0xffffff];
@@ -183,7 +202,10 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       f.t += dt;
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
-      if (f.kind === 'chunk') {
+      if (f.kind === 'smoke') {
+        f.obj.scale.setScalar(0.4 + k * 1.8);
+        f.obj.material.opacity = 0.7 * Math.sin(Math.min(1, k) * Math.PI);
+      } else if (f.kind === 'chunk') {
         f.vel.y -= 9 * dt;
         if (f.obj.position.y < 0.05) { f.obj.position.y = 0.05; f.vel.set(0, 0, 0); }
         f.obj.material.opacity = Math.min(1, (1 - k) * 3);
@@ -699,6 +721,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
 
   // ── 1フレーム ─────────────────────────────────────
   let time = 0;
+  let smokeT = 0;
   function frame(rawDt) {
     const dt = Math.min(rawDt, 0.1);
     time += dt;
@@ -727,6 +750,12 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     if (game && !paused) {
       updateWorld(dt);
       updateFx(dt);
+    }
+    if (!paused) {
+      smokeT -= dt;
+      if (smokeT <= 0) { smokeT = 0.45; for (const c of stage.chimneys) smoke(c); }
+      // ろうそく・まどの あかりが ゆらゆら
+      stage.glows.forEach((g, i) => { g.material.opacity = (i < 2 ? 0.9 : 0.55) + Math.sin(time * 7 + i * 2) * 0.08 + Math.sin(time * 13 + i) * 0.05; });
     }
     atmosphere.update(dt);
     updateCamera(dt);
