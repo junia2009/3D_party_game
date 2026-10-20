@@ -13,7 +13,7 @@ import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, onIce, ranking, step, timeLeft } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
-import { TEAM_COLORS, buildIce, buildStage, buildWall } from './stage.js';
+import { TEAM_COLORS, buildIce, buildStage } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 
 const $ = (id) => document.getElementById(id);
@@ -78,8 +78,6 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
   const sfx = {
     throw() { noise({ len: 0.18, gain: 0.08, freq: [2200, 700], q: 1.5 }); },
     hit() { noise({ len: 0.22, gain: 0.2, freq: [1600, 300], type: 'lowpass', attack: 0.003 }); voice({ pts: [[0, 660], [0.12, 330]], len: 0.14, gain: 0.05 }); },
-    wall() { noise({ len: 0.15, gain: 0.12, freq: [1000, 300], type: 'lowpass', attack: 0.003 }); },
-    crumble() { noise({ len: 0.5, gain: 0.2, freq: [800, 120], type: 'lowpass' }); },
     scoop() { noise({ len: 0.08, gain: 0.06, freq: [1800, 600], q: 1.2 }); },
     make() { voice({ type: 'triangle', pts: [[0, 520], [0.06, 700]], len: 0.08, gain: 0.04 }); },
     gold() { [0, 0.07, 0.14].forEach((at, i) => voice({ pts: [[0, 988 + i * 260]], len: 0.1, gain: 0.05, at })); },
@@ -93,10 +91,9 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
 
   await preload([...CHARACTERS.map((c) => c.key), 'risu', 'harinezumi', 'komadori']);
 
-  // ── 雪の かべ・こおり(state から 作る) ───────────────────
+  // ── こおり(state から 作る) ───────────────────
   const fieldGroup = new THREE.Group();
   scene.add(fieldGroup);
-  let walls = new Map();
 
   // ── 雪玉・金の 雪玉 ──────────────────────────────────
   const ballGeo = new THREE.SphereGeometry(RULES.ballR * 1.2, 10, 8);
@@ -242,7 +239,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     pos.needsUpdate = true;
   }
 
-  // 雪だるま(雪玉を 3回 当てられた子)。首に チームの 色の マフラー
+  // 雪だるま(雪玉を 4回 当てられた子)。首に チームの 色の マフラー
   function snowman(color) {
     const g = new THREE.Group();
     const white = toonMaterial(0xffffff);
@@ -288,11 +285,6 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     golds.clear();
     const state = createGame(players, seed);
     fieldGroup.clear();
-    walls = new Map(state.walls.map((w) => {
-      const v = buildWall(w);
-      fieldGroup.add(v.group);
-      return [w.id, { ...v, w, fall: 0 }];
-    }));
     for (const c of state.ice) fieldGroup.add(buildIce(c));
     const units = await Promise.all(state.units.map(async (su) => {
       const helper = su.slot < 0;
@@ -584,32 +576,6 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
           }
           break;
         }
-        case 'wallHit': {
-          burst(e.x, BALL_Y, e.z, 5);
-          sfx.wall();
-          const v = walls.get(e.id);
-          if (v) v.shake = 0.25;
-          // ブロックを ひとつずつ へらす
-          if (v && e.hp > 0) { const b = v.blocks.filter((x) => x.visible).pop(); if (b) { b.visible = false; burst(v.w.x + b.position.x, b.position.y, v.w.z + b.position.z, 6); } }
-          break;
-        }
-        case 'wallBreak': {
-          const v = walls.get(e.id);
-          if (v) {
-            v.fall = 0.001;
-            burst(v.w.x, 0.5, v.w.z, 18, 0xffffff, 3);
-            // 雪けむり
-            for (let k = 0; k < 6; k++) {
-              const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
-              m.position.set(v.w.x + (Math.random() - 0.5) * 0.6, 0.3, v.w.z + (Math.random() - 0.5) * 1.2);
-              m.scale.setScalar(0.4);
-              scene.add(m);
-              fx.push({ obj: m, t: 0, life: 1.2, vel: new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.8, (Math.random() - 0.5) * 1.2), kind: 'smoke' });
-            }
-          }
-          sfx.crumble();
-          break;
-        }
         case 'miss':
           burst(e.x, 0.1, e.z, 4);
           break;
@@ -742,16 +708,6 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
         u.pips.position.y = 1.75 * u.size;
       }
       if (u.arrow) u.arrow.material.opacity = su.ammo > 0 ? 0.9 : 0.3;
-    }
-    // かべ: ゆれる・くずれる
-    for (const v of walls.values()) {
-      if (v.shake > 0) { v.shake -= dt; v.group.position.x = v.w.x + Math.sin(time * 60) * 0.04; } else v.group.position.x = v.w.x;
-      if (v.fall > 0) {
-        v.fall += dt;
-        const k = Math.min(1, v.fall / 0.6);
-        v.group.scale.set(1 + k * 0.4, Math.max(0.01, 1 - k), 1 + k * 0.4);
-        if (k >= 1) v.group.visible = false;
-      }
     }
     syncBalls(s);
     syncGolds(s);

@@ -60,7 +60,6 @@ test('雪玉は 向いている 向きへ とぶ。当たると 体力が へっ
   const s = createGame(PLAYERS.slice(0, 2), 4);
   toPlay(s);
   quiet(s);
-  s.walls.forEach((w) => { w.hp = 0; });
   const a = me(s, 0), b = me(s, 1);
   a.x = a.side === 'L' ? -2 : 2; a.z = 0; b.x = -a.x; b.z = 0;
   a.face = Math.atan2(b.x - a.x, 0);
@@ -101,25 +100,6 @@ test('まん中の 線から 先へは 行けない', () => {
   assert.ok(a.x * dir <= -RULES.midGap + 1e-6, `${a.x}`);
 });
 
-test('雪の かべは 雪玉を ふせぐ。何回も 当たると くずれる', () => {
-  const s = createGame(PLAYERS.slice(0, 2), 6);
-  toPlay(s);
-  quiet(s);
-  const a = me(s, 0), b = me(s, 1);
-  const w = s.walls.find((x) => x.side === b.side);
-  a.x = a.side === 'L' ? -1 : 1; a.z = w.z; b.x = w.x + Math.sign(w.x) * 0.9; b.z = w.z;
-  a.face = Math.atan2(b.x - a.x, 0);
-  let blocked = 0;
-  for (let n = 0; n < RULES.wallHP; n++) {
-    a.ammo = 3; a.cd = 0;
-    const ev = idle(s, 0.7, throwOnce());
-    blocked += ev.filter((e) => e.type === 'wallHit').length;
-    b.x = w.x + Math.sign(w.x) * 0.9; b.z = w.z;
-  }
-  assert.ok(blocked >= RULES.wallHP && w.hp <= 0, `ふせいだ ${blocked}`);
-  assert.equal(b.hp, RULES.hp, 'かべの うしろは 当たらない');
-});
-
 test('雪玉は「つくる」の れんだで できる。こおりの 上では できないし、すべる', () => {
   const s = createGame(PLAYERS.slice(0, 2), 7);
   toPlay(s);
@@ -154,7 +134,6 @@ test('金の 雪玉を ひろうと、つぎの 1こが 2つ ぶん', () => {
   const s = createGame(PLAYERS.slice(0, 2), 8);
   toPlay(s);
   quiet(s);
-  s.walls.forEach((w) => { w.hp = 0; });
   const a = me(s, 0), b = me(s, 1);
   a.x = a.side === 'L' ? -2 : 2; a.z = 0; b.x = -a.x; b.z = 0;
   s.golds.push({ id: 99, x: a.x, z: a.z, until: s.t + 5 });
@@ -173,7 +152,7 @@ test('同じ性格どうしなら、どの席も勝てる(かたよりすぎな�
 });
 
 test('人くらいの ねらいでも、CPU と互角に戦える', () => {
-  PERSONALITIES.human = { label: 'ひと', aimErr: 0.18, aimTol: 0.16, lead: 0.3, dodge: 0.5, cover: 0.35, greed: 0.5, think: 0.26, range: 7.5, tap: 6 };
+  PERSONALITIES.human = { label: 'ひと', aimErr: 0.18, aimTol: 0.16, lead: 0.3, dodge: 0.5, greed: 0.5, think: 0.26, range: 7.5, tap: 6 };
   try {
     let rankSum = 0, wins = 0;
     const NN = 120;

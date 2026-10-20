@@ -2,7 +2,7 @@
 //
 // 雪に おおわれた 村の 広場。まん中に 線(小さな 雪の 山と 旗の ひも)。左右の 陣地の おくに、チームの 旗と かまくら。
 // まわりには 雪を かぶった 小屋と もみの木、うしろに 大きな 雪山。雪が ちらちら ふる(画面がわ)。
-// 雪の かべ・こおりの ゆかは state から 作って、画面がわで くずす。
+// こおりの ゆかは state から 作る。
 //
 // 座標: 広場の まん中が 原点。左の チームが -x、右が +x。カメラは +z(手前)の 上から。
 
@@ -246,28 +246,6 @@ export function buildStage(scene) {
     glows.push(sp);
   }
   return { group: g, flags, chimneys, glows };
-}
-
-// 雪の かべ(state.walls から)。かたまりを 積んだ 形
-export function buildWall(w) {
-  const grp = new THREE.Group();
-  const blocks = [];
-  const mat = toonMaterial(0xc4d6ea);
-  const nz = 3, ny = 2;
-  for (let iy = 0; iy < ny; iy++) {
-    for (let iz = 0; iz < nz; iz++) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(RULES.wallW, 0.42, RULES.wallD / nz - 0.03), mat);
-      b.position.set(0, 0.21 + iy * 0.42, (iz - (nz - 1) / 2) * (RULES.wallD / nz) + (iy % 2 ? 0.1 : 0));
-      b.castShadow = b.receiveShadow = true;
-      grp.add(b);
-      blocks.push(b);
-    }
-  }
-  const top = new THREE.Mesh(new THREE.CapsuleGeometry(RULES.wallW * 0.45, RULES.wallD * 0.8, 4, 8).rotateX(Math.PI / 2), toonMaterial(0xffffff));
-  top.position.y = 0.86;
-  grp.add(top);
-  grp.position.set(w.x, 0, w.z);
-  return { group: grp, blocks, top };
 }
 
 // こおりの ゆか

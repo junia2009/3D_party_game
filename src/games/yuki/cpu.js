@@ -4,18 +4,17 @@
 // ねらうときは スティックを 少しだけ たおして その場で 向きを かえてから なげる。
 // - ねらい: いちばん 近い(体力の 少ない)相手。動きを 少し 先読み(lead)。ずれ(aimErr)は 性格しだい。
 // - よける: 自分へ 来る 雪玉に 気づいたら(dodge)、横へ にげる。
-// - かべ: ときどき 相手との あいだに かべが 来る ところへ 行って かくれる(cover)。
 // - 雪玉が なくなったら、こおりで ない ところで「つくる」を れんだ(tap 回/秒)。金の 雪玉は ひろいに いく(greed)。
 //
 // 乱数は CPU ごとに持つ(シードはゲームのシードと席から作る)。
 
 import { nextRandom, seedFrom } from '../../rng.js';
-import { RULES, onIce, teamAlive, wallBetween } from './rules.js';
+import { RULES, onIce, teamAlive } from './rules.js';
 
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', aimErr: 0.15, aimTol: 0.1, lead: 0.6, dodge: 0.7, cover: 0.6, greed: 0.3, think: 0.24, range: 7, tap: 6.5 },
-  normal: { label: 'ふつう', aimErr: 0.16, aimTol: 0.12, lead: 0.5, dodge: 0.62, cover: 0.4, greed: 0.5, think: 0.22, range: 7.5, tap: 6.8 },
-  bold: { label: 'つよき', aimErr: 0.18, aimTol: 0.15, lead: 0.4, dodge: 0.52, cover: 0.2, greed: 0.75, think: 0.2, range: 8.5, tap: 7 },
+  cautious: { label: 'しんちょう', aimErr: 0.17, aimTol: 0.1, lead: 0.6, dodge: 0.82, greed: 0.3, think: 0.24, range: 7.4, tap: 6.5 },
+  normal: { label: 'ふつう', aimErr: 0.18, aimTol: 0.12, lead: 0.5, dodge: 0.76, greed: 0.5, think: 0.22, range: 7.5, tap: 6.8 },
+  bold: { label: 'つよき', aimErr: 0.2, aimTol: 0.15, lead: 0.4, dodge: 0.68, greed: 0.75, think: 0.2, range: 7.6, tap: 7 },
 };
 
 export function createCpu(personality, seed, slot) {
@@ -62,16 +61,7 @@ export function cpuInput(cpu, s, slot) {
     cpu.err = (nextRandom(cpu) * 2 - 1) * p.aimErr;
     const gold = s.golds.find((g) => Math.sign(g.x) === sx);
     if (gold && nextRandom(cpu) < p.greed) { cpu.gx = gold.x; cpu.gz = gold.z; }
-    else if (nextRandom(cpu) < p.cover) {
-      // 相手との あいだに かべが 来る ところ
-      const mine = s.walls.filter((w) => w.side === me.side && w.hp > 0);
-      const w = mine[Math.floor(nextRandom(cpu) * mine.length)];
-      if (w) {
-        const d = Math.hypot(target.x - w.x, target.z - w.z) || 1;
-        cpu.gx = w.x - ((target.x - w.x) / d) * 0.75;
-        cpu.gz = w.z - ((target.z - w.z) / d) * 0.75;
-      }
-    } else {
+    else {
       cpu.gx = sx * (1.2 + nextRandom(cpu) * 3.0);
       cpu.gz = (nextRandom(cpu) * 2 - 1) * 3;
     }
@@ -88,8 +78,7 @@ export function cpuInput(cpu, s, slot) {
     cpu.gx = me.x + sx * 0.8; // こおりから 出る
   }
   // ── ねらって なげる ──
-  const open = !wallBetween(s, me.x, me.z, target.x, target.z);
-  if (me.cd <= 0 && dist < p.range && open) {
+  if (me.cd <= 0 && dist < p.range) {
     return { ...turn, throw: Math.abs(angDiff(want, me.face)) < p.aimTol };
   }
   const dx = cpu.gx - me.x, dz = cpu.gz - me.z, d = Math.hypot(dx, dz);

@@ -1,12 +1,11 @@
 // 雪山の 雪合戦 のルール。THREE にも DOM にも触らない(あとでサーバーでも同じものを回す)。
 //
 // 雪山の ふもとの 村の 広場で、3人 対 3人の 雪合戦。まん中の 線から 先へは 行けない。
-// 雪玉を 3回 当てられた子は 雪だるまに なって 脱落。相手を みんな 雪だるまに したら 勝ち。
+// 雪玉を 4回 当てられた子は 雪だるまに なって 脱落。相手を みんな 雪だるまに したら 勝ち。
 // - チーム: くじで 左(L)・右(R)へ。3人に たりない チームには、森の なかま(すけっと)が入る(動きは このファイルの helperInput)。
 // - なげる: 向いている 向きへ まっすぐ。スティックを 少しだけ たおすと、その場で 向きだけ かえられる。
 // - 雪玉づくり: 雪玉は ammoMax こまで。「つくる」ボタンを makeTaps 回 れんだ すると 1こ できる(こおりの 上では できない)。
 //   れんだ している あいだは しゃがむので 動けない。
-// - 雪の かべ: かくれると 雪玉を ふせげる。wallHP 回 当たると くずれる。
 // - こおりの ゆか: つるつる すべる(止まりにくい・曲がりにくい)。こおりの 上では 雪玉を つくれない。
 // - 金の 雪玉: ときどき 落ちている。ひろうと つぎの 1こが 金(当たると 2つ ぶん)。
 // - timeLimit 秒で 決まらなければ、のこりの 体力の 合計が 多い チームの 勝ち(同じなら 当てた 数)。
@@ -33,32 +32,23 @@ export const RULES = {
   turnOnly: 0.35, // スティックが これより 小さいと 向きだけ かえる
   turnRate: 16,
   bodyR: 0.34,
-  hp: 3,
+  hp: 4,
   ammoMax: 3,
-  ammoStart: 2,
-  makeTaps: 6, // 雪玉 1こに いる れんだ の 回数
+  ammoStart: 1,
+  makeTaps: 8, // 雪玉 1こに いる れんだ の 回数
   makeHold: 0.28, // 1回 おすと この秒 しゃがむ(動けない)
-  throwCd: 0.5,
-  ballSpeed: 9,
+  throwCd: 0.6,
+  ballSpeed: 8,
   ballRange: 9,
   ballR: 0.16,
   stun: 0.6,
   knock: 3,
-  wallHP: 4,
-  wallW: 0.45, // かべの あつみ(x)
-  wallD: 1.3, // かべの はば(z)
   goldFirst: 8,
   goldEvery: [10, 15],
   goldLife: 9,
   pickR: 0.55,
 };
 
-// かべ(左右 おなじ 形): 左の チームの ぶん。右は x を うらがえす
-export const WALLS_L = [
-  { x: -1.5, z: -1.7 },
-  { x: -1.8, z: 1.5 },
-  { x: -3.5, z: 0 },
-];
 // こおりの ゆか(まるい)。左の チームの ぶん
 export const ICE_L = [
   { x: -2.6, z: -0.2, r: 0.9 },
@@ -81,7 +71,6 @@ export function createGame(players, seed) {
     teams: { L: [], R: [] }, // units の 番号
     units: [], // はじめの players.length こが プレイヤー(席の順)、のこりが すけっと
     balls: [], // { id, owner, x, z, dx, dz, left, gold }
-    walls: [], // { id, side, x, z, hp }
     ice: [],
     golds: [], // { id, x, z, until }
     nextGold: RULES.goldFirst,
@@ -117,7 +106,6 @@ export function createGame(players, seed) {
       u.goalX = u.x; u.goalZ = u.z;
     });
   }
-  for (const w of WALLS_L) for (const sx of [-1, 1]) s.walls.push({ id: s.nextId++, side: sx < 0 ? 'L' : 'R', x: sx < 0 ? w.x : -w.x, z: sx < 0 ? w.z : -w.z, hp: RULES.wallHP });
   for (const c of ICE_L) for (const sx of [-1, 1]) s.ice.push({ x: sx < 0 ? c.x : -c.x, z: sx < 0 ? c.z : -c.z, r: c.r });
   return s;
 }
@@ -128,16 +116,6 @@ export const onIce = (s, x, z) => s.ice.some((c) => Math.hypot(x - c.x, z - c.z)
 export const teamHp = (s, side) => s.teams[side].reduce((a, i) => a + Math.max(0, s.units[i].hp), 0);
 export const teamAlive = (s, side) => s.teams[side].filter((i) => s.units[i].alive);
 export const facingVec = (u) => ({ x: Math.sin(u.face), z: Math.cos(u.face) });
-const inWall = (w, x, z, pad) => Math.abs(x - w.x) < RULES.wallW / 2 + pad && Math.abs(z - w.z) < RULES.wallD / 2 + pad;
-// (x, z) から (x2, z2) へ まっすぐ 投げたら かべに 当たるか
-export function wallBetween(s, x, z, x2, z2) {
-  const n = Math.ceil(Math.hypot(x2 - x, z2 - z) / 0.2);
-  for (let k = 1; k < n; k++) {
-    const px = x + ((x2 - x) * k) / n, pz = z + ((z2 - z) * k) / n;
-    if (s.walls.some((w) => w.hp > 0 && inWall(w, px, pz, RULES.ballR))) return true;
-  }
-  return false;
-}
 // 陣地の 中に おさめる
 function clampSide(u) {
   const sx = u.side === 'L' ? -1 : 1;
@@ -171,7 +149,7 @@ function helperInput(s, i) {
     u.goalX = sx * randRange(s, 1.0, 4.4);
     u.goalZ = randRange(s, -3, 3);
   }
-  const want = Math.atan2(near.x - u.x, near.z - u.z) + randRange(s, -0.12, 0.12);
+  const want = Math.atan2(near.x - u.x, near.z - u.z) + randRange(s, -0.18, 0.18);
   // 雪玉が なければ しゃがんで れんだ で つくる(1秒に 6回くらい)
   if (u.ammo <= 0 && !onIce(s, u.x, u.z)) {
     let make = false;
@@ -181,7 +159,7 @@ function helperInput(s, i) {
   if (u.ammo <= 0) return { x: -sx, z: 0, throw: false };
   const dx = u.goalX - u.x, dz = u.goalZ - u.z, d = Math.hypot(dx, dz);
   // ねらう ときは その場で 向きを かえる
-  const aim = nd < 8 && u.cd <= 0 && !wallBetween(s, u.x, u.z, near.x, near.z);
+  const aim = nd < 8 && u.cd <= 0;
   if (aim) {
     const diff = Math.abs(((want - u.face + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
     return { x: Math.sin(want) * 0.2, z: Math.cos(want) * 0.2, throw: diff < 0.12 && nextRandom(s) < 0.05 };
@@ -256,12 +234,6 @@ export function step(s, inputs) {
     u.x += u.vx * dt;
     u.z += u.vz * dt;
     clampSide(u);
-    // かべに めりこまない
-    for (const w of s.walls) {
-      if (w.hp <= 0 || !inWall(w, u.x, u.z, RULES.bodyR)) continue;
-      const ox = RULES.wallW / 2 + RULES.bodyR - Math.abs(u.x - w.x), oz = RULES.wallD / 2 + RULES.bodyR - Math.abs(u.z - w.z);
-      if (ox < oz) { u.x += Math.sign(u.x - w.x || 1) * ox; u.vx = 0; } else { u.z += Math.sign(u.z - w.z || 1) * oz; u.vz = 0; }
-    }
     // 雪玉づくり: 「つくる」を れんだ(雪の 上で)
     if (inp.make && !ice && u.ammo < RULES.ammoMax && u.stun <= 0) {
       u.makeT = RULES.makeHold;
@@ -305,14 +277,6 @@ export function step(s, inputs) {
       b.x += (b.dx * dt) / n;
       b.z += (b.dz * dt) / n;
       b.left -= (RULES.ballSpeed * dt) / n;
-      const w = s.walls.find((w) => w.hp > 0 && inWall(w, b.x, b.z, RULES.ballR));
-      if (w) {
-        w.hp--;
-        ev.push({ type: 'wallHit', id: w.id, ball: b.id, x: b.x, z: b.z, hp: w.hp });
-        if (w.hp <= 0) ev.push({ type: 'wallBreak', id: w.id });
-        gone = true;
-        break;
-      }
       const owner = s.units[b.owner];
       for (const i of alive) {
         const u = s.units[i];
