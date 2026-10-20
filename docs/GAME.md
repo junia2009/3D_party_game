@@ -66,3 +66,4 @@
 | 川原の つなひき | 作成中 | [minigames/tsuna.md](minigames/tsuna.md) |
 | お祭りの 大なわとび | 作成中 | [minigames/nawa.md](minigames/nawa.md) |
 | 火山の 落ちものよけ | 作成中 | [minigames/kazan.md](minigames/kazan.md) |
+| 雪山の 雪合戦 | 作成中 | [minigames/yuki.md](minigames/yuki.md) |

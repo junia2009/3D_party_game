@@ -22,7 +22,7 @@ import { simulate } from './simulate.js';
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const params = new URLSearchParams(location.search);
-const GAME_NAMES = { daruma: 'だるまさんが ころんだ', catch: 'どんぐりキャッチ', sled: '落ち葉そりレース', mato: 'まつぼっくり的あて', tsumi: 'どんぐりつみ', ikada: 'いかだレース', hana: '花ぬり陣取り', hayauchi: 'どんぐり早うち', sumo: '切り株ずもう', kakure: 'おぼえて かくれんぼ', dasshutsu: 'どんぐりマンション だっしゅつ', tsuna: '川原の つなひき', nawa: 'お祭りの 大なわとび', kazan: '火山の 落ちものよけ' };
+const GAME_NAMES = { daruma: 'だるまさんが ころんだ', catch: 'どんぐりキャッチ', sled: '落ち葉そりレース', mato: 'まつぼっくり的あて', tsumi: 'どんぐりつみ', ikada: 'いかだレース', hana: '花ぬり陣取り', hayauchi: 'どんぐり早うち', sumo: '切り株ずもう', kakure: 'おぼえて かくれんぼ', dasshutsu: 'どんぐりマンション だっしゅつ', tsuna: '川原の つなひき', nawa: 'お祭りの 大なわとび', kazan: '火山の 落ちものよけ', yuki: '雪山の 雪合戦' };
 const AREA_HAPPEN = { spring: '春の雨! 池があふれた', summer: 'どんぐりの雨!', autumn: 'つむじ風!', winter: '雪玉ころころ!' };
 
 export async function createBoard({ renderer, settings, getAudio, onExit, playMinigame }) {

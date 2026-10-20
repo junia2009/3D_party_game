@@ -456,6 +456,38 @@
   #hudV .splash.gold.small { color: #ffd24a; }
   .tame.jump { background: #ff7a3a; font-size: 20px; }
   .tame.jump.down { transform: translateY(5px); }
+  /* 雪山の 雪合戦: 上に 2チームの札(体力の 点)と のこり時間。右下に「なげる」と 雪玉の 数 */
+  #hudY { --tL: #4a9ae8; --tR: #ff8a3d; }
+  #hudY .team { flex: 1; min-width: 0; display: flex; gap: 2px; align-items: center; padding: 3px; border-radius: 14px; background: rgba(255,255,255,.7); box-shadow: 0 3px 0 rgba(31,42,51,.18); }
+  #hudY .team.L { border: 3px solid var(--tL); }
+  #hudY .team.R { border: 3px solid var(--tR); flex-direction: row-reverse; }
+  #hudY[data-side="L"] .team.L, #hudY[data-side="R"] .team.R { background: #fff; }
+  #hudY .chip { flex-direction: column; gap: 0; padding: 2px; box-shadow: none; background: transparent; font-size: 10px; }
+  #hudY .chip i { width: 16px; height: 16px; }
+  #hudY .chip.me { outline: 0; }
+  #hudY .chip.me i { border: 3px solid var(--hud-ink); }
+  #hudY .chip.helper b { font: 800 9px var(--font-body); background: var(--c); color: #fff; border-radius: 999px; padding: 1px 4px; white-space: nowrap; }
+  #hudY .chip .hp { font-size: 8px; letter-spacing: -1px; color: #e8344a; line-height: 1; }
+  #hudY .chip.out { opacity: .35; filter: grayscale(1); }
+  #hudY .timer { width: 2.6em; font-size: 18px; padding: 6px 0; align-self: center; }
+  #hudY .timer:empty { visibility: hidden; }
+  #hudY .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 160px); font-size: 14px; }
+  #hudY .splash.small { font-size: clamp(24px, 8vw, 46px); }
+  .tame.throw { background: #4aa8e8; font-size: 20px; }
+  .tame.throw.empty { background: #8aa0b0; }
+  .tame.throw.down { transform: translateY(5px); }
+  .stick.turn { border-color: #ffd24a; }
+  .ammo {
+    position: absolute; right: max(18px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 144px); width: 112px;
+    display: flex; justify-content: center; gap: 6px; --m: 0;
+  }
+  .ammo i { width: 20px; height: 20px; border-radius: 50%; background: rgba(255,255,255,.3); border: 2px solid rgba(31,42,51,.35); }
+  .ammo i.on { background: #fff; border-color: var(--hud-ink); box-shadow: 0 2px 0 rgba(31,42,51,.25); }
+  .ammo i.on.gold { background: #ffd24a; }
+  .ammo.making i:not(.on):first-of-type, .ammo.making i.on + i:not(.on) { background: conic-gradient(#fff calc(var(--m) * 360deg), rgba(255,255,255,.3) 0); }
+  @media (orientation: landscape) and (max-height: 560px) {
+    #hudY .howto { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 70px); font-size: 13px; }
+  }
   /* おぼえて かくれんぼ: まん中に 先生の ことば(こたえる時間の帯つき)。まっくらは 画面ごと暗く */
   #hudZ .timer { width: auto; min-width: 3em; padding: 8px 8px; font-size: 16px; }
   #hudZ .chip.done { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px var(--c); }
@@ -1168,6 +1200,11 @@
       <span class="name">火山の 落ちものよけ</span>
       <span class="meta"><span>40〜60びょう</span></span>
     </button>
+    <button class="card" type="button" data-open="yuki">
+      <span class="thumb"><img src="./assets/thumbs/yuki.jpg" alt="" width="640" height="360"><span class="ribbon">第15競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">雪山の 雪合戦</span>
+      <span class="meta"><span>20〜60びょう</span></span>
+    </button>
   </div>
 </section>
 
@@ -1342,6 +1379,21 @@
   <p class="howto" id="howtoV">ゆびを おいて ずらすと はしる。影から にげろ!<br>ころがる岩は「ジャンプ」で とびこえる</p>
   <div class="stick" id="stickV" hidden><i></i></div>
   <button class="tame jump" id="jumpV" type="button">ジャンプ</button>
+</div>
+
+<div class="hud" id="hudY" hidden>
+  <div class="top">
+    <div class="team L" id="teamLY" aria-label="ひだりの チーム"></div>
+    <div class="timer" id="timeY" aria-label="のこり時間"></div>
+    <div class="team R" id="teamRY" aria-label="みぎの チーム"></div>
+    <button class="pausebtn" id="pauseBtnY" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsY"></div>
+  <div class="splash" id="splashY"></div>
+  <p class="howto" id="howtoY">ずらすと はしる・すこし ずらすと 向きだけ<br>「なげる」で 向いている ほうへ!</p>
+  <div class="stick" id="stickY" hidden><i></i></div>
+  <div class="ammo" id="ammoY" aria-label="雪玉"></div>
+  <button class="tame throw" id="throwY" type="button">なげる</button>
 </div>
 
 <div class="hud" id="hudS" hidden>
