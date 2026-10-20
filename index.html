@@ -480,6 +480,17 @@
   .tame.throw { background: #4aa8e8; font-size: 20px; }
   .tame.throw.empty { background: #8aa0b0; }
   .tame.throw.down { transform: translateY(5px); }
+  .tame.make {
+    right: calc(max(18px, env(safe-area-inset-right, 0px)) + 124px); width: 86px; height: 86px; font-size: 17px; line-height: 1.1;
+    background: radial-gradient(circle, #e8f2fa 60%, transparent 61%), conic-gradient(#4aa8e8 calc(var(--m, 0) * 360deg), rgba(255,255,255,.45) 0);
+    color: var(--hud-ink);
+  }
+  .tame.make small { display: block; font-size: 10px; opacity: .7; }
+  .tame.make, .tame.throw { -webkit-tap-highlight-color: transparent; user-select: none; }
+  .tame.make.down { transform: translateY(5px); }
+  .tame.make.full { opacity: .5; }
+  .tame.make.hint { animation: makehint .5s ease-in-out infinite alternate; }
+  @keyframes makehint { to { transform: scale(1.1); } }
   .stick.turn { border-color: #ffd24a; }
   .ammo {
     position: absolute; right: max(18px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 144px); width: 112px;
@@ -1394,9 +1405,10 @@
   </div>
   <div class="pops" id="popsY"></div>
   <div class="splash" id="splashY"></div>
-  <p class="howto" id="howtoY">ずらすと はしる・すこし ずらすと 向きだけ<br>「なげる」で 向いている ほうへ!</p>
+  <p class="howto" id="howtoY">ずらすと はしる・すこし ずらすと 向きだけ<br>「なげる」で 向いている ほうへ!「つくる」れんだで 雪玉</p>
   <div class="stick" id="stickY" hidden><i></i></div>
   <div class="ammo" id="ammoY" aria-label="雪玉"></div>
+  <button class="tame make" id="makeY" type="button">つくる<small>れんだ!</small></button>
   <button class="tame throw" id="throwY" type="button">なげる</button>
 </div>
 

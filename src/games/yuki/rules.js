@@ -4,14 +4,15 @@
 // 雪玉を 3回 当てられた子は 雪だるまに なって 脱落。相手を みんな 雪だるまに したら 勝ち。
 // - チーム: くじで 左(L)・右(R)へ。3人に たりない チームには、森の なかま(すけっと)が入る(動きは このファイルの helperInput)。
 // - なげる: 向いている 向きへ まっすぐ。スティックを 少しだけ たおすと、その場で 向きだけ かえられる。
-// - 雪玉づくり: 雪玉は ammoMax こまで。雪の 上で 立ちどまっていると、makeTime 秒ごとに 1こ できる。
+// - 雪玉づくり: 雪玉は ammoMax こまで。「つくる」ボタンを makeTaps 回 れんだ すると 1こ できる(こおりの 上では できない)。
+//   れんだ している あいだは しゃがむので 動けない。
 // - 雪の かべ: かくれると 雪玉を ふせげる。wallHP 回 当たると くずれる。
 // - こおりの ゆか: つるつる すべる(止まりにくい・曲がりにくい)。こおりの 上では 雪玉を つくれない。
 // - 金の 雪玉: ときどき 落ちている。ひろうと つぎの 1こが 金(当たると 2つ ぶん)。
 // - timeLimit 秒で 決まらなければ、のこりの 体力の 合計が 多い チームの 勝ち(同じなら 当てた 数)。
 // 順位: 勝った チームの子を よく当てた順、そのあと 負けた チームの子を よく当てた順。
 //
-// inputs[slot]: { x, z(スティック。長さ 1 まで), throw(おした しゅんかん true) } または null
+// inputs[slot]: { x, z(スティック。長さ 1 まで), throw, make(どちらも おした しゅんかん true) } または null
 // state を書きかえるのは step() だけ。乱数は state.rng だけ。
 
 import { nextRandom, randRange, seedFrom } from '../../rng.js';
@@ -35,7 +36,8 @@ export const RULES = {
   hp: 3,
   ammoMax: 3,
   ammoStart: 2,
-  makeTime: 0.9,
+  makeTaps: 6, // 雪玉 1こに いる れんだ の 回数
+  makeHold: 0.28, // 1回 おすと この秒 しゃがむ(動けない)
   throwCd: 0.5,
   ballSpeed: 9,
   ballRange: 9,
@@ -65,7 +67,7 @@ export const ICE_L = [
 
 const unit = (side, slot, kind = null) => ({
   side, slot, kind, x: 0, z: 0, vx: 0, vz: 0, face: side === 'L' ? Math.PI / 2 : -Math.PI / 2,
-  hp: RULES.hp, ammo: RULES.ammoStart, make: 0, cd: 0, stun: 0, gold: false, alive: true,
+  hp: RULES.hp, ammo: RULES.ammoStart, make: 0, makeT: 0, nextTap: 0, cd: 0, stun: 0, gold: false, alive: true,
   hits: 0, throws: 0, golds: 0,
   // すけっと用
   goalX: 0, goalZ: 0, nextGoal: 0, nextThink: 0, wantThrow: 0,
@@ -170,8 +172,13 @@ function helperInput(s, i) {
     u.goalZ = randRange(s, -3, 3);
   }
   const want = Math.atan2(near.x - u.x, near.z - u.z) + randRange(s, -0.12, 0.12);
-  // 雪玉が なければ 立ちどまって つくる
-  if (u.ammo <= 0) return { x: Math.sin(want) * 0.2, z: Math.cos(want) * 0.2, throw: false };
+  // 雪玉が なければ しゃがんで れんだ で つくる(1秒に 6回くらい)
+  if (u.ammo <= 0 && !onIce(s, u.x, u.z)) {
+    let make = false;
+    if (s.t >= u.nextTap) { make = true; u.nextTap = s.t + randRange(s, 0.12, 0.22); }
+    return { x: Math.sin(want) * 0.2, z: Math.cos(want) * 0.2, throw: false, make };
+  }
+  if (u.ammo <= 0) return { x: -sx, z: 0, throw: false };
   const dx = u.goalX - u.x, dz = u.goalZ - u.z, d = Math.hypot(dx, dz);
   // ねらう ときは その場で 向きを かえる
   const aim = nd < 8 && u.cd <= 0 && !wallBetween(s, u.x, u.z, near.x, near.z);
@@ -228,6 +235,7 @@ export function step(s, inputs) {
     const inp = (u.slot >= 0 ? inputs[u.slot] : helperInput(s, i)) || {};
     u.cd = Math.max(0, u.cd - dt);
     u.stun = Math.max(0, u.stun - dt);
+    u.makeT = Math.max(0, u.makeT - dt);
     let ix = inp.x || 0, iz = inp.z || 0;
     let m = Math.hypot(ix, iz);
     if (m > 1) { ix /= m; iz /= m; m = 1; }
@@ -240,7 +248,7 @@ export function step(s, inputs) {
       const turn = RULES.turnRate * dt * (ice ? 0.5 : 1);
       u.face += Math.max(-turn, Math.min(turn, d));
     }
-    const move = m >= RULES.turnOnly ? 1 : 0;
+    const move = m >= RULES.turnOnly && u.makeT <= 0 ? 1 : 0;
     const tx = ix * RULES.speed * move, tz = iz * RULES.speed * move;
     const a = Math.min(1, (ice ? RULES.iceAccel : RULES.accel) * dt);
     u.vx += (tx - u.vx) * a;
@@ -254,12 +262,13 @@ export function step(s, inputs) {
       const ox = RULES.wallW / 2 + RULES.bodyR - Math.abs(u.x - w.x), oz = RULES.wallD / 2 + RULES.bodyR - Math.abs(u.z - w.z);
       if (ox < oz) { u.x += Math.sign(u.x - w.x || 1) * ox; u.vx = 0; } else { u.z += Math.sign(u.z - w.z || 1) * oz; u.vz = 0; }
     }
-    // 雪玉づくり: 雪の 上で 立ちどまっている
-    const still = Math.hypot(u.vx, u.vz) < 0.3 && move === 0;
-    if (still && !ice && u.ammo < RULES.ammoMax && u.stun <= 0) {
-      u.make += dt;
-      if (u.make >= RULES.makeTime) { u.make = 0; u.ammo++; ev.push({ type: 'make', who: i, ammo: u.ammo }); }
-    } else u.make = 0;
+    // 雪玉づくり: 「つくる」を れんだ(雪の 上で)
+    if (inp.make && !ice && u.ammo < RULES.ammoMax && u.stun <= 0) {
+      u.makeT = RULES.makeHold;
+      u.make++;
+      ev.push({ type: 'scoop', who: i, make: u.make });
+      if (u.make >= RULES.makeTaps) { u.make = 0; u.ammo++; ev.push({ type: 'make', who: i, ammo: u.ammo }); }
+    }
     // 金の 雪玉を ひろう
     for (let k = s.golds.length - 1; k >= 0; k--) {
       const g = s.golds[k];

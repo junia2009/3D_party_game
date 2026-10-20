@@ -120,17 +120,27 @@ test('雪の かべは 雪玉を ふせぐ。何回も 当たると くずれる
   assert.equal(b.hp, RULES.hp, 'かべの うしろは 当たらない');
 });
 
-test('雪玉は 立ちどまると できる。こおりの 上では できないし、すべる', () => {
+test('雪玉は「つくる」の れんだで できる。こおりの 上では できないし、すべる', () => {
   const s = createGame(PLAYERS.slice(0, 2), 7);
   toPlay(s);
   quiet(s);
   const a = me(s, 0);
   const ice = s.ice.find((c) => Math.sign(c.x) === (a.side === 'L' ? -1 : 1));
   a.x = a.side === 'L' ? -4.5 : 4.5; a.z = -3.2; a.ammo = 0;
-  idle(s, RULES.makeTime * 2 + 0.1, () => [null, null]);
-  assert.equal(a.ammo, 2);
-  a.x = ice.x; a.z = ice.z; a.ammo = 0;
-  idle(s, RULES.makeTime * 2, () => [null, null]);
+  idle(s, 2, () => [null, null]);
+  assert.equal(a.ammo, 0, '立っているだけでは できない');
+  let n = 0;
+  idle(s, 1.6, () => [{ x: 0, z: 0, make: n++ % 8 === 0 }, null]); // 1秒に 7.5回
+  assert.equal(a.ammo, Math.floor(Math.ceil(1.6 * 60 / 8) / RULES.makeTaps));
+  // れんだ している あいだは 動けない
+  a.ammo = 0;
+  const x0 = a.x;
+  n = 0;
+  idle(s, 0.5, () => [{ x: a.side === 'L' ? 1 : -1, z: 0, make: n++ % 8 === 0 }, null]);
+  assert.ok(Math.abs(a.x - x0) < 0.15, `${a.x - x0}`);
+  a.x = ice.x; a.z = ice.z; a.vx = a.vz = 0; a.ammo = 0; a.make = 0;
+  n = 0;
+  idle(s, 1.6, () => [{ x: 0, z: 0, make: n++ % 8 === 0 }, null]);
   assert.equal(a.ammo, 0, 'こおりの 上では つくれない');
   // こおりの 上で 走って 手を はなすと、すべって なかなか 止まらない
   a.x = ice.x - 0.3; a.z = ice.z;
@@ -163,7 +173,7 @@ test('同じ性格どうしなら、どの席も勝てる(かたよりすぎな�
 });
 
 test('人くらいの ねらいでも、CPU と互角に戦える', () => {
-  PERSONALITIES.human = { label: 'ひと', aimErr: 0.18, aimTol: 0.16, lead: 0.3, dodge: 0.5, cover: 0.35, greed: 0.5, think: 0.26, range: 7.5 };
+  PERSONALITIES.human = { label: 'ひと', aimErr: 0.18, aimTol: 0.16, lead: 0.3, dodge: 0.5, cover: 0.35, greed: 0.5, think: 0.26, range: 7.5, tap: 6 };
   try {
     let rankSum = 0, wins = 0;
     const NN = 120;

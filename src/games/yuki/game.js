@@ -3,7 +3,8 @@
 // ルールは rules.js、CPU は cpu.js。ここは「入力を集めて rules.step を回し、結果を3Dと HUD に映す」だけ。
 //
 // 動かし方: 画面の どこでも 指を おいて ずらすと 走る(どこでもスティック)。少しだけ ずらすと その場で 向きを かえる。
-// 右下の ボタンで 向いている 向きへ なげる。パソコンは 矢印 / WASD と スペース。
+// 右下の「なげる」で 向いている 向きへ なげる。「つくる」を れんだ すると 雪玉が できる。
+// パソコンは 矢印 / WASD・スペース(なげる)・F(つくる)。
 
 import * as THREE from 'three';
 import { makePlayers } from '../lineup.js';
@@ -79,6 +80,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     hit() { noise({ len: 0.22, gain: 0.2, freq: [1600, 300], type: 'lowpass', attack: 0.003 }); voice({ pts: [[0, 660], [0.12, 330]], len: 0.14, gain: 0.05 }); },
     wall() { noise({ len: 0.15, gain: 0.12, freq: [1000, 300], type: 'lowpass', attack: 0.003 }); },
     crumble() { noise({ len: 0.5, gain: 0.2, freq: [800, 120], type: 'lowpass' }); },
+    scoop() { noise({ len: 0.08, gain: 0.06, freq: [1800, 600], q: 1.2 }); },
     make() { voice({ type: 'triangle', pts: [[0, 520], [0.06, 700]], len: 0.08, gain: 0.04 }); },
     gold() { [0, 0.07, 0.14].forEach((at, i) => voice({ pts: [[0, 988 + i * 260]], len: 0.1, gain: 0.05, at })); },
     out() { voice({ type: 'square', pts: [[0, 523], [0.3, 196]], len: 0.35, gain: 0.05 }); },
@@ -273,7 +275,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
   let game = null;
   let intro = 1;
   const INTRO_TIME = 2.4;
-  const input = { touch: null, stick: null, keys: new Set(), throw: false, target: null };
+  const input = { touch: null, stick: null, keys: new Set(), throw: false, make: false, target: null };
 
   async function startGame({ fromSky = false } = {}) {
     const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
@@ -335,7 +337,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     game = { duel: false, toss: undefined, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, meIdx: state.units.findIndex((u) => u.slot === 0) };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows([...units.map((u) => u.holder), fieldGroup], [stage.group, fieldGroup]);
-    Object.assign(input, { touch: null, stick: null, throw: false, target: null });
+    Object.assign(input, { touch: null, stick: null, throw: false, make: false, target: null });
     buildChips();
     setMode('playing');
     intro = fromSky ? 0 : 1;
@@ -389,6 +391,16 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     throwEl.classList.add('down');
   });
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) throwEl.addEventListener(ev, () => throwEl.classList.remove('down'));
+  const makeEl = $('makeY');
+  makeEl.addEventListener('pointerdown', (e) => {
+    if (!playing()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    unlockAudio();
+    input.make = true;
+    makeEl.classList.add('down');
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) makeEl.addEventListener(ev, () => makeEl.classList.remove('down'));
   window.addEventListener('pointerdown', (e) => {
     if (!playing() || input.touch !== null || e.target.closest('button, a')) return;
     unlockAudio();
@@ -433,6 +445,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     if (mode !== 'playing') return;
     if (e.code === 'Escape' || e.code === 'KeyP') { setPaused(!paused); return; }
     if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) { e.preventDefault(); unlockAudio(); input.throw = true; return; }
+    if (e.code === 'KeyF' && !e.repeat) { unlockAudio(); input.make = true; return; }
     if (KEYS[e.code]) {
       e.preventDefault();
       unlockAudio();
@@ -444,9 +457,9 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
   window.addEventListener('blur', () => { input.keys.clear(); input.touch = null; input.stick = null; stickEl.hidden = true; });
 
   function myInput() {
-    const thr = input.throw;
-    input.throw = false;
-    if (input.target) return { ...input.target, throw: input.target.throw ?? thr };
+    const thr = input.throw, make = input.make;
+    input.throw = input.make = false;
+    if (input.target) return { ...input.target, throw: input.target.throw ?? thr, make: input.target.make ?? make };
     let sx = 0, sy = 0;
     if (input.keys.size) {
       for (const k of input.keys) { sx += KEYS[k][0]; sy += KEYS[k][1]; }
@@ -457,7 +470,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       sy = input.stick.dy;
     }
     // カメラは 手前の 上から 奥(-z)を 見ているので、画面の 右 = +x、画面の 上 = 奥(-z)
-    return { x: sx, z: sy, throw: thr };
+    return { x: sx, z: sy, throw: thr, make };
   }
 
   // ── HUD ─────────────────────────────────────────────
@@ -500,7 +513,12 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     $('ammoY').innerHTML = Array.from({ length: RULES.ammoMax }, (_, k) => `<i class="${k < me.ammo ? (me.gold && k === me.ammo - 1 ? 'on gold' : 'on') : ''}"></i>`).join('');
     $('throwY').classList.toggle('empty', me.ammo <= 0);
     $('ammoY').classList.toggle('making', me.make > 0);
-    $('ammoY').style.setProperty('--m', (me.make / RULES.makeTime).toFixed(3));
+    $('ammoY').style.setProperty('--m', (me.make / RULES.makeTaps).toFixed(3));
+    $('makeY').hidden = $('throwY').hidden;
+    $('makeY').style.setProperty('--m', (me.make / RULES.makeTaps).toFixed(3));
+    $('makeY').classList.toggle('full', me.ammo >= RULES.ammoMax);
+    // 雪玉が なくなったら「つくる」が ぴょこぴょこ
+    $('makeY').classList.toggle('hint', me.ammo <= 0 && !onIce(s, me.x, me.z));
   }
   const tmpV = new THREE.Vector3();
   function pop(text, x, y, z, cls = '', life = 800) {
@@ -598,6 +616,10 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
         case 'make':
           if (e.who === game.meIdx) sfx.make();
           break;
+        case 'scoop':
+          if (e.who === game.meIdx) sfx.scoop();
+          burst(s.units[e.who].x + Math.sin(s.units[e.who].face) * 0.4, 0.1, s.units[e.who].z + Math.cos(s.units[e.who].face) * 0.4, 2);
+          break;
         case 'gold':
           break;
         case 'pick':
@@ -683,7 +705,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       if (s.phase === 'finished' && su.side === s.winner) u.holder.position.y = Math.abs(Math.sin(time * 6 + i)) * 0.3;
       u.holder.rotation.y = su.face;
       const sliding = ice && moving;
-      const making = su.make > 0 && s.phase === 'play';
+      const making = su.makeT > 0 && s.phase === 'play';
       if (sliding) face = 'surprised';
       // こおりの 上で すべっている ときは、体を かたむけて ゆらゆら
       u.model.root.rotation.z = sliding ? Math.sin(time * 9 + i) * 0.18 : 0;
@@ -704,7 +726,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
         for (const a of [aL, aR]) if (a) a.rotation.x = -1.1 + Math.sin(time * 14) * 0.25;
       }
       u.makeBall.visible = making;
-      if (making) u.makeBall.scale.setScalar(0.3 + (su.make / RULES.makeTime) * 0.7);
+      if (making) u.makeBall.scale.setScalar(0.3 + (su.make / RULES.makeTaps) * 0.7);
       // 当たったら ぎゅっと ちぢむ。しゃがむと 低く
       const sq = u.flash * 0.15 + (making ? 0.12 : 0);
       u.model.root.scale.set(1 + sq, 1 - sq, 1 + sq);
