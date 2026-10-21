@@ -67,3 +67,4 @@
 | お祭りの 大なわとび | 作成中 | [minigames/nawa.md](minigames/nawa.md) |
 | 火山の 落ちものよけ | 作成中 | [minigames/kazan.md](minigames/kazan.md) |
 | 雪山の 雪合戦 | 作成中 | [minigames/yuki.md](minigames/yuki.md) |
+| 遊園地の バンパーカー | 作成中 | [minigames/bumper.md](minigames/bumper.md) |

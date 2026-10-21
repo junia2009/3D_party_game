@@ -447,6 +447,22 @@
   .hold b { position: absolute; inset: 10px; border-radius: 50%; background: #fff; display: grid; place-items: center; font: 800 13px var(--font-body); color: var(--hud-ink); }
   .hold.full b { background: #ffd24a; }
   .hold.full b::after { content: '大ジャンプ!'; position: absolute; top: -28px; white-space: nowrap; font: 400 20px var(--font-display); color: #ffd24a; -webkit-text-stroke: 5px var(--hud-ink); paint-order: stroke fill; }
+  /* 遊園地の バンパーカー: 上に のこっている子と のこり時間、右下に ダッシュ(つかったあとは 輪が たまっていく) */
+  #hudQ .chip { padding: 4px; }
+  #hudQ .chip i { width: 18px; height: 18px; }
+  #hudQ .chip b:empty { display: none; }
+  #hudQ .chip.out { opacity: .35; filter: grayscale(1); }
+  #hudQ .timer:empty { visibility: hidden; }
+  #hudQ .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
+  @media (orientation: landscape) and (max-height: 560px) {
+    #hudQ .howto { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 62px); font-size: 14px; }
+  }
+  #hudQ .splash.small { font-size: clamp(26px, 8.5vw, 50px); }
+  #hudQ .splash.gold.small { color: #ffd24a; }
+  .tame.dash { background: conic-gradient(#ff4f9a calc(var(--k, 1) * 360deg), #8a7aa0 0); font-size: 19px; -webkit-tap-highlight-color: transparent; user-select: none; }
+  .tame.dash.down { transform: translateY(5px); }
+  .tame.dash.wait { opacity: .75; }
+  #hudQ.shrink::before { content: ''; position: absolute; inset: 0; box-shadow: inset 0 0 50px 16px rgba(255,80,160,.45); animation: eruptglow .5s ease-in-out infinite alternate; }
   /* 火山の 落ちものよけ: 上に のこっている子(かさを もっていると 金の わ)と のこり時間、右下に ジャンプ */
   #hudV .chip { padding: 4px; }
   #hudV .chip i { width: 18px; height: 18px; }
@@ -1411,6 +1427,19 @@
   <p class="call" id="callJ"></p>
   <p class="howto" id="howtoJ">なわが 来たら タップで ジャンプ!<br>「大なみ!」は 長おしで 大ジャンプ</p>
   <div class="hold" id="holdJ" hidden aria-hidden="true"><b>ジャンプ</b></div>
+</div>
+
+<div class="hud" id="hudQ" hidden>
+  <div class="top">
+    <div class="scores" id="chipsQ" aria-label="のこっている子"></div>
+    <div class="timer" id="timeQ" aria-label="のこり時間"></div>
+    <button class="pausebtn" id="pauseBtnQ" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsQ"></div>
+  <div class="splash" id="splashQ"></div>
+  <p class="howto" id="howtoQ">ゆびを おいて ずらすと ハンドル。車は 前へ しか 進まない!<br>「ダッシュ」で ぐんと ぶつかって、ふちから おしだせ</p>
+  <div class="stick" id="stickQ" hidden><i></i></div>
+  <button class="tame dash" id="dashQ" type="button">ダッシュ</button>
 </div>
 
 <div class="hud" id="hudV" hidden>
