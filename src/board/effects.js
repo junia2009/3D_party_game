@@ -522,15 +522,15 @@ export function createEffects(scene) {
   }
 
   // 花火: 下から 打ちあがって、上で 色とりどりに ひらく。onBurst はひらいたとき
-  const fwGeo = new THREE.SphereGeometry(0.11, 5, 4);
+  const fwGeo = new THREE.SphereGeometry(0.17, 6, 4);
   const fwColors = [0xff4f6a, 0xffd23c, 0x5cc0ff, 0x7ad35a, 0xb48cff, 0xff9a3a, 0xffffff];
   function fireworks(center, n = 6, onBurst) {
     for (let k = 0; k < n; k++) {
       const color = fwColors[(k * 3) % fwColors.length];
       const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
       const rocket = new THREE.Mesh(fwGeo, mat);
-      const x = center.x + (Math.random() - 0.5) * 9, z = center.z - 2 - Math.random() * 5;
-      const top = 9 + Math.random() * 4;
+      const x = center.x + (Math.random() - 0.5) * 8, z = center.z - 2.5 - Math.random() * 3;
+      const top = 5.5 + Math.random() * 2.5; // 寄った カメラにも 入る 高さ
       rocket.position.set(x, 0.5, z);
       scene.add(rocket);
       let t = -k * 0.45, burst = null;
@@ -539,14 +539,14 @@ export function createEffects(scene) {
         if (t < 0) { rocket.visible = false; return true; }
         rocket.visible = true;
         if (!burst) {
-          rocket.position.y += dt * 14;
+          rocket.position.y += dt * 11;
           if (rocket.position.y >= top) {
             burst = [];
             const big = 0.9 + Math.random() * 0.5;
-            for (let i = 0; i < 36; i++) {
+            for (let i = 0; i < 48; i++) {
               const m = new THREE.Mesh(fwGeo, mat);
               m.position.copy(rocket.position);
-              const v = new THREE.Vector3().randomDirection().multiplyScalar(5 * big);
+              const v = new THREE.Vector3().randomDirection().multiplyScalar(3.6 * big);
               scene.add(m);
               burst.push({ m, v });
             }
