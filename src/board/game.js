@@ -24,7 +24,6 @@ const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const params = new URLSearchParams(location.search);
 const GAME_NAMES = { daruma: 'だるまさんが ころんだ', catch: 'どんぐりキャッチ', sled: '落ち葉そりレース', mato: 'まつぼっくり的あて', tsumi: 'どんぐりつみ', ikada: 'いかだレース', hana: '花ぬり陣取り', hayauchi: 'どんぐり早うち', sumo: '切り株ずもう', kakure: 'おぼえて かくれんぼ', dasshutsu: 'どんぐりマンション だっしゅつ', tsuna: '川原の つなひき', nawa: 'お祭りの 大なわとび', kazan: '火山の 落ちものよけ', yuki: '雪山の 雪合戦' };
-const AREA_HAPPEN = { spring: '春の雨! 池があふれた', summer: 'どんぐりの雨!', autumn: 'つむじ風!', winter: '雪玉ころころ!' };
 
 export async function createBoard({ renderer, settings, getAudio, onExit, playMinigame }) {
   const scene = new THREE.Scene();
@@ -32,7 +31,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   const atmosphere = createAtmosphere(scene, renderer, camera, { course: false });
   atmosphere.sun.target.position.set(0, 0, 0);
   let st = STAGES.shiki;
-  const view = buildBoardScene(scene, st);
+  let view = buildBoardScene(scene, st); // ステージが かわったら 組み立てなおす(startTournament)
   const fx = createEffects(scene);
 
   // ── 音(短いものだけ) ──────────────────────────────
@@ -120,6 +119,12 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     roll: (sec) => { for (let i = 0; i < sec * 14; i++) hiss({ type: 'bandpass', f0: 180, q: 0.8, len: 0.05, gain: 0.05 + (i / (sec * 14)) * 0.05, at: i / 14 }); },
     fanfare: () => [523, 659, 784, 1047, 784, 1047].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: i === 5 ? 0.8 : 0.18, gain: 0.1, at: i * 0.15 })),
     cheer: () => { for (let i = 0; i < 5; i++) hiss({ f0: 700 + i * 180, f1: 900 + i * 150, q: 4, len: 1.6, gain: 0.05, at: i * 0.05, attack: 0.15 }); },
+    // 遊園地: コースターの ごーっ / 観覧車の オルゴール / おばけの ひゅーどろ / 花火 / 風船
+    coaster: (sec) => { hiss({ type: 'lowpass', f0: 250, f1: 500, len: sec, gain: 0.12, attack: 0.3 }); hiss({ f0: 800, f1: 2600, q: 1.2, len: sec, gain: 0.05, attack: sec * 0.6 }); },
+    chime: () => [784, 988, 1175, 988, 784, 1175, 1568].forEach((f, i) => voice({ type: 'sine', pts: [[0, f]], len: 0.5, gain: 0.05, at: i * 0.32 })),
+    spooky: () => { voice({ type: 'sine', pts: [[0, 330], [0.5, 260], [1.0, 360], [1.6, 200]], len: 1.7, gain: 0.07 }); hiss({ type: 'lowpass', f0: 400, len: 1.6, gain: 0.05, attack: 0.3 }); },
+    boom: () => { hiss({ type: 'lowpass', f0: 500, f1: 90, len: 0.7, gain: 0.18, attack: 0.005 }); hiss({ type: 'highpass', f0: 3500, len: 0.9, gain: 0.04, at: 0.1, attack: 0.05 }); },
+    balloon: () => [880, 1175, 1568].forEach((f, i) => voice({ type: 'sine', pts: [[0, f], [0.1, f * 1.2]], len: 0.14, gain: 0.05, at: i * 0.08 })),
   };
 
   // まわりの音: 季節ごと(春は小鳥、夏はセミ、秋は風と葉っぱ、冬は静かな風)。手番の子のいるエリアで変わる
@@ -361,6 +366,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       }
     }
     if (game) for (const p of game.pieces) scene.remove(p.holder);
+    if (view.stage !== st.key) { view.dispose(); view = buildBoardScene(scene, st); }
     fx.hidePodium();
     const s = resume ? resume.s : createTournament(players, seed, { turns: opts.turns, stage: opts.stage });
     const pieces = await Promise.all(players.map(async (p, i) => {
@@ -447,18 +453,31 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     blue: { color: '#3d8bff', mark: '+', title: '青マス', text: (sp) => `どんぐりが ${RULES.blue * (sp ? 2 : 1)}こ ふえる` },
     red: { color: '#e8402f', mark: '−', title: '赤マス', text: (sp) => `どんぐりが ${RULES.red * (sp ? 2 : 1)}こ へる` },
     item: { color: '#34c47c', mark: '?', title: 'どうぐマス', text: () => 'どうぐを 1つ もらえる(3つまで持てる)' },
-    happen: { color: '#9b6bff', mark: '!', title: 'ハプニングマス', text: () => 'その季節の できごとが おきる!' },
+    happen: { color: '#9b6bff', mark: '!', title: 'ハプニングマス', text: () => 'その場所の できごとが おきる!' },
     duel: { color: '#ff9a2a', mark: 'VS', title: '対決マス', text: () => 'だれか1人と、どんぐりを かけて 1対1 で勝負!' },
     shop: { color: '#ffc23c', mark: '店', title: 'どうぐ屋', text: () => 'お店の前で ひとやすみ' },
     start: { color: '#fff6e0', mark: 'S', title: 'スタート', text: () => 'なにも おきない' },
     slide: { color: '#ff7a3a', mark: '≫', title: 'すべり台', text: () => '落ち葉のすべり台で、先のマスまで 一気にすべる!' },
     ice: { color: '#8fd3ff', mark: '❄', title: 'つるつる氷', text: () => '氷の上では 止まれない! もう少し すべる' },
+    ride: { color: '#ff4f9a', mark: '乗', title: '乗り場', text: () => 'どんぐりを はらって 乗り物に 乗れる。行き先は くじ!' },
   };
   const HAPPEN_INFO = {
     spring: { title: '春の雨', text: '池があふれた! 止まった子は 3マス もどる' },
     summer: { title: 'どんぐりの雨', text: '大木がゆれた! 止まった子は どんぐり +10、近くの子も +3' },
     autumn: { title: 'つむじ風', text: '風にとばされて、盤のどこかへ!' },
     winter: { title: '雪玉ころころ', text: '大きな雪玉! 冬にいる子は みんな どんぐり -5' },
+    gate: { title: '風船', text: '風船に つかまって、3〜5マス 先へ ふわっと!' },
+    coaster: { title: '宙がえり', text: 'どんぐりを 5こ 落とした! コースターに いる 子が 山分け' },
+    wheel: { title: '花火', text: 'きれいな 花火! みんな どんぐり +3、止まった子は +6' },
+    ghost: { title: 'おばけの いたずら', text: 'おばけが だれかと 場所を 入れかえた!' },
+  };
+  // 乗り物の くじの 結果
+  const RIDE_OUTCOME = {
+    owl: { title: '大当たり!', text: 'ホーホー先生の すぐ手前に 着いた!', color: '#ffd24a' },
+    ahead: { title: 'ぐーんと 先へ!', text: 'ずっと 先の マスに 着いた', color: '#3d8bff' },
+    back: { title: 'あれれ…', text: 'うしろの マスに もどされた', color: '#e8402f' },
+    warp: { title: 'どこかへ!', text: '盤の どこかの マスに 着いた', color: '#9b6bff' },
+    stay: { title: 'いい けしき!', text: '景色を 見て ひとやすみ。どんぐりを もらった', color: '#34c47c' },
   };
   const ITEM_INFO = {
     dice2: 'サイコロを 2つ ふれる',
@@ -554,9 +573,92 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       await sleep(3.6 / speed());
       camOn(e.slot);
       await sleep(0.6 / speed());
+    } else if (e.area === 'gate') {
+      // 風船の たばが 頭の上に ぽんっ。ふわっと 浮きあがる(このあと float で 先の マスへ)
+      camOn(e.slot);
+      cam.close = true;
+      p.balloons = fx.balloons(() => p.holder.position);
+      sfx.balloon();
+      react(e.slot, 'idle', 'surprised', 1.0);
+      await sleep(0.7 / speed());
+      p.floatUp = { t: 0, dur: 1.4 };
+      react(e.slot, 'cheer', 'happy', 3);
+      await sleep(1.6 / speed());
+    } else if (e.area === 'coaster') {
+      // コースターの いきおいで 宙がえり! どんぐりが こぼれる(このあと loop で とびちる)
+      camOn(e.slot);
+      cam.close = true;
+      sfx.coaster(1.6);
+      react(e.slot, 'dizzy', 'surprised', 3);
+      p.flip = { t: 0, dur: 1.5 / speed() };
+      await sleep(1.7 / speed());
+      cam.shake = 0.2;
+      sfx.squash();
+    } else if (e.area === 'wheel') {
+      // 夜空に 花火が どーん
+      camOn(e.slot);
+      cam.close = true;
+      react(e.slot, 'cheer', 'happy', 4);
+      fx.fireworks(me().clone(), 7, () => { sfx.boom(); });
+      await sleep(4.0 / speed());
+    } else if (e.area === 'ghost') {
+      // うしろから 大きな おばけが ぬっ…「ばあ!」(このあと ghostSwap で 入れかわる)
+      camOn(e.slot);
+      cam.close = true;
+      fx.bigGhost(me().clone(), 2.6 / speed());
+      sfx.spooky();
+      await sleep(0.7 / speed());
+      p.jumpT = 0;
+      react(e.slot, 'dizzy', 'surprised', 2);
+      cam.shake = 0.3;
+      await sleep(1.9 / speed());
     }
     cam.close = false;
     happenTint(null);
+  }
+
+  // 乗り物に 乗る: 乗り場へ → 乗り物の 道すじ(おばけ屋敷は 中へ 消えて、えんとつから とびだす)→ 行き先へ とぶ
+  function ridePath(p, fn, dur) {
+    return new Promise((resolve) => { p.ride = { fn, t: 0, dur, resolve }; });
+  }
+  async function playRide(e) {
+    const p = game.pieces[e.slot];
+    const r = view.rides[e.ride];
+    const o = RIDE_OUTCOME[e.outcome];
+    camOn(e.slot);
+    if (r) {
+      await animTo(p, r.enter, { time: 0.8 / speed(), arc: 1.4 });
+      if (e.ride === 'ghost') {
+        await animTo(p, r.door, { time: 0.4 / speed(), hop: false });
+        p.holder.visible = false;
+        r.scare(2.2 / speed());
+        sfx.spooky();
+        cam.shake = 0.35;
+        await sleep(2.2 / speed());
+        p.holder.position.copy(r.chimney);
+        p.holder.visible = true;
+        fx.puff(r.chimney.clone().setY(r.chimney.y - 0.5));
+        react(e.slot, 'dizzy', 'surprised', 2);
+      } else {
+        // カメラは 乗っている 子を 追いかける
+        cam.ball = p.holder.position;
+        cam.mode = 'ball';
+        cam.glide = true;
+        if (e.ride === 'coaster') sfx.coaster(r.time / speed()); else sfx.chime();
+        react(e.slot, 'cheer', 'happy', r.time + 1);
+        await ridePath(p, r.path, r.time / speed());
+        camOn(e.slot);
+      }
+    }
+    // 行き先へ(その場なら 乗り場へ もどる)
+    await movePiece(e.slot, e.to, { time: (e.outcome === 'stay' ? 1.2 : 1.8) / speed(), arc: e.outcome === 'stay' ? 2.5 : 6 });
+    p.squash = 1;
+    fx.sparkle(p.holder.position.clone().setY(0.4), 12, 2);
+    settlePieces();
+    if (e.outcome === 'owl') { sfx.medal(); fx.confetti(p.holder.position.clone(), 50); }
+    else if (e.outcome === 'back') sfx.lose(); else sfx.gain();
+    react(e.slot, e.outcome === 'back' ? 'dizzy' : 'cheer', e.outcome === 'back' ? 'frustrated' : 'happy', 1.8);
+    await explain({ color: o.color, mark: '乗', title: o.title, text: o.text, who: e.slot, sec: 2.2 });
   }
 
   // ── できごとを見せる ──────────────────────────────
@@ -614,7 +716,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           view.pulse(e.sq);
           const q = st.squares[e.sq];
           const info = q.ice ? KIND_INFO.ice : KIND_INFO[e.kind];
-          if (info && e.kind !== 'happen') await explain({ ...info, text: info.text(s.turns - s.turn < RULES.spurtTurns), who: e.slot });
+          if (q.ride) await explain({ ...info, title: `${st.rides[q.ride].name}の 乗り場`, text: `どんぐり ${st.rides[q.ride].price}こで 乗れる。行き先は くじ!`, who: e.slot });
+          else if (info && e.kind !== 'happen') await explain({ ...info, text: info.text(s.turns - s.turn < RULES.spurtTurns), who: e.slot });
           break;
         }
         case 'slide':
@@ -650,6 +753,51 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           fx.sparkle(p.holder.position.clone().setY(0.4), 12, 2);
           settlePieces();
           await sleep(0.5 / speed());
+          break;
+        }
+        case 'ride':
+          await playRide(e);
+          break;
+        case 'rideSkip':
+          if (e.why) await explain({ color: '#ff4f9a', mark: '乗', title: '乗れない…', text: 'どんぐりが たりない', who: e.slot, sec: 1.8 });
+          break;
+        case 'float': {
+          // 風船で ふわっと 先の マスへ。着いたら 風船を はなす
+          camOn(e.slot);
+          const p = game.pieces[e.slot];
+          p.floatUp = null;
+          await movePiece(e.slot, e.to, { time: 2.4 / speed(), arc: 2.5 });
+          p.balloons?.release();
+          p.balloons = null;
+          p.squash = 0.6;
+          settlePieces();
+          await sleep(0.5 / speed());
+          break;
+        }
+        case 'loop':
+          // どんぐりが こぼれて、コースターに いる 子へ とんでいく
+          fx.spill(game.pieces[e.slot].holder.position.clone().setY(1.6), Math.max(4, e.drop * 2), e.to.map((i) => game.pieces[i].holder.position.clone()));
+          sfx.lose();
+          await sleep(0.8 / speed());
+          break;
+        case 'fireworks':
+          break;
+        case 'ghostSwap': {
+          // ぽん! と けむりに なって、場所が 入れかわる
+          camOver();
+          const a = game.pieces[e.slot], b = game.pieces[e.target];
+          fx.puff(a.holder.position.clone());
+          fx.puff(b.holder.position.clone());
+          sfx.spooky();
+          const sa = b.sq, sb = a.sq;
+          await Promise.all([movePiece(e.slot, sa, { time: 1.2 / speed(), arc: 4 }), movePiece(e.target, sb, { time: 1.2 / speed(), arc: 4 })]);
+          settlePieces();
+          fx.puff(a.holder.position.clone());
+          fx.puff(b.holder.position.clone());
+          react(e.slot, 'dizzy', 'surprised', 1.6);
+          react(e.target, 'dizzy', 'surprised', 1.6);
+          await explain({ color: '#9b6bff', mark: '!', title: 'おばけの いたずら!', text: `${name(e.slot)}と ${name(e.target)}が 入れかわった`, sec: 2 });
+          camOn(e.slot);
           break;
         }
         case 'swap': {
@@ -801,6 +949,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           say(`${name(pend.slot)}は ${path === 'lily' ? 'ハスの近道' : path === 'ice' ? '氷の近道' : 'このままの道'}へ`);
           await sleep(1.0 / speed());
         }
+        if (pend.type === 'ride') {
+          say(`${name(pend.slot)}は ${st.rides[pend.ride].name}に ${action.type === 'rideYes' ? '乗る!' : '乗らない'}`);
+          await sleep(1.0 / speed());
+          say('');
+        }
       }
       if (!live()) return;
       const ev = act(s, action);
@@ -882,6 +1035,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           { label: 'かわない', value: null, main: true },
         ]);
         return v ? a('shopBuy', { item: v }) : a('shopSkip');
+      }
+      case 'ride': {
+        const r = st.rides[pend.ride];
+        const v = await choose(`${r.name}に 乗る?(どんぐり ${r.price})`, [{ label: '乗る!<small>行き先は くじ</small>', value: true, main: true }, { label: '乗らない', value: false }]);
+        return a(v ? 'rideYes' : 'rideNo');
       }
       case 'duelPick': {
         const v = await choose('対決: だれと勝負する?', [
@@ -1107,7 +1265,31 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           p.holder.rotation.y = p.face;
         }
         if (p.spin) { p.face += dt * 12; p.holder.rotation.y = p.face; }
-        if (!p.anim && !p.podium) p.holder.position.y = spotOf(i).y + jump + lift;
+        // 風船で ふわっと 浮く
+        if (p.floatUp) {
+          p.floatUp.t += dt;
+          lift += Math.min(1, p.floatUp.t / p.floatUp.dur) ** 0.7 * 1.6 + Math.sin(p.floatUp.t * 3) * 0.08;
+        }
+        // 宙がえり(くるっと 2回)
+        if (p.flip) {
+          p.flip.t += dt;
+          const k = Math.min(1, p.flip.t / p.flip.dur);
+          lift += Math.sin(k * Math.PI) * 3.2;
+          p.holder.rotation.x = k * Math.PI * 4;
+          if (k >= 1) { p.flip = null; p.holder.rotation.x = 0; p.squash = 1; }
+        }
+        // 乗り物に 乗っている(道すじに そって 動く)
+        if (p.ride) {
+          const r = p.ride;
+          r.t += dt;
+          const k = Math.min(1, r.t / r.dur);
+          const before = p.holder.position.clone();
+          r.fn(k, p.holder.position);
+          const dx = p.holder.position.x - before.x, dz = p.holder.position.z - before.z;
+          if (dx * dx + dz * dz > 1e-6) p.face = Math.atan2(dx, dz);
+          if (k >= 1) { p.ride = null; r.resolve(); }
+        }
+        if (!p.anim && !p.podium && !p.ride) p.holder.position.y = spotOf(i).y + jump + lift;
         // ぺしゃんこ(雪玉・金の どんぐり・着地)から もどる
         if (p.squash > 0) {
           p.squash = Math.max(0, p.squash - dt * 2.2);

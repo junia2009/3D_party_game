@@ -12,6 +12,7 @@
 //   branch     分かれ道                                → { type: 'branch', to }
 //   owl        先生のマスを通る・止まる(メダルを買うか)→ { type: 'buyMedal' } / { type: 'skipMedal' }
 //   shop       どうぐ屋                                → { type: 'shopBuy', item } / { type: 'shopSkip' }
+//   ride       乗り物(遊園地)に乗るか                  → { type: 'rideYes' } / { type: 'rideNo' }
 //   duelPick   対決の相手                              → { type: 'duelPick', target } / { type: 'duelSkip' }
 //   duelGame   対決の競技(画面が遊ばせて、結果を返す)  → { type: 'duelResult', winner }
 //   minigame   みんなの競技(画面が遊ばせて、順位を返す)→ { type: 'minigameResult', ranking, picked? }
@@ -32,7 +33,10 @@ export const RULES = {
   minigamePrize: [10, 6, 4, 2, 1],
   duelStake: 10,
   owlFar: 12, // 先生が移るとき、いまの場所からこれ以上はなれたマスへ
-  happen: { springBack: 3, summerHit: 10, summerNear: 3, summerRange: 3, winterLoss: 5 },
+  happen: {
+    springBack: 3, summerHit: 10, summerNear: 3, summerRange: 3, winterLoss: 5,
+    floatMin: 3, floatMax: 5, loopDrop: 5, fireAll: 3, fireHit: 6,
+  },
 };
 export const TURNS = [5, 10, 15];
 export const MINIGAMES = ['daruma', 'catch', 'sled', 'mato', 'tsumi', 'ikada', 'hana', 'hayauchi', 'sumo', 'kakure', 'dasshutsu', 'tsuna', 'nawa', 'kazan', 'yuki'];
@@ -239,6 +243,12 @@ export function act(s, a) {
       continueMove(s, ev);
       return ev;
     }
+    case 'ride': {
+      if (a.type === 'rideNo') { ev.push({ type: 'rideSkip', slot: pend.slot }); endPlayer(s, ev); return ev; }
+      if (a.type !== 'rideYes') break;
+      ride(s, ev, pend.slot, pend.ride);
+      return ev;
+    }
     case 'duelPick': {
       if (a.type === 'duelSkip') { ev.push({ type: 'duelSkip', slot: pend.slot }); endPlayer(s, ev); return ev; }
       if (a.type !== 'duelPick' || a.target === pend.slot || !s.players[a.target]) break;
@@ -356,6 +366,11 @@ function land(s, ev, slot, chained = false) {
     ev.push({ type: 'iceSlide', slot, to, n });
     return land(s, ev, slot, true);
   }
+  // 遊園地の乗り場: 乗るかを えらぶ(どんぐりが たりなければ 乗れない)
+  if (!chained && q.ride) {
+    if (p.acorns >= st.rides[q.ride].price) { s.pending = { type: 'ride', slot, ride: q.ride }; return; }
+    ev.push({ type: 'rideSkip', slot, why: 'どんぐりがない' });
+  }
   const mul = spurt(s) ? 2 : 1;
   switch (q.kind) {
     case 'blue': gain(s, slot, RULES.blue * mul, ev, 'blue'); break;
@@ -409,7 +424,55 @@ function happen(s, ev, slot, area) {
   } else if (area === 'winter') {
     // 雪玉ころころ: 冬にいる子はみんな -5
     s.players.forEach((o, i) => { if (st.squares[o.sq].area === 'winter') gain(s, i, -H.winterLoss, ev, 'happen'); });
+  } else if (area === 'gate') {
+    // 風船: 止まった子は 風船で ふわっと 3〜5 マス 先へ
+    const o = s.players[slot];
+    const n = H.floatMin + rint(s, H.floatMax - H.floatMin + 1);
+    for (let k = 0; k < n; k++) o.sq = ahead(st, o.sq);
+    ev.push({ type: 'float', slot, to: o.sq, n });
+  } else if (area === 'coaster') {
+    // 宙がえり: 止まった子は どんぐりを 5 こ 落とす。コースターに いる ほかの子が 山分け(わりきれない ぶんは 落ちたまま)
+    const others = s.players.map((_, i) => i).filter((i) => i !== slot && st.squares[s.players[i].sq].area === 'coaster');
+    const d = -gain(s, slot, -H.loopDrop, ev, 'happen');
+    ev.push({ type: 'loop', slot, drop: d, to: others });
+    const each = others.length ? Math.floor(d / others.length) : 0;
+    if (each > 0) for (const i of others) gain(s, i, each, ev, 'happen');
+  } else if (area === 'wheel') {
+    // 花火: みんな +3、止まった子は +6
+    ev.push({ type: 'fireworks', slot });
+    s.players.forEach((_, i) => gain(s, i, i === slot ? H.fireHit : H.fireAll, ev, 'happen'));
+  } else if (area === 'ghost') {
+    // おばけの いたずら: 止まった子と、くじで えらばれた ほかの子の 場所が いれかわる
+    const others = s.players.map((_, i) => i).filter((i) => i !== slot);
+    const t = others[rint(s, others.length)];
+    const a = s.players[slot], b = s.players[t];
+    [a.sq, b.sq] = [b.sq, a.sq];
+    ev.push({ type: 'ghostSwap', slot, target: t });
   }
+}
+
+// 乗り物に 乗る: どんぐりを はらって、行き先は くじ。着いた マスの 効果も 受ける(乗り場なら もう 乗らない)
+function ride(s, ev, slot, key) {
+  const st = stageOf(s);
+  const r = st.rides[key];
+  const p = s.players[slot];
+  gain(s, slot, -r.price, ev, 'ride');
+  let x = nextRandom(s) * r.outcomes.reduce((a, o) => a + o.w, 0);
+  const o = r.outcomes.find((c) => (x -= c.w) < 0) || r.outcomes[0];
+  const prev = prevMap(st);
+  const span = () => o.min + rint(s, o.max - o.min + 1);
+  let to = p.sq;
+  if (o.kind === 'owl') to = prev[s.owl];
+  else if (o.kind === 'ahead') { const n = span(); for (let i = 0; i < n; i++) to = ahead(st, to); }
+  else if (o.kind === 'back') { const n = span(); for (let i = 0; i < n; i++) to = prev[to]; }
+  else if (o.kind === 'warp') {
+    const spots = st.squares.filter((q) => !q.path && q.id !== s.owl && q.id !== p.sq);
+    to = spots[rint(s, spots.length)].id;
+  }
+  p.sq = to;
+  ev.push({ type: 'ride', slot, ride: key, outcome: o.kind, to });
+  if (o.kind === 'stay') { gain(s, slot, o.acorns, ev, 'ride'); endPlayer(s, ev); return; }
+  land(s, ev, slot, true);
 }
 
 // 先生が移る。who がいれば(笛)その子の 1〜10 マス先へ。いなければ(メダルを売った)遠くのマスへ

@@ -4,6 +4,7 @@
 // - 先生: 買えるなら買う
 // - どうぐ: 先生が近いときにサイコロを足す / 先生が遠くて負けているときに笛 / 先生のすぐ手前にいる子といれかえ
 // - お店: 先生のぶん(20)を残して買う
+// - 乗り物(遊園地): 先生が すぐ先なら 乗らない。そうでなければ 性格しだい(つよきは よく乗る)
 // - 対決: つよきは、どんぐりのいちばん多い子をえらぶ。しんちょうは、よほど得なときだけ
 //
 // 乱数は CPU ごとに持つ(シードはゲームのシードと席から作る)。
@@ -13,9 +14,9 @@ import { ITEMS, RULES, ranking, stepsTo } from './rules.js';
 import { STAGES } from './stages/index.js';
 
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', shortcut: 0.3, duel: 0.2, shop: 0.5 },
-  normal: { label: 'ふつう', shortcut: 0.5, duel: 0.5, shop: 0.7 },
-  bold: { label: 'つよき', shortcut: 0.8, duel: 0.9, shop: 0.9 },
+  cautious: { label: 'しんちょう', shortcut: 0.3, duel: 0.2, shop: 0.5, ride: 0.45 },
+  normal: { label: 'ふつう', shortcut: 0.5, duel: 0.5, shop: 0.7, ride: 0.7 },
+  bold: { label: 'つよき', shortcut: 0.8, duel: 0.9, shop: 0.9, ride: 0.95 },
 };
 
 export function createCpu(personality, seed, slot) {
@@ -76,6 +77,11 @@ export function cpuAct(cpu, s, slot) {
         }
       }
       return a('shopSkip');
+    }
+    case 'ride': {
+      const d = toOwl(me.sq);
+      if (me.acorns >= RULES.medalPrice && d <= 8) return a('rideNo');
+      return a(nextRandom(cpu) < P.ride ? 'rideYes' : 'rideNo');
     }
     case 'duelPick': {
       // どんぐりのいちばん多い子(自分より上位の子を少しえらびやすく)

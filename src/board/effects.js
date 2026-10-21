@@ -8,6 +8,11 @@
 //   どんぐりの雨 … どんぐりが どさどさ。さいごに 大きな 金の どんぐりが 頭に ゴツン(goldAcorn)
 //   つむじ風 … 落ち葉の 竜巻(じょうご形の 風の 渦と 葉っぱ)が 子を つつんで 巻きあげる
 //   雪玉ころころ … ころがるほど 大きくなる 雪玉が 冬の エリアを かけぬけ、雪けむりを 上げる
+// - 遊園地の ハプニング:
+//   風船 … 頭の上に 風船の たば(balloons)。release() で 空へ はなす
+//   宙がえり … どんぐりが こぼれて とびちる(spill)
+//   花火 … 打ちあがって、色とりどりに ひらく(fireworks)
+//   おばけ … 大きな おばけが ぬっと 出て「ばあ!」(bigGhost)。けむり(puff)
 // どれも play*() でよんで、毎フレーム update(dt) で動かす。
 
 import * as THREE from 'three';
@@ -452,7 +457,182 @@ export function createEffects(scene) {
     }
   }
 
+  // ── 遊園地 ─────────────────────────────────────
+  // 風船の たば: getPos の 頭の上に ついていく。release() で はなすと、ゆらゆら 空へ
+  const balloonGeo = new THREE.SphereGeometry(0.32, 12, 10).scale(1, 1.18, 1);
+  const balloonMats = [0xff4f6a, 0xffd23c, 0x5cc0ff, 0x7ad35a, 0xb48cff, 0xff9a3a].map((c) => new THREE.MeshToonMaterial({ color: c }));
+  const stringGeo = new THREE.CylinderGeometry(0.012, 0.012, 1, 3).translate(0, 0.5, 0);
+  const stringMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  function balloons(getPos, n = 7) {
+    const g = new THREE.Group();
+    const bs = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const r = i === 0 ? 0 : 0.42;
+      const off = new THREE.Vector3(Math.cos(a) * r, 2.6 + (i % 3) * 0.3, Math.sin(a) * r * 0.8);
+      const b = new THREE.Mesh(balloonGeo, balloonMats[i % balloonMats.length]);
+      b.position.copy(off);
+      const st = new THREE.Mesh(stringGeo, stringMat);
+      st.position.set(0, 1.35, 0);
+      st.scale.y = off.clone().sub(st.position).length();
+      st.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), off.clone().sub(st.position).normalize());
+      g.add(b, st);
+      bs.push({ b, ph: Math.random() * 6 });
+    }
+    g.scale.setScalar(0.01);
+    scene.add(g);
+    let t = 0, free = false, ft = 0;
+    add({ update(dt) {
+      t += dt;
+      if (!free) g.position.copy(getPos());
+      else { ft += dt; g.position.y += dt * (1.5 + ft * 2); g.position.x += Math.sin(ft * 2) * dt; }
+      g.scale.setScalar(Math.min(1, t / 0.35) * (free ? Math.max(0.01, 1 - (ft - 2) / 0.6) : 1));
+      for (const { b, ph } of bs) b.rotation.z = Math.sin(t * 2 + ph) * 0.15;
+      if (free && ft > 2.6) { scene.remove(g); return false; }
+      return true;
+    } });
+    return { release() { free = true; } };
+  }
+
+  // どんぐりが こぼれて、まわりに とびちる(はねて 消える)。to があれば そちらへ とんでいく
+  function spill(from, n = 10, to = []) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(acornGeo, acornMat);
+      m.scale.setScalar(3.2);
+      m.position.copy(from);
+      scene.add(m);
+      const target = to.length ? to[i % to.length] : null;
+      const a = Math.random() * Math.PI * 2;
+      const v = target
+        ? new THREE.Vector3((target.x - from.x) / 1.1, 7, (target.z - from.z) / 1.1)
+        : new THREE.Vector3(Math.cos(a) * 3, 5 + Math.random() * 3, Math.sin(a) * 3);
+      let t = -i * 0.04;
+      add({ update(dt) {
+        t += dt;
+        if (t < 0) return true;
+        v.y -= 13 * dt;
+        m.position.addScaledVector(v, dt);
+        m.rotation.x += dt * 9;
+        if (m.position.y < 0.35) { m.position.y = 0.35; v.multiplyScalar(0.4); v.y = Math.abs(v.y); }
+        if (t > 1.3) m.scale.setScalar(Math.max(0.01, 3.2 * (1 - (t - 1.3) / 0.3)));
+        if (t > 1.6) { scene.remove(m); return false; }
+        return true;
+      } });
+    }
+  }
+
+  // 花火: 下から 打ちあがって、上で 色とりどりに ひらく。onBurst はひらいたとき
+  const fwGeo = new THREE.SphereGeometry(0.11, 5, 4);
+  const fwColors = [0xff4f6a, 0xffd23c, 0x5cc0ff, 0x7ad35a, 0xb48cff, 0xff9a3a, 0xffffff];
+  function fireworks(center, n = 6, onBurst) {
+    for (let k = 0; k < n; k++) {
+      const color = fwColors[(k * 3) % fwColors.length];
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
+      const rocket = new THREE.Mesh(fwGeo, mat);
+      const x = center.x + (Math.random() - 0.5) * 9, z = center.z - 2 - Math.random() * 5;
+      const top = 9 + Math.random() * 4;
+      rocket.position.set(x, 0.5, z);
+      scene.add(rocket);
+      let t = -k * 0.45, burst = null;
+      add({ update(dt) {
+        t += dt;
+        if (t < 0) { rocket.visible = false; return true; }
+        rocket.visible = true;
+        if (!burst) {
+          rocket.position.y += dt * 14;
+          if (rocket.position.y >= top) {
+            burst = [];
+            const big = 0.9 + Math.random() * 0.5;
+            for (let i = 0; i < 36; i++) {
+              const m = new THREE.Mesh(fwGeo, mat);
+              m.position.copy(rocket.position);
+              const v = new THREE.Vector3().randomDirection().multiplyScalar(5 * big);
+              scene.add(m);
+              burst.push({ m, v });
+            }
+            rocket.visible = false;
+            onBurst?.(rocket.position.clone());
+            t = 0;
+          }
+          return true;
+        }
+        for (const p of burst) {
+          p.v.multiplyScalar(Math.exp(-dt * 1.8));
+          p.v.y -= 2.5 * dt;
+          p.m.position.addScaledVector(p.v, dt);
+        }
+        mat.opacity = Math.max(0, 1 - t / 1.6);
+        if (t > 1.6) { for (const p of burst) scene.remove(p.m); scene.remove(rocket); mat.dispose(); return false; }
+        return true;
+      } });
+    }
+  }
+
+  // 大きな おばけ: 子の うしろから ぬっと 大きくなって、ゆらゆら。sec で 消える
+  const ghostGeo = (() => {
+    const pts = [];
+    for (let i = 0; i <= 14; i++) {
+      const t = i / 14;
+      const r = t < 0.5 ? Math.sin(Math.acos(1 - t * 2)) : 1 + (t - 0.5) * 0.3;
+      pts.push(new THREE.Vector2(Math.max(0.01, r * 0.5), 0.5 - t * 1.1));
+    }
+    return new THREE.LatheGeometry(pts, 16);
+  })();
+  function bigGhost(pos, sec = 2.2) {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshToonMaterial({ color: 0xf6f2ff, transparent: true, opacity: 0.9 });
+    g.add(new THREE.Mesh(ghostGeo, mat));
+    const eye = new THREE.SphereGeometry(0.07, 8, 6);
+    const dark = new THREE.MeshBasicMaterial({ color: 0x1a1028 });
+    for (const ex of [-0.15, 0.15]) { const e = new THREE.Mesh(eye, dark); e.position.set(ex, 0.18, 0.44); e.scale.set(1, 1.4, 1); g.add(e); }
+    const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), dark);
+    mouth.position.set(0, -0.05, 0.45);
+    mouth.scale.set(1, 1.3, 0.5);
+    g.add(mouth);
+    // 手
+    for (const sx of [-1, 1]) { const h = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), mat); h.position.set(sx * 0.55, -0.1, 0.2); g.add(h); }
+    scene.add(g);
+    let t = 0;
+    add({ update(dt) {
+      t += dt;
+      const grow = Math.min(1, t / 0.5);
+      const fade = t > sec - 0.5 ? Math.max(0, (sec - t) / 0.5) : 1;
+      g.scale.setScalar(0.01 + (1 - (1 - grow) ** 3) * 3.4);
+      g.position.set(pos.x + Math.sin(t * 2) * 0.3, pos.y + 2.4 + Math.sin(t * 3) * 0.25, pos.z - 1.6);
+      g.rotation.z = Math.sin(t * 2.5) * 0.12;
+      mat.opacity = 0.9 * fade;
+      dark.opacity = fade;
+      dark.transparent = true;
+      if (t > sec) { scene.remove(g); mat.dispose(); dark.dispose(); return false; }
+      return true;
+    } });
+  }
+  // けむり(ぽん): 白い 玉が ふくらんで 消える
+  const puffMat = new THREE.MeshBasicMaterial({ color: 0xe8e0ff, transparent: true, opacity: 0.8, depthWrite: false });
+  function puff(pos, n = 8) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(sparkGeo, puffMat);
+      const a = (i / n) * Math.PI * 2;
+      m.position.copy(pos).add(new THREE.Vector3(Math.cos(a) * 0.4, 0.6 + Math.random() * 0.6, Math.sin(a) * 0.4));
+      scene.add(m);
+      const v = new THREE.Vector3(Math.cos(a) * 1.5, 0.8, Math.sin(a) * 1.5);
+      let t = 0;
+      add({ update(dt) {
+        t += dt;
+        m.position.addScaledVector(v, dt);
+        m.scale.setScalar(3 + t * 9);
+        if (t > 0.5) { scene.remove(m); return false; }
+        return true;
+      } });
+    }
+  }
+
   return {
+    balloons,
+    spill,
+    fireworks,
+    bigGhost,
+    puff,
     // 先生の目印を、先生の足もとへ
     markOwl(pos) { marker.position.set(pos.x, 0, pos.z); },
     giveMedal,
