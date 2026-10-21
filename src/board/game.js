@@ -451,7 +451,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     ice: { color: '#8fd3ff', mark: '❄', title: 'つるつる氷', text: () => '氷の上では 止まれない! もう少し すべる' },
   };
   const HAPPEN_INFO = {
-    spring: { title: '春の雨', text: '池があふれた! 春にいる子は みんな 3マス もどる' },
+    spring: { title: '春の雨', text: '池があふれた! 止まった子は 3マス もどる' },
     summer: { title: 'どんぐりの雨', text: '大木がゆれた! 止まった子は どんぐり +10、近くの子も +3' },
     autumn: { title: 'つむじ風', text: '風にとばされて、盤のどこかへ!' },
     winter: { title: '雪玉ころころ', text: '大きな雪玉! 冬にいる子は みんな どんぐり -5' },

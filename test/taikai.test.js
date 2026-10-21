@@ -248,10 +248,10 @@ test('ハプニング: 春の雨・夏のどんぐりの雨・秋のつむじ風
   let s = ready();
   owlAway(s);
   s.players[1].sq = 8; // 春
-  s.players[2].sq = 20; // 夏(春の雨にはかからない)
+  s.players[2].sq = 20; // 夏
   rollFrom(s, 0, 5, 1); // 6 は春のハプニング
-  assert.equal(s.players[0].sq, 3);
-  assert.equal(s.players[1].sq, 5);
+  assert.equal(s.players[0].sq, 3, '止まった子は 3マス もどる');
+  assert.equal(s.players[1].sq, 8, 'ほかの 春の子は そのまま');
   assert.equal(s.players[2].sq, 20);
 
   s = ready();

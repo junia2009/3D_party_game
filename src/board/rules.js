@@ -392,13 +392,11 @@ function happen(s, ev, slot, area) {
   s.players[slot].stats.happen++;
   ev.push({ type: 'happen', slot, area });
   if (area === 'spring') {
-    // 春の雨: 春にいる子はみんな 3 マスもどる
+    // 春の雨: 止まった子だけ 3 マスもどる
     const prev = prevMap(st);
-    s.players.forEach((o, i) => {
-      if (st.squares[o.sq].area !== 'spring') return;
-      for (let k = 0; k < H.springBack; k++) o.sq = prev[o.sq];
-      ev.push({ type: 'pushBack', slot: i, to: o.sq });
-    });
+    const o = s.players[slot];
+    for (let k = 0; k < H.springBack; k++) o.sq = prev[o.sq];
+    ev.push({ type: 'pushBack', slot, to: o.sq });
   } else if (area === 'summer') {
     // どんぐりの雨: 止まった子 +10、まわり(前後3マス)の子 +3
     gain(s, slot, H.summerHit, ev, 'happen');
