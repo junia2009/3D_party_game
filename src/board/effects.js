@@ -374,7 +374,7 @@ export function createEffects(scene) {
       const f = k * (path.length - 1);
       const i = Math.min(path.length - 2, Math.floor(f));
       tmp.lerpVectors(path[i], path[i + 1], f - i);
-      const sc = 0.6 + k * 1.2; // ころがるほど 大きく
+      const sc = 0.8 + k * 1.6; // ころがるほど 大きく
       m.scale.setScalar(sc);
       m.position.set(tmp.x, 1.2 * sc + Math.abs(Math.sin(t * 9)) * 0.15, tmp.z);
       m.rotation.x += dt * 5;
@@ -393,6 +393,7 @@ export function createEffects(scene) {
       if (t > sec + 0.3) { scene.remove(m); return false; }
       return true;
     } });
+    return m.position; // カメラが 追いかけられるように
   }
 
   // ── 表彰台(タイトルの島と同じ、木の段の台。ふだんは地面の下) ─────────────

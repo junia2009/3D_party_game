@@ -486,10 +486,6 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   }
 
   // ハプニングの演出。春と冬はみんなに起きるので、そのエリアを引いて見せる
-  function areaCenter(area) {
-    const qs = st.squares.filter((q) => q.area === area && !q.path);
-    return new THREE.Vector3(qs.reduce((a, q) => a + q.x, 0) / qs.length, 0, qs.reduce((a, q) => a + q.z, 0) / qs.length);
-  }
   // ハプニングの 特殊演出(5秒くらい。はやく ▶▶ のときは 待ちを みじかく)。
   // 結果(もどる・どんぐり・とばされる)は、このあとの できごとで 見せる
   function happenTint(area) {
@@ -534,11 +530,14 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     } else if (e.area === 'winter') {
       // ころがるほど 大きくなる 雪玉が 冬の エリアを かけぬける。ひかれた子は ぺしゃんこ
       const qs = st.squares.filter((q) => q.area === 'winter' && !q.path);
-      camArea(areaCenter('winter'));
+      camOn(e.slot);
+      cam.close = true;
+      react(e.slot, 'idle', 'surprised', 1.2);
       await sleep(0.6 / speed());
       sfx.snowball();
       const hitDone = new Set();
-      fx.snowball(qs.map((q) => new THREE.Vector3(q.x, 0, q.z)), 3.4, (pos, r) => {
+      // カメラは 雪玉を 追いかける
+      cam.ball = fx.snowball(qs.map((q) => new THREE.Vector3(q.x, 0, q.z)), 3.4, (pos, r) => {
         cam.shake = Math.max(cam.shake || 0, 0.12);
         game.pieces.forEach((q, i) => {
           if (hitDone.has(i) || st.squares[q.sq].area !== 'winter') return;
@@ -550,7 +549,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           }
         });
       });
-      await sleep(4.0 / speed());
+      cam.mode = 'ball';
+      cam.glide = true;
+      await sleep(3.6 / speed());
+      camOn(e.slot);
+      await sleep(0.6 / speed());
     }
     cam.close = false;
     happenTint(null);
@@ -1003,7 +1006,6 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   }
   function camOver() { cam.mode = 'overview'; cam.glide = true; }
   function camOwl() { cam.mode = 'owl'; cam.glide = true; }
-  function camArea(c) { cam.mode = 'area'; cam.area = c.clone(); }
   function updateCamera(dt, snap = false) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
@@ -1026,12 +1028,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       const near = cam.podiumNear;
       pos = cam.podium.clone().add(near ? new THREE.Vector3(0, portrait ? 4.2 : 3.4, portrait ? 7.5 : 6) : new THREE.Vector3(0, portrait ? 7 : 5, portrait ? 12 : 9));
       look = cam.podium.clone().add(new THREE.Vector3(0, near ? 2.0 : 1.0, 0));
-    } else if (cam.mode === 'area') {
-      // エリアぜんたい(ハプニングがみんなに起きるとき)
-      pos = cam.area.clone().add(new THREE.Vector3(0, portrait ? 30 : 20, portrait ? 22 : 17));
-      look = cam.area.clone();
     } else {
-      const target = cam.mode === 'owl' ? owl.root.position : game.pieces[cam.slot].holder.position;
+      const target = cam.mode === 'owl' ? owl.root.position : cam.mode === 'ball' ? cam.ball : game.pieces[cam.slot].holder.position;
       // 別の子へ切りかわったときは、ゆっくり移る(glide)。追いついたら、あとはぴったりついていく
       const d = focus.distanceTo(target);
       if (cam.glide && d < 1.2) cam.glide = false;
@@ -1056,7 +1054,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     // ゆっくり動かす(はやくのときは少しだけ速く)。遠くへ移るときは、はなれているほど速く追う
     // 子や先生を追っているときは、カメラは注目点にぴったり(ゆるさは注目点の動きのほうでつける)。
     // 全体・エリア・表彰台へ切りかわるときは、ゆっくり
-    const follow = cam.mode === 'slot' || cam.mode === 'owl';
+    const follow = cam.mode === 'slot' || cam.mode === 'owl' || cam.mode === 'ball';
     const far = Math.min(1, camera.position.distanceTo(pos) / 30);
     const rate = follow && !cam.glide ? 12 : (fast ? 2.6 : 1.5) + far * 2.5;
     const k = snap ? 1 : 1 - Math.exp(-dt * rate);
