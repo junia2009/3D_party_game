@@ -110,6 +110,10 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     rain: () => hiss({ type: 'highpass', f0: 2500, len: 2.6, gain: 0.06, attack: 0.4 }),
     acornRain: () => { for (let i = 0; i < 14; i++) voice({ type: 'triangle', pts: [[0, 700 + Math.random() * 500], [0.04, 500]], len: 0.06, gain: 0.05, at: 0.4 + Math.random() * 1.4 }); },
     whirl: () => hiss({ f0: 300, f1: 1800, q: 2, len: 2.2, gain: 0.08, attack: 0.5 }),
+    thunder: () => { hiss({ type: 'lowpass', f0: 900, f1: 120, len: 1.2, gain: 0.25, attack: 0.01 }); },
+    bonk: () => { voice({ type: 'triangle', pts: [[0, 900], [0.15, 300]], len: 0.2, gain: 0.12 }); hiss({ type: 'lowpass', f0: 1200, len: 0.15, gain: 0.1, attack: 0.005 }); },
+    splash: () => hiss({ type: 'lowpass', f0: 1800, f1: 300, len: 0.9, gain: 0.18, attack: 0.02 }),
+    squash: () => voice({ type: 'square', pts: [[0, 300], [0.2, 90]], len: 0.25, gain: 0.05 }),
     snowball: () => { hiss({ type: 'lowpass', f0: 300, len: 2.6, gain: 0.1, attack: 0.3 }); voice({ type: 'sine', pts: [[0, 70], [2.4, 55]], len: 2.6, gain: 0.08 }); },
     duel: () => [392, 392, 523].forEach((f, i) => voice({ type: 'square', pts: [[0, f]], len: i === 2 ? 0.4 : 0.12, gain: 0.05, at: i * 0.16 })),
     // 表彰式: ドラムロールと、ファンファーレ
@@ -250,16 +254,16 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     return pos;
   }
   // コマを sq へ(はねる / すべる)。おわったら resolve
-  function movePiece(i, sq, { hop = true, time = 0.24 } = {}) {
+  function movePiece(i, sq, { hop = true, time = 0.24, arc = 0.7 } = {}) {
     const p = game.pieces[i];
     p.sq = sq;
-    return animTo(p, spotOf(i), { hop, time });
+    return animTo(p, spotOf(i), { hop, time, arc });
   }
   // コマを to へ動かす。動いているとちゅうに次の動きが来たら、前の動きは「おわった」ことにする(待っている側が止まらないように)
-  function animTo(p, to, { hop = true, time = 0.24 } = {}) {
+  function animTo(p, to, { hop = true, time = 0.24, arc = 0.7 } = {}) {
     p.anim?.resolve();
     const from = p.holder.position.clone();
-    return new Promise((resolve) => { p.anim = { from, to: to.clone(), t: 0, time, hop, resolve }; });
+    return new Promise((resolve) => { p.anim = { from, to: to.clone(), t: 0, time, hop, arc, resolve }; });
   }
   // 同じマスにいる子の並びを、いまの手番に合わせて動かしなおす
   function stepForward() {
@@ -486,28 +490,70 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     const qs = st.squares.filter((q) => q.area === area && !q.path);
     return new THREE.Vector3(qs.reduce((a, q) => a + q.x, 0) / qs.length, 0, qs.reduce((a, q) => a + q.z, 0) / qs.length);
   }
-  function playHappen(e) {
-    const me = game.pieces[e.slot].holder.position;
+  // ハプニングの 特殊演出(5秒くらい。はやく ▶▶ のときは 待ちを みじかく)。
+  // 結果(もどる・どんぐり・とばされる)は、このあとの できごとで 見せる
+  function happenTint(area) {
+    const el = $('hfxB');
+    if (el) el.className = 'hfx ' + (area || '');
+  }
+  async function playHappen(e) {
+    const p = game.pieces[e.slot];
+    const me = () => p.holder.position;
+    happenTint(e.area);
     if (e.area === 'spring') {
-      const c = areaCenter('spring');
-      camArea(c);
-      fx.rain(c, 10, 2.6);
+      // 頭の上に 雨雲 → 雷と 大雨 → 足もとに 水たまり。あとで 波に 押しながされる(pushBack)
+      camOn(e.slot);
+      cam.close = true;
+      react(e.slot, 'idle', 'surprised', 4);
+      await sleep(0.4 / speed());
+      fx.stormCloud(me().clone(), 3.0, () => { sfx.thunder(); cam.shake = 0.25; react(e.slot, 'dizzy', 'surprised', 1.2); });
       sfx.rain();
+      await sleep(3.4 / speed());
     } else if (e.area === 'summer') {
+      // どんぐりが どさどさ → さいごに 大きな 金の どんぐりが 頭に ゴツン
       camOn(e.slot);
-      fx.acornRain(me, 3.2, 26);
+      cam.close = true;
+      react(e.slot, 'idle', 'surprised', 1.6);
+      fx.acornRain(me().clone(), 3.4, 44);
       sfx.acornRain();
+      await sleep(1.6 / speed());
+      fx.goldAcorn(me, () => { sfx.bonk(); cam.shake = 0.2; p.squash = 1; react(e.slot, 'dizzy', 'surprised', 1.0); });
+      await sleep(1.6 / speed());
+      react(e.slot, 'cheer', 'happy', 1.6);
+      await sleep(0.8 / speed());
     } else if (e.area === 'autumn') {
+      // 落ち葉の 竜巻が 子を つつんで、くるくる 回りながら 空へ。あとで 遠くへ とんでいく(blown)
       camOn(e.slot);
-      const p = game.pieces[e.slot];
-      fx.whirlwind(() => p.holder.position, 2.4);
+      cam.close = true;
+      fx.whirlwind(me, 3.6);
       sfx.whirl();
+      react(e.slot, 'dizzy', 'surprised', 4.2);
+      await sleep(0.6 / speed());
+      p.lift = { t: 0, dur: 3.0 };
+      await sleep(3.2 / speed());
     } else if (e.area === 'winter') {
+      // ころがるほど 大きくなる 雪玉が 冬の エリアを かけぬける。ひかれた子は ぺしゃんこ
       const qs = st.squares.filter((q) => q.area === 'winter' && !q.path);
       camArea(areaCenter('winter'));
-      fx.snowball(qs.map((q) => new THREE.Vector3(q.x, 0, q.z)), 2.6);
+      await sleep(0.6 / speed());
       sfx.snowball();
+      const hitDone = new Set();
+      fx.snowball(qs.map((q) => new THREE.Vector3(q.x, 0, q.z)), 3.4, (pos, r) => {
+        cam.shake = Math.max(cam.shake || 0, 0.12);
+        game.pieces.forEach((q, i) => {
+          if (hitDone.has(i) || st.squares[q.sq].area !== 'winter') return;
+          if (Math.hypot(q.holder.position.x - pos.x, q.holder.position.z - pos.z) < r + 0.5) {
+            hitDone.add(i);
+            q.squash = 1.6;
+            react(i, 'dizzy', 'frustrated', 2);
+            sfx.squash();
+          }
+        });
+      });
+      await sleep(4.0 / speed());
     }
+    cam.close = false;
+    happenTint(null);
   }
 
   // ── できごとを見せる ──────────────────────────────
@@ -575,13 +621,34 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           await movePiece(e.slot, e.to, { hop: false, time: 1.1 / speed() });
           settlePieces();
           break;
-        case 'pushBack':
-        case 'blown':
+        case 'pushBack': {
+          // 波に 押しながされる(すべるように、跳ねずに)
           camOn(e.slot);
-          await movePiece(e.slot, e.to, { time: (e.type === 'blown' ? 1.4 : 0.9) / speed() });
+          const p = game.pieces[e.slot];
+          const to = view.squarePos(e.to, new THREE.Vector3());
+          const dir = new THREE.Vector3(to.x - p.holder.position.x, 0, to.z - p.holder.position.z).normalize();
+          fx.surge(() => p.holder.position, dir, 1.5 / speed());
+          sfx.splash();
+          react(e.slot, 'dizzy', 'surprised', 1.6);
+          await movePiece(e.slot, e.to, { hop: false, time: 1.4 / speed() });
           settlePieces();
           await sleep(0.4 / speed());
           break;
+        }
+        case 'blown': {
+          // 空から 大きな 弧を えがいて とんでいく。カメラは 追いかける
+          camOn(e.slot);
+          const p = game.pieces[e.slot];
+          p.lift = null;
+          p.spin = 1;
+          await movePiece(e.slot, e.to, { time: 1.8 / speed(), arc: 6 });
+          p.spin = 0;
+          p.squash = 1;
+          fx.sparkle(p.holder.position.clone().setY(0.4), 12, 2);
+          settlePieces();
+          await sleep(0.5 / speed());
+          break;
+        }
         case 'swap': {
           camOver();
           const a = game.pieces[e.slot], b = game.pieces[e.target];
@@ -639,12 +706,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           await explain({ color: '#34c47c', mark: '?', title: `${ITEMS[e.item].name}を つかった!`, text: ITEM_INFO[e.item], who: e.slot, sec: 2.2 });
           break;
         case 'happen': {
-          react(e.slot, 'dizzy', 'surprised', 2.2);
           sfx.happen();
           const h = HAPPEN_INFO[e.area];
           splash(h.title + '!', 'red');
-          playHappen(e);
-          await explain({ color: '#9b6bff', mark: '!', title: `ハプニング: ${h.title}`, text: h.text, sec: 3.0 });
+          await playHappen(e);
+          await explain({ color: '#9b6bff', mark: '!', title: `ハプニング: ${h.title}`, text: h.text, sec: 1.8 });
           break;
         }
         case 'duel':
@@ -973,6 +1039,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       focus.lerp(target, snap ? 1 : 1 - Math.exp(-dt * rate));
       pos = focus.clone().add(new THREE.Vector3(0, portrait ? 12 : 9, portrait ? 8.5 : 7.5)); // 少し高めから(手前の木ごしにならないように)
       look = focus.clone().add(new THREE.Vector3(0, 0.8, portrait ? -1 : 0));
+      if (cam.close) {
+        // ハプニング: ぐっと 寄って、空も 少し 入れる
+        pos = focus.clone().add(new THREE.Vector3(0, portrait ? 6.5 : 5, portrait ? 9 : 7.5));
+        look = focus.clone().add(new THREE.Vector3(0, 2.2, 0));
+      }
     }
     if (intro < 1) {
       const e = 1 - (1 - intro) ** 3;
@@ -992,6 +1063,11 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     camera.position.lerp(pos, k);
     cam.look.lerp(look, k);
     camera.lookAt(cam.look);
+    if (cam.shake > 0) {
+      cam.shake = Math.max(0, cam.shake - dt);
+      camera.position.x += (Math.random() - 0.5) * cam.shake * 1.2;
+      camera.position.y += (Math.random() - 0.5) * cam.shake * 1.2;
+    }
   }
 
   function frame(rawDt, draw = true) {
@@ -1008,7 +1084,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           a.t += dt;
           const k = Math.min(1, a.t / a.time);
           p.holder.position.lerpVectors(a.from, a.to, k);
-          if (a.hop) p.holder.position.y += Math.sin(k * Math.PI) * 0.7;
+          if (a.hop) p.holder.position.y += Math.sin(k * Math.PI) * a.arc;
           const dx = a.to.x - a.from.x, dz = a.to.z - a.from.z;
           if (dx * dx + dz * dz > 0.01) p.face = Math.atan2(dx, dz);
           if (k >= 1) { p.anim = null; p.still = 0; a.resolve(); }
@@ -1024,8 +1100,23 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           p.jumpT += dt;
           jump = Math.sin(Math.min(1, p.jumpT / 0.42) * Math.PI) * 1.3;
         }
-        if (!p.anim && !p.podium) p.holder.position.y = spotOf(i).y + jump;
-        p.holder.rotation.y += (p.face - p.holder.rotation.y) * Math.min(1, dt * 8);
+        // つむじ風で 巻きあげられる(くるくる 回りながら 上へ)
+        let lift = 0;
+        if (p.lift) {
+          p.lift.t += dt;
+          lift = Math.min(1, p.lift.t / p.lift.dur) ** 1.4 * 4.5;
+          p.face += dt * 14;
+          p.holder.rotation.y = p.face;
+        }
+        if (p.spin) { p.face += dt * 12; p.holder.rotation.y = p.face; }
+        if (!p.anim && !p.podium) p.holder.position.y = spotOf(i).y + jump + lift;
+        // ぺしゃんこ(雪玉・金の どんぐり・着地)から もどる
+        if (p.squash > 0) {
+          p.squash = Math.max(0, p.squash - dt * 2.2);
+          const q = Math.min(1, p.squash) * 0.55;
+          p.holder.scale.set(1.25 * (1 + q * 0.6), 1.25 * (1 - q), 1.25 * (1 + q * 0.6));
+        } else if (p.holder.scale.y !== 1.25) p.holder.scale.setScalar(1.25);
+        if (!p.lift && !p.spin) p.holder.rotation.y += (p.face - p.holder.rotation.y) * Math.min(1, dt * 8);
         const s = game.s;
         const busy = p.anim && p.anim.hop;
         let clip = 'idle', face = 'normal';

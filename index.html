@@ -731,6 +731,15 @@
   .bcard .it { font-size: 8px; color: #34c47c; letter-spacing: 1px; min-height: 9px; }
   .bcard.me { outline: 3px solid var(--hud-ink); }
   .bcard.now { transform: translateY(5px); background: #fff3c4; }
+  /* ハプニングの あいだ、画面の ふちを 季節の 色に そめる */
+  .hfx {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  .hfx.spring { opacity: 1; background: radial-gradient(ellipse at center, transparent 45%, rgba(40, 60, 90, 0.55) 100%); }
+  .hfx.summer { opacity: 1; background: radial-gradient(ellipse at center, transparent 50%, rgba(255, 196, 60, 0.45) 100%); }
+  .hfx.autumn { opacity: 1; background: radial-gradient(ellipse at center, transparent 48%, rgba(230, 110, 30, 0.45) 100%); }
+  .hfx.winter { opacity: 1; background: radial-gradient(ellipse at center, transparent 45%, rgba(235, 245, 255, 0.7) 100%); }
   .bturn {
     position: absolute; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 84px);
     padding: 4px 14px; border-radius: 999px; background: rgba(31,42,51,.72); color: #fff; font: 800 13px var(--font-body);
@@ -1495,6 +1504,7 @@
 </div>
 
 <div class="hud" id="hudB" hidden>
+  <div class="hfx" id="hfxB"></div>
   <div class="top">
     <div class="bcards" id="cardsB"></div>
     <button class="pausebtn" id="pauseBtnB" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>

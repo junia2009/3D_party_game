@@ -3,11 +3,11 @@
 // - 先生: 金色の光の柱(遠くからでもわかる)と、足もとの金の輪。飛んでいくときは弧をえがいて、羽ばたきながら
 // - メダル: 先生からメダルが弧をえがいて、買った子の頭の上へ。きらきら
 // - どうぐ: 頭の上に、どうぐの形(サイコロ・葉っぱ・笛・袋)がぽんと出て、くるっと回って消える
-// - ハプニング:
-//   春の雨 … 雨つぶが降り、春のエリアに水たまりの波紋
-//   どんぐりの雨 … どんぐりが空から降ってくる
-//   つむじ風 … 葉っぱの竜巻が、子をつつんで巻きあげる
-//   雪玉ころころ … 大きな雪玉が、冬のエリアを転がっていく
+// - ハプニング(5秒くらいの 大きな 演出):
+//   春の雨 … 頭の上に 雨雲が もくもく、雷と 大雨、足もとに 水たまり。そのあと 波が 押しながす(surge)
+//   どんぐりの雨 … どんぐりが どさどさ。さいごに 大きな 金の どんぐりが 頭に ゴツン(goldAcorn)
+//   つむじ風 … 落ち葉の 竜巻(じょうご形の 風の 渦と 葉っぱ)が 子を つつんで 巻きあげる
+//   雪玉ころころ … ころがるほど 大きくなる 雪玉が 冬の エリアを かけぬけ、雪けむりを 上げる
 // どれも play*() でよんで、毎フレーム update(dt) で動かす。
 
 import * as THREE from 'three';
@@ -150,6 +150,102 @@ export function createEffects(scene) {
       return true;
     } });
   }
+  // 雨雲: 頭の上に もくもく ふくらんで、雷を 光らせ、真下に 大雨を ふらせる。足もとに 水たまりが ひろがる
+  const cloudMat = new THREE.MeshToonMaterial({ color: 0x6a7488, transparent: true, opacity: 0.95 });
+  const puddleMat = new THREE.MeshBasicMaterial({ color: 0x5aa8d8, transparent: true, opacity: 0.7, depthWrite: false });
+  function stormCloud(pos, sec = 3.4, onBolt) {
+    const g = new THREE.Group();
+    for (let i = 0; i < 9; i++) {
+      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.6 + Math.random() * 0.5, 1), cloudMat);
+      const a = (i / 9) * Math.PI * 2;
+      b.position.set(Math.cos(a) * (0.6 + Math.random() * 0.7), Math.random() * 0.4, Math.sin(a) * (0.5 + Math.random() * 0.5));
+      g.add(b);
+    }
+    g.position.set(pos.x, 5.2, pos.z);
+    g.scale.setScalar(0.01);
+    scene.add(g);
+    const flash = new THREE.PointLight(0xdfe8ff, 0, 18);
+    flash.position.set(pos.x, 4, pos.z);
+    scene.add(flash);
+    const bolt = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0xfff6a0 }));
+    scene.add(bolt);
+    const puddle = new THREE.Mesh(new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2), puddleMat.clone());
+    puddle.position.set(pos.x, 0.32, pos.z);
+    puddle.scale.setScalar(0.01);
+    scene.add(puddle);
+    const n = 160;
+    const drops = new THREE.InstancedMesh(dropGeo, dropMat, n);
+    drops.frustumCulled = false;
+    scene.add(drops);
+    const ps = Array.from({ length: n }, () => ({ x: pos.x + (Math.random() - 0.5) * 3.2, z: pos.z + (Math.random() - 0.5) * 2.6, y: Math.random() * 5 }));
+    const dummy = new THREE.Object3D();
+    let t = 0, nextBolt = 0.9, rip = 0;
+    add({ update(dt) {
+      t += dt;
+      const grow = Math.min(1, t / 0.6), fade = t > sec ? Math.max(0, 1 - (t - sec) / 0.6) : 1;
+      g.scale.setScalar((0.3 + grow * 0.9) * (0.5 + fade * 0.5) + Math.sin(t * 3) * 0.03);
+      g.rotation.y += dt * 0.3;
+      cloudMat.opacity = 0.95 * fade;
+      // 雨: 雲が ふくらんでから
+      const raining = t > 0.5 && t < sec;
+      rip -= dt;
+      ps.forEach((p, i) => {
+        p.y -= dt * 16;
+        if (p.y < 0.3) { p.y += 4.8; if (raining && rip <= 0) { rip = 0.06; ripple(p.x, p.z); } }
+        dummy.position.set(p.x, p.y, p.z);
+        dummy.scale.setScalar(raining ? 1 : 0.001);
+        dummy.updateMatrix();
+        drops.setMatrixAt(i, dummy.matrix);
+      });
+      drops.instanceMatrix.needsUpdate = true;
+      puddle.scale.setScalar(Math.max(0.01, Math.min(1, (t - 0.6) / 2) * 2.2 * fade));
+      // 雷: ぎざぎざの 光の すじと、ぴかっ
+      nextBolt -= dt;
+      if (nextBolt <= 0 && t < sec - 0.5) {
+        nextBolt = 1.1 + Math.random() * 0.6;
+        const pts = [];
+        let x = pos.x + (Math.random() - 0.5) * 0.8, z = pos.z + (Math.random() - 0.5) * 0.6;
+        for (let k = 0; k <= 6; k++) { pts.push(new THREE.Vector3(x, 5 - k * 0.75, z)); x += (Math.random() - 0.5) * 0.7; z += (Math.random() - 0.5) * 0.4; }
+        bolt.geometry.dispose();
+        bolt.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0), 24, 0.06, 4);
+        bolt.userData.t = 0.18;
+        flash.intensity = 60;
+        onBolt?.();
+      }
+      if (bolt.userData.t > 0) { bolt.userData.t -= dt; bolt.visible = Math.floor(bolt.userData.t * 40) % 2 === 0; } else bolt.visible = false;
+      flash.intensity *= Math.exp(-dt * 12);
+      if (t > sec + 0.6) {
+        scene.remove(g, flash, bolt, puddle, drops);
+        bolt.geometry.dispose();
+        puddle.material.dispose();
+        return false;
+      }
+      return true;
+    } });
+  }
+  // 波: 子の うしろから 前へ ざぶーんと 押しよせる 水の かべ(dir の 向きへ すすむ)
+  const waveMat = new THREE.MeshToonMaterial({ color: 0x6ac0ec, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+  const foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+  function surge(getPos, dir, sec = 1.4) {
+    const g = new THREE.Group();
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 3.2, 20, 1, true, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2), waveMat);
+    const crest = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.16, 6, 20, Math.PI).rotateY(Math.PI / 2), foamMat);
+    g.add(wall, crest);
+    scene.add(g);
+    let t = 0;
+    add({ update(dt) {
+      t += dt;
+      const p = getPos();
+      const k = Math.min(1, t / sec);
+      g.position.set(p.x - dir.x * 0.6, 0.2, p.z - dir.z * 0.6);
+      g.rotation.y = Math.atan2(dir.x, dir.z) + Math.PI / 2;
+      g.scale.set(1, Math.sin(Math.min(1, k * 1.4) * Math.PI) * 0.8 + 0.05, 1);
+      waveMat.opacity = 0.85 * (1 - Math.max(0, k - 0.7) / 0.3);
+      if (Math.random() < dt * 25) sparkle(new THREE.Vector3(p.x, 1.2, p.z), 1, 1.6);
+      if (t > sec) { scene.remove(g); return false; }
+      return true;
+    } });
+  }
   function ripple(x, z) {
     const m = new THREE.Mesh(rippleGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false }));
     m.position.set(x, 0.3, z);
@@ -195,35 +291,80 @@ export function createEffects(scene) {
     }
   }
 
+  // 大きな 金の どんぐり: 空から まっすぐ 落ちて 頭に ゴツン、はねて 消える
+  const goldAcornMat = new THREE.MeshToonMaterial({ color: 0xffd24a, emissive: 0x6a4a00, emissiveIntensity: 0.35 });
+  function goldAcorn(getPos, onHit) {
+    const m = new THREE.Mesh(acornGeo, goldAcornMat);
+    m.scale.setScalar(11);
+    scene.add(m);
+    let t = 0, y = 14, vy = 0, hit = false, vx = 0;
+    add({ update(dt) {
+      t += dt;
+      const p = getPos();
+      vy -= 26 * dt;
+      y += vy * dt;
+      if (!hit && y < p.y + 2.1) {
+        hit = true;
+        vy = 7;
+        vx = 2.5;
+        sparkle(new THREE.Vector3(p.x, p.y + 2.2, p.z), 26, 4);
+        onHit?.();
+      }
+      m.position.set(p.x + (hit ? vx * (t - 0) * 0.15 : 0), y, p.z);
+      m.rotation.z += dt * (hit ? 10 : 2);
+      if (hit) m.scale.setScalar(Math.max(0.01, m.scale.x - dt * 6));
+      if (t > 3 || (hit && m.scale.x < 0.1)) { scene.remove(m); return false; }
+      return true;
+    } });
+  }
+
   // ── つむじ風: 葉っぱの竜巻 ───────────────────────────
   const leafGeo = new THREE.CircleGeometry(0.16, 5);
   const leafMats = [0xe8642c, 0xf6b93b, 0x7cc35a, 0xc4532a].map((c) => new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide }));
+  const funnelMat = new THREE.MeshBasicMaterial({ color: 0xf2dcb0, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
   function whirlwind(getPos, sec = 1.8) {
-    const leaves = Array.from({ length: 50 }, (_, i) => {
+    // じょうご形の 風の 渦(3まい かさねて 回す)
+    const funnels = [0, 1, 2].map((k) => {
+      const pts = [];
+      for (let j = 0; j <= 8; j++) pts.push(new THREE.Vector2(0.3 + (j / 8) ** 1.6 * (1.8 + k * 0.3), (j / 8) * 5.5));
+      const f = new THREE.Mesh(new THREE.LatheGeometry(pts, 20), funnelMat);
+      scene.add(f);
+      return f;
+    });
+    const leaves = Array.from({ length: 120 }, (_, i) => {
       const m = new THREE.Mesh(leafGeo, leafMats[i % leafMats.length]);
       scene.add(m);
-      return { m, a: Math.random() * Math.PI * 2, h: Math.random() * 3.5, r: 0.5 + Math.random() * 0.9 };
+      return { m, a: Math.random() * Math.PI * 2, h: Math.random() * 5.5, r: 0.5 + Math.random() * 0.9 };
     });
     let t = 0;
     add({ update(dt) {
       t += dt;
       const c = getPos();
+      const grow = Math.min(1, t / 0.7), fade = t > sec ? Math.max(0.01, 1 - (t - sec) / 0.4) : 1;
+      funnels.forEach((f, k) => {
+        f.position.set(c.x, 0, c.z);
+        f.rotation.y += dt * (5 + k * 2);
+        f.scale.set(grow * fade, grow, grow * fade);
+      });
+      funnelMat.opacity = 0.32 * fade;
       for (const l of leaves) {
         l.a += dt * (6 + l.h);
         const r = l.r * (0.6 + l.h * 0.35);
-        l.m.position.set(c.x + Math.cos(l.a) * r, c.y + l.h, c.z + Math.sin(l.a) * r);
+        l.m.position.set(c.x + Math.cos(l.a) * r, l.h, c.z + Math.sin(l.a) * r);
         l.m.rotation.set(l.a, l.a * 0.7, 0);
         l.m.scale.setScalar(t > sec ? Math.max(0.01, 1 - (t - sec) / 0.4) : Math.min(1, t * 4));
       }
-      if (t > sec + 0.4) { for (const l of leaves) scene.remove(l.m); return false; }
+      if (t > sec + 0.4) { for (const l of leaves) scene.remove(l.m); for (const f of funnels) { scene.remove(f); f.geometry.dispose(); } return false; }
       return true;
     } });
   }
 
   // ── 雪玉ころころ ────────────────────────────────
   const snowMat = toonMaterial(0xf6fbff);
-  function snowball(path, sec = 2.2) {
+  const sprayMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true });
+  function snowball(path, sec = 2.2, onRoll) {
     const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 2), snowMat);
+    m.castShadow = true;
     scene.add(m);
     let t = 0;
     const tmp = new THREE.Vector3();
@@ -233,11 +374,22 @@ export function createEffects(scene) {
       const f = k * (path.length - 1);
       const i = Math.min(path.length - 2, Math.floor(f));
       tmp.lerpVectors(path[i], path[i + 1], f - i);
-      m.position.set(tmp.x, 1.2 + Math.abs(Math.sin(t * 9)) * 0.15, tmp.z);
+      const sc = 0.6 + k * 1.2; // ころがるほど 大きく
+      m.scale.setScalar(sc);
+      m.position.set(tmp.x, 1.2 * sc + Math.abs(Math.sin(t * 9)) * 0.15, tmp.z);
       m.rotation.x += dt * 5;
       m.rotation.z += dt * 2;
-      m.scale.setScalar(0.7 + k * 0.6);
-      if (Math.random() < dt * 30) sparkle(m.position.clone().setY(0.3), 1, 1.2);
+      onRoll?.(m.position, 1.2 * sc);
+      // 雪けむり
+      for (let j = 0; j < 2; j++) {
+        const s = new THREE.Mesh(sparkGeo, sprayMat);
+        s.scale.setScalar(2 + Math.random() * 2);
+        s.position.set(tmp.x + (Math.random() - 0.5) * sc * 2, 0.4, tmp.z + (Math.random() - 0.5) * sc * 2);
+        scene.add(s);
+        const v = new THREE.Vector3((Math.random() - 0.5) * 3, 2 + Math.random() * 3, (Math.random() - 0.5) * 3);
+        let u = 0;
+        add({ update(d2) { u += d2; v.y -= 9 * d2; s.position.addScaledVector(v, d2); s.scale.multiplyScalar(1 - d2 * 1.5); if (u > 0.7) { scene.remove(s); return false; } return true; } });
+      }
       if (t > sec + 0.3) { scene.remove(m); return false; }
       return true;
     } });
@@ -306,7 +458,10 @@ export function createEffects(scene) {
     showItem,
     sparkle,
     rain,
+    stormCloud,
+    surge,
     acornRain,
+    goldAcorn,
     whirlwind,
     snowball,
     raisePodium,
