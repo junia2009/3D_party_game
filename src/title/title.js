@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { CHARACTERS, PLAYER_COLORS, shownCharacters } from '../characters.js';
 import { createModel, preload } from '../runtime/models.js';
 import { recordBuild, release } from './release.js';
+import { clearTaikai, loadTaikai } from '../board/save.js';
 import { createAtmosphere } from '../games/daruma/atmosphere.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { ROLES, buildIsland, islandHeight } from './island.js';
@@ -222,7 +223,8 @@ function go(next) {
   $('ver').hidden = next !== 'title';
   screen = next;
   if (next === 'play') renderChars();
-  if (next === 'stages') renderStageMap();
+  if (next === 'stages') { renderStageMap(); renderResume(); }
+  if (next === 'menu') $('resumeBadge').hidden = !loadTaikai();
   if (next === 'zukan') {
     ensureFaces();
     zukan.open();
@@ -294,6 +296,7 @@ function ensureFaces() {
     faces = f;
     if (screen === 'play') renderChars();
     if (screen === 'zukan') zukan.refreshTabs();
+    if (screen === 'stages') renderResume();
   });
 }
 function renderChars() {
@@ -588,7 +591,9 @@ async function enterGame() {
   await wait(250);
   await curtain.cover();
   playing = await ready;
-  await playing.enter(picked, current === 'taikai' ? { fromSky: true, turns: taikai.turns, stage: taikai.stage } : undefined);
+  const resume = current === 'taikai' && taikai.resume ? loadTaikai() : null;
+  taikai.resume = false;
+  await playing.enter(picked, current === 'taikai' ? { fromSky: true, turns: taikai.turns, stage: taikai.stage, resume } : undefined);
   taikaiBoard = current === 'taikai' ? playing : null;
   active = 'game';
   dive.dir = 0;
@@ -670,6 +675,46 @@ function isleSvg(ready) {
     <rect x="57" y="30" width="6" height="12" fill="#6b4c36"/><circle cx="60" cy="28" r="10" fill="#4f9a3c" stroke="#2f6b25" stroke-width="2"/>
   </svg>`;
 }
+// つづきから: 保存しておいた 大会(board/save.js)が あれば、ステージの 地図の 上に 出す
+function renderResume() {
+  const d = loadTaikai();
+  $('resumeBox').hidden = !d;
+  if (!d) return;
+  const stg = STAGE_LIST.find((x) => x.key === d.s.stage);
+  const me = d.s.players[0];
+  const turn = Math.min(d.s.turn, d.s.turns);
+  $('resumeInfo').textContent = `${stg?.name || ''}・${turn}/${d.s.turns}ターン・メダル ${me.medals}・どんぐり ${me.acorns}`;
+  ensureFaces();
+  const face = faces?.[d.picked];
+  $('resumeFace').innerHTML = face ? `<img src="${face}" alt="">` : '';
+}
+$('resumeBtn').addEventListener('click', () => {
+  const d = loadTaikai();
+  if (!d) { renderResume(); return; }
+  unlockAudio();
+  knock();
+  current = 'taikai';
+  taikai.resume = true;
+  taikai.stage = d.s.stage;
+  taikai.turns = d.s.turns;
+  enterGame();
+});
+// けすのは 2回 おしたとき(まちがえて けさないように)
+$('resumeDel').addEventListener('click', () => {
+  const b = $('resumeDel');
+  if (!b.classList.contains('sure')) {
+    b.classList.add('sure');
+    b.textContent = 'もう一度 おすと けします';
+    setTimeout(() => { b.classList.remove('sure'); b.textContent = 'この大会を けす'; }, 3000);
+    boop();
+    return;
+  }
+  clearTaikai();
+  knock();
+  b.classList.remove('sure');
+  b.textContent = 'この大会を けす';
+  renderResume();
+});
 function renderStageMap() {
   const page = $('stageMap');
   page.replaceChildren();

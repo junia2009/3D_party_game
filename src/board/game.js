@@ -18,6 +18,7 @@ import { STAGES } from './stages/index.js';
 import { buildBoardScene, podiumSpot } from './scene.js';
 import { createEffects } from './effects.js';
 import { simulate } from './simulate.js';
+import { clearTaikai, saveTaikai } from './save.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -340,19 +341,24 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   const focus = new THREE.Vector3();
   let runId = 0;
 
-  async function startTournament({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const pick = { rng: seedFrom(`${seed}:pick`) };
-    const others = CHARACTERS.filter((c) => c.key !== picked && !c.guest).map((c) => c.key); // ゲストは CPU に出てこない
-    const kinds = Object.keys(PERSONALITIES);
-    const players = [{ character: picked, cpu: null, name: 'あなた' }];
-    while (players.length < 5) {
-      const key = others.splice(Math.floor(nextRandom(pick) * others.length), 1)[0];
-      players.push({ character: key, cpu: kinds[Math.floor(nextRandom(pick) * kinds.length)], name: CHARACTERS.find((c) => c.key === key).name });
+  // resume: 保存しておいた 大会(save.js)。あれば そこから つづける
+  async function startTournament({ fromSky = false, resume = null } = {}) {
+    const seed = resume ? resume.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    let players;
+    if (resume) players = resume.players;
+    else {
+      const pick = { rng: seedFrom(`${seed}:pick`) };
+      const others = CHARACTERS.filter((c) => c.key !== picked && !c.guest).map((c) => c.key); // ゲストは CPU に出てこない
+      const kinds = Object.keys(PERSONALITIES);
+      players = [{ character: picked, cpu: null, name: 'あなた' }];
+      while (players.length < 5) {
+        const key = others.splice(Math.floor(nextRandom(pick) * others.length), 1)[0];
+        players.push({ character: key, cpu: kinds[Math.floor(nextRandom(pick) * kinds.length)], name: CHARACTERS.find((c) => c.key === key).name });
+      }
     }
     if (game) for (const p of game.pieces) scene.remove(p.holder);
     fx.hidePodium();
-    const s = createTournament(players, seed, { turns: opts.turns, stage: opts.stage });
+    const s = resume ? resume.s : createTournament(players, seed, { turns: opts.turns, stage: opts.stage });
     const pieces = await Promise.all(players.map(async (p, i) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[i].hex);
@@ -364,7 +370,10 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       scene.add(holder);
       return { model, holder, sq: s.players[i].sq, anim: null, face: 0 };
     }));
-    game = { s, seed, players, pieces, cpus: players.map((p, i) => (p.cpu ? createCpu(p.cpu, seed, i) : null)) };
+    const cpus = players.map((p, i) => (p.cpu ? createCpu(p.cpu, seed, i) : null));
+    if (resume) cpus.forEach((c, i) => { if (c && resume.cpus?.[i]) Object.assign(c, resume.cpus[i]); });
+    game = { s, seed, players, pieces, cpus };
+    save();
     settlePieces();
     atmosphere.apply(params.get('time') || 'day');
     atmosphere.setupShadows(pieces.map((p) => p.holder), pieces.map((p) => p.holder));
@@ -698,6 +707,12 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   }
 
   // ── 進行 ────────────────────────────────────────
+  // さいごの 手番を 端末に しまう(ページが 読み込みなおされても つづきから 遊べるように)
+  function save() {
+    if (!game) return;
+    if (game.s.phase === 'finished') { clearTaikai(); return; }
+    saveTaikai({ picked, seed: game.seed, players: game.players, s: game.s, cpus: game.cpus });
+  }
   async function drive(id) {
     const live = () => id === runId && game;
     await sleep(0.1);
@@ -721,6 +736,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       if (!live()) return;
       const ev = act(s, action);
       if (ev[0]?.type === 'invalid') console.warn('できない操作', pend, action, ev[0]);
+      save(); // 見せる 前に しまう(見ている とちゅうで 切れても、この 手番は すんでいる)
       await show(ev);
     }
     if (live()) await ceremony(live);
@@ -1104,13 +1120,14 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     camera,
     frame,
     // opts: { turns, stage }
-    async enter(character, { fromSky = true, turns = 10, stage = 'shiki' } = {}) {
-      picked = character;
-      opts = { turns, stage };
-      st = STAGES[stage];
+    // resume: 保存しておいた 大会(save.js の loadTaikai)。あれば キャラ・ステージ・ターンも そちらに あわせる
+    async enter(character, { fromSky = true, turns = 10, stage = 'shiki', resume = null } = {}) {
+      picked = resume ? resume.picked : character;
+      opts = resume ? { turns: resume.s.turns, stage: resume.s.stage } : { turns, stage };
+      st = STAGES[opts.stage];
       unlockAudio();
       active = true;
-      await startTournament({ fromSky });
+      await startTournament({ fromSky, resume });
       renderer.compile(scene, camera);
     },
     // 競技からもどってきたとき(タイトルが呼ぶ)
