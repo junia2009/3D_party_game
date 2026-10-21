@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { CHARACTERS, PLAYER_COLORS, shownCharacters } from '../characters.js';
 import { createModel, preload } from '../runtime/models.js';
+import { recordBuild, release } from './release.js';
 import { createAtmosphere } from '../games/daruma/atmosphere.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { ROLES, buildIsland, islandHeight } from './island.js';
@@ -540,18 +541,37 @@ const dive = { k: 0, dir: 0, crown: new THREE.Vector3(-1.4, 4.5, -2.2) };
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// 組み立てた 競技は ひとつだけ 手もとに おく(大会の あいだは 大会の 盤も)。
+// ほかは 片づけて メモリを 返す。のこしつづけると、大会で 競技を 次々 遊ぶうちに
+// メモリが ふくらんで、スマホでは ページごと 読み込みなおされてしまう(release.js)。
+const built = {}; // 競技 → 片づけるための 記録
+function releaseGame(key) {
+  if (!built[key]) return;
+  release(built[key]);
+  delete built[key];
+  delete games[key];
+}
+function trimGames(keep) {
+  for (const k of Object.keys(built)) {
+    if (k === keep || (k === 'taikai' && taikaiBoard)) continue;
+    if (active === 'game' && built[k].value === playing) continue;
+    releaseGame(k);
+  }
+}
 function ensureGame(key) {
+  if (!games[key]) trimGames(key);
   games[key] ??= GAMES[key].load()
-    .then((create) => create({
+    .then((create) => recordBuild(() => create({
       renderer,
       settings,
       getAudio: () => { unlockAudio(); return audio; },
       onExit: (to) => leaveGame(to),
       playMinigame: (key2, lineup, character) => playMinigame(key2, lineup, character),
-    }))
-    .then((g) => {
+    })))
+    .then((rec) => {
+      built[key] = rec;
       if (active === 'title') applyQuality(); // 会場の組み立てで影の設定が変わるので、島に合わせなおす
-      return g;
+      return rec.value;
     });
   return games[key];
 }
@@ -585,7 +605,10 @@ async function leaveGame(to) {
   await curtain.cover();
   playing.exit();
   if (taikaiBoard && taikaiBoard !== playing) taikaiBoard.exit(); // 大会の競技のとちゅうでやめたら、大会もおわり
+  const wasTaikai = !!taikaiBoard;
   taikaiBoard = null;
+  // 大会から もどったら、大会の 盤と 競技を 片づける
+  if (wasTaikai) for (const k of Object.keys(built)) releaseGame(k);
   active = 'title';
   applyQuality();
   go(to);
@@ -618,6 +641,7 @@ async function playMinigame(key, lineup, character) {
   await curtain.cover();
   g.exit();
   playing = home;
+  releaseGame(key); // 大会の 競技は 遊びおわったら すぐ 片づける
   home.resume?.();
   await curtain.reveal();
   busy = false;
