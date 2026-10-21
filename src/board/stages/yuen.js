@@ -51,6 +51,7 @@ export const STAGE = {
   squares,
   start: 0,
   margin: 8, // 島の ふち(道の外に 乗り物を 置くので、四季の森より 広め)
+  time: 'dusk', // たそがれ(電球が きれいに 見える)
   isleShape: 4, // 島の形: 角の まるい 四角(2 なら だ円)。四すみにも 乗り物を 置ける
   owlSpots: squares.filter((q) => q.kind === 'blue' && q.id > 2 && q.id < 34).map((q) => q.id),
   shortcuts: {},

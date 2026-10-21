@@ -8,6 +8,8 @@
 // - おばけ屋敷: 左手前の 内がわ。窓が 光って、おばけが まわりを ふわふわ
 // - 風船屋さん: 入口の そば
 //
+// - 電球: 看板・屋根・観覧車の ふち・街灯の あいだの ひも。夕方の 空に、順に 光が 流れる(lights)
+//
 // 回るもの・動くものは userData.anchor を付ける(scene.js が そのまとまりごとに 描く回数を まとめる)。
 // rides[key] は、コマが 乗り物に 乗るときの 道すじ(game.js が 使う)。
 
@@ -64,10 +66,66 @@ function stripedPole(r, h, a = 0xe8402f, b = 0xfff6e0, n = 8) {
   return g;
 }
 
+// 電球の まわりの ぼんやりした 光
+const haloTex = (() => {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const x = cv.getContext('2d');
+  const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.25, 'rgba(255,255,255,.55)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = gr;
+  x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(cv);
+})();
+const PALETTE = [0xfff2a0, 0xffb8d8, 0xa8e4ff, 0xfff2a0, 0xc8ffb0];
+
 export function buildPark(g, st, rand, { near, isle, podium }) {
   const keep = []; // [x, z, r] 木を 置かない ところ
   const movers = []; // (dt, t) → void
   const rides = {};
+
+  // 電球の ならび: parent の 中の pts に 電球(InstancedMesh)と 光(Points)を 置く。
+  // 光は 順に 流れる(chase: 1 秒に 進む 電球の 数)。palette の 色を 順に
+  const bulbGeo = new THREE.SphereGeometry(1, 6, 4);
+  function lights(parent, pts, { size = 0.09, halo = 0.9, palette = PALETTE, chase = 6, gap = 3 } = {}) {
+    const n = pts.length;
+    const bulbs = new THREE.InstancedMesh(bulbGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), n);
+    const dummy = new THREE.Object3D();
+    const pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    pts.forEach((p, i) => {
+      dummy.position.copy(p);
+      dummy.scale.setScalar(size);
+      dummy.updateMatrix();
+      bulbs.setMatrixAt(i, dummy.matrix);
+      pos.set([p.x, p.y, p.z], i * 3);
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const glowPts = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: halo, map: haloTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    bulbs.frustumCulled = glowPts.frustumCulled = false;
+    parent.add(bulbs, glowPts);
+    const base = pts.map((_, i) => new THREE.Color(palette[i % palette.length]));
+    const c = new THREE.Color();
+    movers.push((dt, t) => {
+      const head = t * chase;
+      for (let i = 0; i < n; i++) {
+        // 流れる 光: gap こ おきに 明るい 電球。のこりは 少し くらい
+        const ph = ((head - i) % gap + gap) % gap;
+        const k = ph < 1 ? 1 : 0.45;
+        c.copy(base[i]).multiplyScalar(k);
+        bulbs.setColorAt(i, c);
+        col[i * 3] = c.r * 0.8; col[i * 3 + 1] = c.g * 0.8; col[i * 3 + 2] = c.b * 0.8;
+      }
+      bulbs.instanceColor.needsUpdate = true;
+      geo.attributes.color.needsUpdate = true;
+    });
+  }
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
   let time = 0;
 
   // ── 入口のゲート(スタートの うしろ) ─────────────────
@@ -89,12 +147,12 @@ export function buildPark(g, st, rand, { near, isle, podium }) {
     board.userData.noMerge = true;
     gate.add(board, mesh(new THREE.BoxGeometry(6.8, 1.6, 0.2), mat(0x7a4a24), 0, 4.1, -0.1));
     // 看板の まわりの 電球
-    const bulb = new THREE.SphereGeometry(0.08, 6, 4);
+    const row = [];
     for (let i = 0; i < 18; i++) {
       const u = i / 17;
-      gate.add(mesh(bulb, glow(i % 2 ? 0xfff2a0 : 0xffb8d8), -3.2 + u * 6.4, 4.95, 0.12));
-      gate.add(mesh(bulb, glow(i % 2 ? 0xffb8d8 : 0xfff2a0), -3.2 + u * 6.4, 3.25, 0.12));
+      row.push(V(-3.2 + u * 6.4, 4.95, 0.14), V(3.2 - u * 6.4, 3.25, 0.14));
     }
+    lights(gate, row, { size: 0.08, halo: 0.7 });
     // てっぺんの 大きな どんぐり
     const acorn = new THREE.Mesh(acornGeometry(), new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient }));
     acorn.scale.setScalar(7);
@@ -151,11 +209,13 @@ export function buildPark(g, st, rand, { near, isle, podium }) {
     const flag = mesh(new THREE.ConeGeometry(0.3, 0.8, 3), mat(0x5cc0ff), 0.38, 5.4, 0);
     flag.rotation.z = -Math.PI / 2;
     base.add(flag, mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 4), mat(0x8a5a32), 0, 5.2, 0));
-    const bulb = new THREE.SphereGeometry(0.09, 6, 4);
-    for (let i = 0; i < 24; i++) {
-      const a = (i / 24) * Math.PI * 2;
-      base.add(mesh(bulb, glow(i % 2 ? 0xfff2a0 : 0xffb8d8), Math.cos(a) * 3.35, 3.35, Math.sin(a) * 3.35));
+    const ring = [];
+    for (let i = 0; i < 32; i++) {
+      const a = (i / 32) * Math.PI * 2;
+      ring.push(V(Math.cos(a) * 3.36, 3.35, Math.sin(a) * 3.36));
+      if (i % 2 === 0) ring.push(V(Math.cos(a) * 2.4, 4.0, Math.sin(a) * 2.4)); // 屋根の 上にも
     }
+    lights(base, ring, { size: 0.09, halo: 0.8, chase: 8 });
     base.position.set(cx, 0, cz);
     g.add(base);
     const spin = anchor(new THREE.Group());
@@ -290,10 +350,14 @@ export function buildPark(g, st, rand, { near, isle, podium }) {
       const basis = new THREE.Matrix4().makeBasis(frames.binormals[k], frames.normals[k], frames.tangents[k]);
       o.quaternion.setFromRotationMatrix(basis);
     };
+    let ride = null; // 子が 乗っている あいだは、車両を 乗り場から 1周 させる({ k: 0〜1 })
     movers.push((dt) => {
-      const y = curve.getPointAt(u, look).y;
-      const v = 3.5 + Math.sqrt(Math.max(0, top + 0.6 - y)) * 3.2; // m/秒
-      u = (u + (v * dt) / len) % 1;
+      if (ride) u = (u0 + ride.k) % 1;
+      else {
+        const y = curve.getPointAt(u, look).y;
+        const v = 3.5 + Math.sqrt(Math.max(0, top + 0.6 - y)) * 3.2; // m/秒
+        u = (u + (v * dt) / len) % 1;
+      }
       cars.forEach((c, i) => place(c, u - (i * 1.0) / len));
     });
     // 乗り場(P[2])に いちばん 近い ところ
@@ -302,16 +366,42 @@ export function buildPark(g, st, rand, { near, isle, podium }) {
       const d = curve.getPointAt(i / 400, tmp).distanceToSquared(P[2]);
       if (d < best) { best = d; u0 = i / 400; }
     }
+    // 1周の 進み(0〜1)を、時間(0〜1)から: 低い ところほど 速い(ゆっくり 出て、坂を 下りると ぐんと)
+    const lap = (() => {
+      const N = 200, acc = [0];
+      for (let i = 0; i < N; i++) {
+        const y = curve.getPointAt(((u0 + i / N) % 1), look).y;
+        acc.push(acc[i] + 1 / (2.5 + Math.sqrt(Math.max(0, top + 0.6 - y)) * 3.2));
+      }
+      const total = acc[N];
+      return (t) => {
+        const want = t * total;
+        let i = 0;
+        while (i < N && acc[i + 1] < want) i++;
+        return (i + (want - acc[i]) / Math.max(1e-6, acc[i + 1] - acc[i])) / N;
+      };
+    })();
+    const q = new THREE.Quaternion(), turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
     rides.coaster = {
-      time: 4.6,
-      enter: new THREE.Vector3(9, 0.6, -14.2),
-      // t: 0〜1 で 1周。乗り場から
-      path(t, out = new THREE.Vector3()) {
-        const uu = (u0 + t) % 1;
+      time: 5.2,
+      // 乗り場に 車両を 呼んで おく(そこへ 子が 乗りこむ)
+      prepare() { ride = { k: 0 }; },
+      enter: new THREE.Vector3(),
+      // t: 0〜1 で 1周。子は 先頭の 車両に 乗る。quat には 車両の 向き(宙がえりで さかさまにも なる)
+      path(t, out = new THREE.Vector3(), quat) {
+        ride = t >= 1 ? null : { k: lap(t) };
+        const uu = (u0 + lap(Math.min(1, t))) % 1;
         const k = Math.min(199, Math.floor(uu * 200));
-        return curve.getPointAt(uu, out).addScaledVector(frames.normals[k], 0.55);
+        curve.getPointAt(uu, out).addScaledVector(frames.normals[k], 0.5);
+        if (quat) {
+          // 子の 前(+z)を 進む 向きに。上(+y)を レールの 上に
+          const m = new THREE.Matrix4().makeBasis(frames.binormals[k].clone().negate(), frames.normals[k], frames.tangents[k]);
+          quat.setFromRotationMatrix(m);
+        }
+        return out;
       },
     };
+    rides.coaster.enter.copy(curve.getPointAt(u0)).add(new THREE.Vector3(0, 0.5, 0));
     for (const [x, z, r] of [[2, -15.6, 2.4], [6.5, -16, 3.2], [10.5, -16, 3.2], [14, -15.6, 2.6]]) keep.push([x, z, r]);
   }
 
@@ -337,7 +427,13 @@ export function buildPark(g, st, rand, { near, isle, podium }) {
       wheel.add(mesh(new THREE.TorusGeometry(R * 0.55, 0.07, 6, 32), mat(0xfff6e0), 0, 0, sz));
     }
     const spoke = new THREE.CylinderGeometry(0.05, 0.05, R, 4);
-    const bulb = new THREE.SphereGeometry(0.1, 6, 4);
+    const rim = [];
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      rim.push(V(Math.cos(a) * R, Math.sin(a) * R, 0.62));
+      if (i % 3 === 0) rim.push(V(Math.cos(a) * R * 0.55, Math.sin(a) * R * 0.55, 0.62));
+    }
+    lights(wheel, rim, { size: 0.1, halo: 1.1, chase: 10, gap: 4 });
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2;
       for (const sz of [-0.5, 0.5]) {
@@ -345,7 +441,6 @@ export function buildPark(g, st, rand, { near, isle, podium }) {
         s.rotation.z = a - Math.PI / 2;
         wheel.add(s);
       }
-      wheel.add(mesh(bulb, glow(i % 2 ? 0xfff2a0 : 0xffb8d8), Math.cos(a) * R, Math.sin(a) * R, 0.62));
     }
     const gondolas = [];
     const gc = [0xff4f6a, 0xffd23c, 0x5cc0ff, 0x7ad35a, 0xb48cff, 0xff9a3a, 0xff8fb8, 0x4fd0c0];
@@ -362,17 +457,38 @@ export function buildPark(g, st, rand, { near, isle, podium }) {
     }
     wheel.position.set(hx, hy, hz);
     g.add(wheel);
+    let ride = null; // { from: 乗るときの 回り, gi: ゴンドラ }
     movers.push((dt) => {
-      wheel.rotation.z += dt * 0.12;
+      if (ride) wheel.rotation.z = ride.rot;
+      else wheel.rotation.z += dt * 0.12;
       for (const gd of gondolas) gd.rotation.z = -wheel.rotation.z; // いつも 上を 向く
     });
+    // ゴンドラ gi の 角度(a)が いまの 回りで どこに あるか
+    const gondolaAt = (gi, rot) => (gi / 8) * Math.PI * 2 + rot;
     rides.wheel = {
-      time: 4.2,
+      time: 4.6,
+      // いちばん 下に 近い ゴンドラを、ちょうど 下に もってくる
+      prepare() {
+        const rot = wheel.rotation.z;
+        let gi = 0, best = Infinity;
+        for (let i = 0; i < 8; i++) {
+          const d = Math.abs(Math.atan2(Math.sin(gondolaAt(i, rot) + Math.PI / 2), Math.cos(gondolaAt(i, rot) + Math.PI / 2)));
+          if (d < best) { best = d; gi = i; }
+        }
+        const from = -Math.PI / 2 - (gi / 8) * Math.PI * 2;
+        ride = { gi, from, rot: from };
+        rides.wheel.enter.set(hx, hy - R - 1.0, hz + 0.75);
+      },
       enter: new THREE.Vector3(hx, 0.4, hz + 1.6),
-      // 下から 右回りに てっぺんまで(ゴンドラの 前に 立つ)
+      // 下から てっぺんまで、ゴンドラの 前に 立って いっしょに あがる(ゆっくり 出て、ゆっくり 止まる)
       path(t, out = new THREE.Vector3()) {
-        const a = -Math.PI / 2 - Math.PI * t;
-        return out.set(hx + Math.cos(a) * R, hy + Math.sin(a) * R - 1.35, hz + 0.75);
+        if (!ride) return out;
+        const e = t < 1 ? 0.5 - Math.cos(Math.PI * t) / 2 : 1;
+        ride.rot = ride.from + Math.PI * e;
+        const a = gondolaAt(ride.gi, ride.rot);
+        out.set(hx + Math.cos(a) * R, hy + Math.sin(a) * R - 1.25, hz + 0.75);
+        if (t >= 1) { wheel.rotation.z = ride.rot; ride = null; }
+        return out;
       },
     };
     keep.push([hx, hz, 4.4]);
@@ -450,6 +566,35 @@ export function buildPark(g, st, rand, { near, isle, podium }) {
       scare(sec) { scare = sec; },
     };
     keep.push([cx, cz, 3.6]);
+  }
+
+  // ── 街灯と、あいだに 下がる 電球の ひも(道の 内がわ) ──────────────
+  {
+    const posts = [];
+    const pole = new THREE.CylinderGeometry(0.06, 0.08, 2.6, 6);
+    const globe = new THREE.SphereGeometry(0.2, 10, 8);
+    for (let i = 0; i < st.squares.length; i += 3) {
+      const q = st.squares[i];
+      const len = Math.hypot(q.x, q.z) || 1;
+      const x = q.x - (q.x / len) * 2.1, z = q.z - (q.z / len) * 2.1;
+      if (keep.some(([kx, kz, kr]) => (x - kx) ** 2 + (z - kz) ** 2 < (kr + 0.4) ** 2) || Math.hypot(x - podium.x, z - podium.z) < 4) { posts.push(null); continue; }
+      g.add(mesh(pole, mat(0x4a3a6a), x, 1.3, z), mesh(globe, glow(0xfff0c0), x, 2.7, z));
+      posts.push(V(x, 2.55, z));
+    }
+    const strand = [];
+    const lamps = [];
+    posts.forEach((a, i) => {
+      if (!a) return;
+      lamps.push(a.clone().setY(2.7));
+      const b = posts[(i + 1) % posts.length];
+      if (!b) return;
+      for (let k = 1; k < 8; k++) {
+        const u = k / 8;
+        strand.push(V(a.x + (b.x - a.x) * u, a.y - Math.sin(u * Math.PI) * 0.55, a.z + (b.z - a.z) * u));
+      }
+    });
+    lights(g, strand, { size: 0.06, halo: 0.55, chase: 5 });
+    lights(g, lamps, { size: 0.01, halo: 2.2, palette: [0xffe0a0], chase: 0, gap: 1 });
   }
 
   return {

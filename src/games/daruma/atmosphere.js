@@ -33,6 +33,14 @@ export const TIMES = {
     hemi: { sky: 0xffcfae, ground: 0x7a6478, intensity: 1.15 },
     fill: 0.35, disc: 0xffc070, rays: 0.28, rayColor: 0xffb070, mist: 0.2, stars: 0, birds: 'crow',
   },
+  // たそがれ(遊園地): 紫の 空、ピンクの 地平線。電球が きれいに 見える
+  dusk: {
+    label: 'たそがれ',
+    zenith: 0x34307a, horizon: 0xc9a2d8, fog: 0xb49ad0, fogNear: 80, fogFar: 340,
+    sun: { dir: [0.55, 0.28, -0.8], color: 0xffb890, intensity: 1.9 },
+    hemi: { sky: 0xd0c0ff, ground: 0x5a5078, intensity: 1.25 },
+    fill: 0.4, disc: 0xffc8a0, rays: 0, rayColor: 0xffb090, mist: 0, stars: 0.5, birds: 'none',
+  },
   night: {
     label: 'よる',
     zenith: 0x0c1636, horizon: 0x2c4472, fog: 0x22314f, fogNear: 30, fogFar: 190,
@@ -297,7 +305,7 @@ export function createAtmosphere(scene, renderer, camera, opts = {}) {
     stars.material.opacity = p.stars;
     stars.visible = p.stars > 0;
     for (const c of clouds) {
-      c.material.color.setHex(key === 'evening' ? 0xffc9a8 : key === 'night' ? 0x3a4a72 : 0xffffff);
+      c.material.color.setHex(key === 'evening' ? 0xffc9a8 : key === 'dusk' ? 0xe8a8c8 : key === 'night' ? 0x3a4a72 : 0xffffff);
       c.material.opacity = key === 'night' ? 0.5 : 0.9;
     }
     for (const m of mists) {

@@ -385,7 +385,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     game = { s, seed, players, pieces, cpus };
     save();
     settlePieces();
-    atmosphere.apply(params.get('time') || 'day');
+    atmosphere.apply(params.get('time') || st.time || 'day');
     atmosphere.setupShadows(pieces.map((p) => p.holder), pieces.map((p) => p.holder));
     placeOwl(s.owl, true);
     setMode('playing');
@@ -618,8 +618,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   }
 
   // 乗り物に 乗る: 乗り場へ → 乗り物の 道すじ(おばけ屋敷は 中へ 消えて、えんとつから とびだす)→ 行き先へ とぶ
-  function ridePath(p, fn, dur) {
-    return new Promise((resolve) => { p.ride = { fn, t: 0, dur, resolve }; });
+  function ridePath(p, fn, dur, tilt = false) {
+    return new Promise((resolve) => { p.ride = { fn, t: 0, dur, resolve, quat: tilt ? new THREE.Quaternion() : null }; });
   }
   async function playRide(e) {
     const p = game.pieces[e.slot];
@@ -627,6 +627,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     const o = RIDE_OUTCOME[e.outcome];
     camOn(e.slot);
     if (r) {
+      r.prepare?.();
       await animTo(p, r.enter, { time: 0.8 / speed(), arc: 1.4 });
       if (e.ride === 'ghost') {
         await animTo(p, r.door, { time: 0.4 / speed(), hop: false });
@@ -646,7 +647,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         cam.glide = true;
         if (e.ride === 'coaster') sfx.coaster(r.time / speed()); else sfx.chime();
         react(e.slot, 'cheer', 'happy', r.time + 1);
-        await ridePath(p, r.path, r.time / speed());
+        await ridePath(p, r.path, r.time / speed(), e.ride === 'coaster');
         camOn(e.slot);
       }
     }
@@ -1284,10 +1285,17 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           r.t += dt;
           const k = Math.min(1, r.t / r.dur);
           const before = p.holder.position.clone();
-          r.fn(k, p.holder.position);
-          const dx = p.holder.position.x - before.x, dz = p.holder.position.z - before.z;
-          if (dx * dx + dz * dz > 1e-6) p.face = Math.atan2(dx, dz);
-          if (k >= 1) { p.ride = null; r.resolve(); }
+          r.fn(k, p.holder.position, r.quat);
+          if (r.quat) p.holder.quaternion.copy(r.quat);
+          else {
+            const dx = p.holder.position.x - before.x, dz = p.holder.position.z - before.z;
+            if (dx * dx + dz * dz > 1e-6) p.face = Math.atan2(dx, dz);
+          }
+          if (k >= 1) {
+            p.ride = null;
+            if (r.quat) { p.holder.rotation.set(0, p.face, 0); }
+            r.resolve();
+          }
         }
         if (!p.anim && !p.podium && !p.ride) p.holder.position.y = spotOf(i).y + jump + lift;
         // ぺしゃんこ(雪玉・金の どんぐり・着地)から もどる
@@ -1296,7 +1304,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           const q = Math.min(1, p.squash) * 0.55;
           p.holder.scale.set(1.25 * (1 + q * 0.6), 1.25 * (1 - q), 1.25 * (1 + q * 0.6));
         } else if (p.holder.scale.y !== 1.25) p.holder.scale.setScalar(1.25);
-        if (!p.lift && !p.spin) p.holder.rotation.y += (p.face - p.holder.rotation.y) * Math.min(1, dt * 8);
+        if (!p.lift && !p.spin && !p.ride?.quat) p.holder.rotation.y += (p.face - p.holder.rotation.y) * Math.min(1, dt * 8);
         const s = game.s;
         const busy = p.anim && p.anim.hop;
         let clip = 'idle', face = 'normal';
