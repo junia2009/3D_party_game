@@ -92,6 +92,14 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
     whistle() { voice({ pts: [[0, 1400], [0.5, 500]], len: 0.5, gain: 0.03 }); },
     // ガコン: 床の 輪が 切りはなされる
     clunk() { noise({ len: 0.3, gain: 0.12, freq: [600, 120], type: 'lowpass', attack: 0.004 }); voice({ type: 'square', pts: [[0, 160], [0.2, 90]], len: 0.22, gain: 0.03 }); },
+    // ピッ ピッ ピッ ポーン: スタートの 合図
+    beep(last) { voice({ type: 'square', pts: [[0, last ? 1320 : 660]], len: last ? 0.5 : 0.16, gain: 0.05 }); },
+    // パフパフ: 車の クラクション
+    honk(vol = 1) { voice({ type: 'square', pts: [[0, 520], [0.12, 500]], len: 0.14, gain: 0.03 * vol }); voice({ type: 'square', pts: [[0, 660]], len: 0.14, gain: 0.025 * vol, at: 0.18 }); },
+    // ドロドロ: いっきうち
+    drum() { for (let i = 0; i < 18; i++) noise({ len: 0.06, gain: 0.05 + i * 0.004, freq: [220, 120], type: 'lowpass', at: i * 0.07 }); },
+    // ヒュー… ドーン: 花火
+    boom(vol = 1) { noise({ len: 0.7, gain: 0.2 * vol, freq: [500, 90], type: 'lowpass', attack: 0.005 }); noise({ len: 0.9, gain: 0.04 * vol, freq: [4000, 2500], type: 'highpass', at: 0.1, attack: 0.05 }); },
     fanfare() {
       [[0, 523], [0.12, 659], [0.24, 784], [0.36, 1047]].forEach(([at, f]) => voice({ type: 'square', pts: [[0, f]], len: 0.12, gain: 0.05, at }));
       voice({ type: 'square', pts: [[0, 1047]], len: 0.6, gain: 0.05, at: 0.5, vib: 12, vibRate: 7 });
@@ -260,10 +268,38 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
     u.holder.add(g);
     return g;
   }
+  // 花火: 下から 打ちあがって、上で 色とりどりに ひらく
+  const fwGeo = new THREE.SphereGeometry(0.21, 6, 4);
+  function firework(x, z, delay = 0) {
+    const color = [0xff4f6a, 0xffd23c, 0x5cc0ff, 0x7ad35a, 0xb48cff, 0xff8fd0][Math.floor(Math.random() * 6)];
+    const m = new THREE.Mesh(fwGeo, new THREE.MeshBasicMaterial({ color, transparent: true }));
+    m.position.set(x, 0.5, z);
+    m.visible = false;
+    scene.add(m);
+    fx.push({ obj: m, t: -delay, life: 99, vel: new THREE.Vector3(0, 13, 0), kind: 'rocket', top: 4 + Math.random() * 1.6, color });
+  }
   function updateFx(dt) {
     for (let i = fx.length - 1; i >= 0; i--) {
       const f = fx[i];
       f.t += dt;
+      if (f.kind === 'rocket') {
+        if (f.t < 0) continue;
+        f.obj.visible = true;
+        f.obj.position.addScaledVector(f.vel, dt);
+        if (f.obj.position.y >= f.top) {
+          for (let j = 0; j < 40; j++) {
+            const p = new THREE.Mesh(fwGeo, new THREE.MeshBasicMaterial({ color: f.color, transparent: true }));
+            p.position.copy(f.obj.position);
+            scene.add(p);
+            fx.push({ obj: p, t: 0, life: 1.4, vel: new THREE.Vector3().randomDirection().multiplyScalar(4 + Math.random()), kind: 'burst' });
+          }
+          sfx.boom(0.6);
+          scene.remove(f.obj);
+          f.obj.material.dispose();
+          fx.splice(i, 1);
+        }
+        continue;
+      }
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
       if (f.kind === 'puff') {
@@ -274,6 +310,10 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
         f.vel.y -= 10 * dt;
         f.obj.rotation.z += f.spin.z * dt;
         f.obj.lookAt(camera.position);
+        f.obj.material.opacity = 1 - k;
+      } else if (f.kind === 'burst') {
+        f.vel.multiplyScalar(Math.exp(-dt * 1.8));
+        f.vel.y -= 2.5 * dt;
         f.obj.material.opacity = 1 - k;
       } else if (f.kind === 'fade') {
         f.obj.material.opacity = 0.8 * (1 - k);
@@ -332,7 +372,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     runners[0].holder.add(marker);
     runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, duel: false, slow: 0 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, duel: false, slow: 0, count: 4, bulbT: 0, donut: 0 };
     $('hudQ').classList.remove('shrink');
     atmosphere.apply(params.get('time') || 'dusk');
     atmosphere.setupShadows([...runners.map((r) => r.holder)], [stage.group, ...stage.rings.map((r) => r.mesh), stage.disk]);
@@ -507,7 +547,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
       switch (e.type) {
         case 'start':
           splash('スタート!');
-          sfx.whistle();
+          sfx.beep(true);
           setTimeout(() => $('howtoQ').classList.remove('show'), 6000);
           break;
         case 'windup': {
@@ -561,7 +601,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
           for (const a of audience) a.until = time + 1.6 + Math.random();
           if (s.phase === 'play' && s.runners.filter((x) => x.alive).length === 2 && !game.duel) {
             game.duel = true;
-            setTimeout(() => splash('いっきうち!', 'gold small'), 900);
+            setTimeout(() => { splash('いっきうち!', 'gold small'); sfx.drum(); }, 900);
           }
           break;
         }
@@ -572,6 +612,10 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
           if (win) sfx.fanfare();
           const r = s.runners[e.winner];
           confetti(r.x, r.z);
+          // リンクの まわりから 花火、観客は 大よろこび、勝った 車は クラクション
+          for (let i = 0; i < 9; i++) firework(r.x + (Math.random() - 0.5) * 10, r.z - 5.5 - Math.random() * 3, 0.3 + i * 0.35); // 寄った カメラの 奥に 見える ところ
+          for (const a of audience) a.until = time + 6;
+          sfx.honk();
           break;
         }
       }
@@ -639,6 +683,16 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
         const buzz = r.wind > 0 ? Math.sin(time * 70) * 0.03 : 0;
         u.holder.position.set(r.x + buzz, FLOOR_Y + Math.abs(j) * 0.4, r.z);
         u.holder.rotation.set(u.pitch, r.h, u.roll + j);
+        // 勝った 車は その場で くるくる(ドーナツターン)
+        if (s.phase === 'finished' && slot === s.winner) {
+          game.donut += dt * 5.5;
+          u.holder.rotation.y = r.h + game.donut;
+          u.holder.rotation.z = 0.08;
+          if (Math.random() < 0.5) {
+            const a = r.h + game.donut;
+            addSkid(r.x - Math.sin(a) * 0.5, r.z - Math.cos(a) * 0.5);
+          }
+        }
         // ぶつかると ボディが むにゅっ
         u.squash = Math.max(0, u.squash - dt * 4);
         const q = Math.sin(u.squash * Math.PI) * 0.18 * u.squash;
@@ -678,8 +732,22 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
       a.model.play(a.until > time ? 'cheer' : 'idle');
       a.model.update(dt);
     }
+    // スポットライト: いっきうちは のこった 2台を、決着は 勝った 車を てらす
+    const alive = s.runners.map((r, i) => i).filter((i) => s.runners[i].alive);
+    const focus = s.phase === 'finished' && s.winner !== null ? [s.winner, s.winner, s.winner] : game.duel ? [alive[0], alive[1], null] : [null, null, null];
+    stage.spots.forEach((m, i) => {
+      const f = focus[i];
+      m.userData.focus = f !== null && f !== undefined;
+      if (m.userData.focus) {
+        const r = s.runners[f];
+        m.position.x += (r.x + (i === 2 ? 0.3 : 0) - m.position.x) * Math.min(1, dt * 5);
+        m.position.z += (r.z - m.position.z) * Math.min(1, dt * 5);
+      }
+    });
+    // 電球: いっきうち・決着で 速く 流れる
+    game.bulbT += dt * (s.phase === 'finished' ? 3 : game.duel ? 1.8 : 1);
     // リンクが ちぢむ: 暗くなる 輪の ふちに 火花、沈む 輪から けむり
-    const ch = stage.update(time, s, dt);
+    const ch = stage.update(game.bulbT, s, dt);
     for (const r of ch.dimmed) {
       for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; zap(Math.cos(a) * r.outer, FLOOR_Y + 0.1, Math.sin(a) * r.outer, 2); }
       sfx.clunk();
@@ -704,6 +772,8 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
         const near = s.phase === 'finished' ? 0.45 : 0.75;
         look.set(mx * 0.6, 0.4, mz * 0.6);
         pos.set(look.x, look.y + (pos.y - look.y) * near, look.z + (pos.z - look.z) * near);
+        // 決着: 低めの 正面から(奥の 空に 花火が 見える)
+        if (s.phase === 'finished') { look.set(mx, 1.6, mz - 1); pos.set(mx, 5.2, mz + 8.5); }
       }
     }
     camera.fov = portrait ? 52 : 45;
@@ -761,6 +831,16 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
     if (intro < 1 && !paused) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
+    }
+    // スタートの 合図: 3・2・1(クラクションも)
+    if (game && mode === 'playing' && intro >= 1 && game.state.phase === 'ready') {
+      const n = Math.ceil(RULES.readyTime - game.state.t);
+      if (n < game.count && n >= 1) {
+        game.count = n;
+        splash(String(n), 'small');
+        sfx.beep(false);
+        if (n === 2) sfx.honk(0.6);
+      }
     }
     // 落ちた 瞬間は 少し スロー
     if (game?.slow > 0) { game.slow = Math.max(0, game.slow - dt); dt *= 0.4; }
