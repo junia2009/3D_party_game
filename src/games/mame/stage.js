@@ -107,7 +107,7 @@ export function buildStage(scene) {
   const SKY = [
     [0, new THREE.Color(0x7ab8f0), 0], // 地面の 近くは もとの 空
     [30, new THREE.Color(0x5a9ae8), 0.6],
-    [55, new THREE.Color(0xf0a070), 0.85], // 夕やけ
+    [55, new THREE.Color(0xf6b07a), 0.72], // 夕やけ(もとの 空の 青が すこし すける)
     [78, new THREE.Color(0x6a4a9a), 0.95],
     [100, new THREE.Color(0x141838), 1], // よぞら
   ];

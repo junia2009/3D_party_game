@@ -70,6 +70,9 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
     grow() { noise({ len: 0.08, gain: 0.03, freq: [2500, 4000], q: 2 }); },
     miss() { voice({ type: 'square', pts: [[0, 420], [0.3, 150]], len: 0.32, gain: 0.05 }); noise({ len: 0.3, gain: 0.06, freq: [2000, 500], q: 0.8 }); },
     beep(last) { voice({ type: 'square', pts: [[0, last ? 1320 : 660]], len: last ? 0.5 : 0.16, gain: 0.05 }); },
+    combo(n) { [784, 988, 1175, 1568].slice(0, n >= 30 ? 4 : 3).forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.1, gain: 0.04, at: i * 0.05 })); },
+    boom() { noise({ len: 0.6, gain: 0.12, freq: [500, 90], type: 'lowpass', attack: 0.005 }); },
+    spurt() { [523, 659, 784, 1047, 1319].forEach((f, i) => voice({ type: 'square', pts: [[0, f]], len: 0.09, gain: 0.04, at: i * 0.06 })); },
     tick() { voice({ type: 'square', pts: [[0, 1500]], len: 0.04, gain: 0.03 }); },
     fanfare() {
       [[0, 523], [0.12, 659], [0.24, 784], [0.36, 1047]].forEach(([at, f]) => voice({ type: 'square', pts: [[0, f]], len: 0.12, gain: 0.05, at }));
@@ -108,9 +111,37 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       // 生えたばかりの 葉っぱは ぷくっと ひらく
       if (l.grow < 1) { l.grow = Math.min(1, l.grow + 1 / 60 * 7); const k = l.grow; l.mesh.scale.setScalar(k < 1 ? k * (1 + Math.sin(k * Math.PI) * 0.35) : 1); }
       l.mesh.material = i === top ? leafNew : leafMat;
+      // 乗られた 葉っぱは ぐっと しなって、ぷるんと もどる
+      if (l.dip !== undefined) {
+        l.dip += 1 / 60;
+        const k = l.dip;
+        l.mesh.rotation.z = (s.leaves[i].side === 'L' ? -1 : 1) * (0.12 - (k > 0 ? Math.sin(Math.min(1, k / 0.35) * Math.PI) * 0.35 * Math.exp(-k * 4) : 0));
+        if (k > 1) { delete l.dip; l.mesh.rotation.z = (s.leaves[i].side === 'L' ? -1 : 1) * 0.12; }
+      }
+      // ずっと そよ風で ゆれる
+      l.mesh.rotation.x = 0.6 + Math.sin(time * 2 + i * 0.7 + slot) * 0.05;
     }
   }
   function clearLeaves() { for (const map of stalks) { for (const l of map.values()) scene.remove(l.mesh); map.clear(); } }
+
+  // ── いちばん 高い 子の 王冠 ─────────────────────────
+  const crown = (() => {
+    const g = new THREE.Group();
+    const gold = new THREE.MeshToonMaterial({ color: 0xffd23c, emissive: 0x5a4000, gradientMap: toonGradient });
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.26, 0.16, 12, 1, true), gold));
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * Math.PI * 2;
+      const t = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.2, 4), gold);
+      t.position.set(Math.cos(a) * 0.26, 0.16, Math.sin(a) * 0.26);
+      g.add(t);
+    }
+    const gem = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff4f6a }));
+    gem.position.set(0, 0.02, 0.27);
+    g.add(gem);
+    g.visible = false;
+    scene.add(g);
+    return g;
+  })();
 
   // ── きらきら・葉っぱの 舞い・紙ふぶき ───────────────────
   const fx = [];
@@ -141,6 +172,18 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       scene.add(m);
       fx.push({ obj: m, t: 0, life: 3 + Math.random() * 1.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, -(0.7 + Math.random() * 0.6), (Math.random() - 0.5) * 0.6), spin: Math.random() * 8, kind: 'bit' });
     }
+  }
+  // 花火(決着): 勝った子の まわりの 空で ひらく
+  const fwGeo = new THREE.SphereGeometry(0.1, 5, 4);
+  function firework(p) {
+    const color = [0xff4f6a, 0xffd23c, 0x5cc0ff, 0x7ad35a, 0xb48cff][Math.floor(Math.random() * 5)];
+    for (let i = 0; i < 36; i++) {
+      const m = new THREE.Mesh(fwGeo, new THREE.MeshBasicMaterial({ color, transparent: true }));
+      m.position.copy(p);
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 1.3, vel: new THREE.Vector3().randomDirection().multiplyScalar(2.6), kind: 'spark' });
+    }
+    sfx.boom();
   }
   function updateFx(dt) {
     for (let i = fx.length - 1; i >= 0; i--) {
@@ -188,10 +231,11 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     runners[0].holder.add(marker);
     runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, count: 4, camY: 0, tick: 0, lastSec: 99 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, count: 4, camY: 0, tick: 0, lastSec: 99, shake: 0 };
     atmosphere.apply('day');
     atmosphere.setupShadows([], []);
     Object.assign(input, { side: null, target: null });
+    $('hudF').classList.remove('spurt');
     buildChips();
     setMode('playing');
     intro = fromSky ? 0 : 1;
@@ -320,6 +364,16 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
           u.side = e.side;
           u.anim = { from, to: standAt(e.slot, e.leaf, e.side), t: 0, time: RULES.jumpTime * 1.1, hop: true };
           if (e.slot === 0) { sfx.hop(e.leaf); flashBtn(e.side, true); }
+          // 乗った 葉っぱが しなる(着いた ときに)
+          const lf = stalks[e.slot].get(e.leaf);
+          if (lf) lf.dip = -RULES.jumpTime * 1.1;
+          // れんぞく: 10 ごとに きらきら
+          u.combo = (u.combo || 0) + 1;
+          if (u.combo % 10 === 0) {
+            const p = u.holder.position.clone().add(tmpV.set(0, 1, 0));
+            sparkle(standAt(e.slot, e.leaf, e.side).add(tmpV.set(0, 0.6, 0)), u.combo >= 30 ? 14 : 8, u.combo >= 30 ? 0xffd23c : 0xfff2a0);
+            if (e.slot === 0) { pop(`${u.combo} れんぞく!`, p.x, p.y + 0.8, 0.6, u.combo >= 30 ? 'gold' : ''); sfx.combo(u.combo); }
+          }
           if (e.leaf % 50 === 0) pop(`${e.leaf}まい!`, from.x, from.y + 1.6, 0.6, e.slot === 0 ? 'gold' : '');
           break;
         }
@@ -327,7 +381,10 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
           const from = u.holder.position.clone();
           u.anim = { from, to: standAt(e.slot, e.leaf, s.leaves[e.leaf]?.side || 'R'), t: 0, time: 0.4, hop: false, fall: true };
           leafBits(from, 6);
-          if (e.slot === 0) { sfx.miss(); flashBtn(e.side, false); pop('すべった!', from.x, from.y + 1.4, 0.6, 'red'); }
+          u.combo = 0;
+          // まちがえた ほうに 葉っぱは ないので、空を ふんで「すかっ」と 足が ばたばた
+          u.flail = 0.4;
+          if (e.slot === 0) { sfx.miss(); flashBtn(e.side, false); pop('すべった!', from.x, from.y + 1.4, 0.6, 'red'); game.shake = 0.25; }
           break;
         }
         case 'finished': {
@@ -336,6 +393,7 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
           splash(win ? 'いちばん 高い!' : 'しゅうりょう!', win ? 'gold' : '');
           if (win) sfx.fanfare();
           confetti(game.runners[e.winner].holder.position);
+          for (let i = 0; i < 7; i++) setTimeout(() => { if (game?.state === s) firework(game.runners[e.winner].holder.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 5, 2 + Math.random() * 2.5, -1.5))); }, 300 + i * 450);
           break;
         }
       }
@@ -379,11 +437,17 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
         const k = Math.min(1, a.t / a.time);
         u.holder.position.lerpVectors(a.from, a.to, a.fall ? k * k : k);
         if (a.hop) u.holder.position.y += Math.sin(k * Math.PI) * 0.45;
-        if (k >= 1) u.anim = null;
+        if (k >= 1) { u.anim = null; u.land = 1; }
         clip = a.fall ? 'dizzy' : 'cheer';
       } else u.holder.position.copy(standAt(slot, r.leaf, r.leaf ? s.leaves[r.leaf].side : 'R'));
       // 葉っぱの 上では つるの ほうを 少し 向く(手前を 見せる)
       u.holder.rotation.y = r.leaf ? (u.side === 'L' ? 0.5 : -0.5) : 0;
+      // 着地で むにゅっ、すべったら 足を ばたばた(体が ゆれる)
+      u.land = Math.max(0, (u.land || 0) - dt * 6);
+      const sq = Math.sin(u.land * Math.PI) * 0.15;
+      u.holder.scale.set(0.72 * (1 + sq), 0.72 * (1 - sq), 0.72 * (1 + sq));
+      u.flail = Math.max(0, (u.flail || 0) - dt);
+      u.holder.rotation.z = u.flail > 0 ? Math.sin(time * 40) * 0.25 : 0;
       if (r.stun > 0) { clip = 'dizzy'; face = 'frustrated'; }
       if (s.phase === 'finished') {
         const win = ranking(s)[0] === slot;
@@ -396,6 +460,19 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       if (u.marker) u.marker.position.set(0, 2.4 * u.size + 0.12 * Math.sin(performance.now() / 180), 0);
     }
     stage.update(time, camera);
+    // 王冠: いま いちばん 高い 子の 頭の 上(同じ 高さなら 先に 着いた 子)
+    const lead = ranking(s)[0];
+    const showCrown = s.phase !== 'ready' && s.runners[lead].leaf > 0;
+    crown.visible = showCrown;
+    if (showCrown) {
+      const h = game.runners[lead].holder;
+      crown.position.set(h.position.x, h.position.y + 1.55 * game.runners[lead].size, h.position.z);
+      crown.rotation.y = time * 2;
+      if (game.lead !== lead && s.phase === 'play') { game.lead = lead; if (lead === 0) pop('トップ!', h.position.x, h.position.y + 2.2, 0.6, 'gold'); }
+    }
+    [...$('chipsF').children].forEach((c, i) => c.classList.toggle('lead', showCrown && i === lead));
+    // のこり 10 秒: ラストスパート
+    if (s.phase === 'play' && timeLeft(s) <= 10 && !game.spurt) { game.spurt = true; splash('ラストスパート!', 'gold small'); sfx.spurt(); $('hudF').classList.add('spurt'); }
     // のこり 5 秒: チッ チッ
     if (s.phase === 'play') {
       const sec = Math.ceil(timeLeft(s));
@@ -429,6 +506,11 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       return;
     }
     camera.position.copy(pos);
+    if (game?.shake > 0) {
+      game.shake = Math.max(0, game.shake - dt);
+      camera.position.x += (Math.random() - 0.5) * game.shake;
+      camera.position.y += (Math.random() - 0.5) * game.shake;
+    }
     camera.lookAt(look);
   }
 
