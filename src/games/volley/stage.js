@@ -530,7 +530,12 @@ export function buildStage(scene) {
     return c;
   });
 
+  let netWob = 0;
+  const shakeNet = () => { netWob = 1; };
   function update(t, wind) {
+    netWob = Math.max(0, netWob - 0.025);
+    net.position.x = Math.sin(t * 38) * netWob * 0.12;
+    net.scale.y = 1 - netWob * 0.06;
     const p = seaGeo.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const x = seaBase[i * 3], z = seaBase[i * 3 + 2];
@@ -580,5 +585,5 @@ export function buildStage(scene) {
     towel.receiveShadow = true;
     scene.add(towel);
   }
-  return { group, update, flag, seats, umpire: new THREE.Vector3(0, 1.75, UZ) };
+  return { group, update, shakeNet, flag, seats, umpire: new THREE.Vector3(0, 1.75, UZ) };
 }

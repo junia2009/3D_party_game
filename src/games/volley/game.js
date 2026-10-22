@@ -204,6 +204,33 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 0.5, vel: new THREE.Vector3((Math.random() - 0.5) * 2, 0.8 + Math.random(), (Math.random() - 0.5) * 2), kind: 'spark' });
     }
   }
+  // うった しゅんかんの 光の わ(カメラを 向く)
+  const ringTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,255,1)';
+    g.lineWidth = 6;
+    g.beginPath();
+    g.arc(32, 32, 24, 0, Math.PI * 2);
+    g.stroke();
+    return new THREE.CanvasTexture(c);
+  })();
+  function flash(x, y, z, color = 0xffffff, size = 1) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, color, transparent: true, depthWrite: false }));
+    m.position.set(x, y, z);
+    m.scale.setScalar(0.3 * size);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.3, vel: new THREE.Vector3(), kind: 'flash', size });
+  }
+  // 地面に ひろがる 衝撃の わ(スパイクが 落ちた ところ)
+  const shockGeo = new THREE.RingGeometry(0.8, 1, 32).rotateX(-Math.PI / 2);
+  function shock(x, z, color = 0xffffff) {
+    const m = new THREE.Mesh(shockGeo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false }));
+    m.position.set(x, 0.03, z);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.5, vel: new THREE.Vector3(), kind: 'shock' });
+  }
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
   function confetti(x, z) {
     const colors = [...PLAYER_COLORS.map((c) => c.hex), 0xffd24a, 0xffffff];
@@ -233,6 +260,12 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
         f.vel.y -= 9 * dt;
         if (f.obj.position.y < 0.05) { f.obj.position.y = 0.05; f.vel.set(0, 0, 0); }
         f.obj.material.opacity = Math.min(1, (1 - k) * 3);
+      } else if (f.kind === 'flash') {
+        f.obj.scale.setScalar((0.3 + k * 1.2) * f.size);
+        f.obj.material.opacity = 1 - k;
+      } else if (f.kind === 'shock') {
+        f.obj.scale.setScalar(0.3 + k * 2.6);
+        f.obj.material.opacity = 0.9 * (1 - k);
       } else if (f.kind === 'spark') {
         f.obj.material.opacity = 1 - k;
         f.obj.rotation.y += dt * 6;
@@ -250,6 +283,18 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     }
     const w = game?.state ? (game.state.wind.until > game.state.t ? game.state.wind.z : 0) : 0;
     windShown += ((w ? 1 : 0) - windShown) * Math.min(1, dt * 2);
+    drift.material.opacity = windShown * 0.85;
+    if (windShown > 0.01) {
+      const dp = drift.geometry.attributes.position;
+      for (let i = 0; i < dp.count; i++) {
+        let z = dp.getZ(i) + Math.sign(w || 1) * dt * (5 + (i % 5));
+        if (z > 8) z -= 16;
+        if (z < -8) z += 16;
+        dp.setZ(i, z);
+        dp.setY(i, 0.05 + Math.abs(Math.sin(time * 3 + i)) * 0.45);
+      }
+      dp.needsUpdate = true;
+    }
     for (const [k, m] of streaks.entries()) {
       m.material.opacity = windShown * 0.5;
       if (windShown < 0.01) continue;
@@ -259,6 +304,16 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     }
   }
   let windShown = 0;
+  // 風で ながれる 砂(地面の すぐ 上)
+  const drift = (() => {
+    const n = 220, pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 24; pos[i * 3 + 1] = 0.05 + Math.random() * 0.5; pos[i * 3 + 2] = (Math.random() - 0.5) * 16; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xf6e2b0, size: 0.07, transparent: true, opacity: 0, depthWrite: false }));
+    scene.add(m);
+    return m;
+  })();
 
   // ── ゲームの進行 ────────────────────────────────────
   let mode = 'idle';
@@ -496,30 +551,56 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
           game.units[e.who].hitT = 1;
           game.units[e.who].hitKind = 'serve';
           sfx.serve();
+          flash(s.ball.x, s.ball.y, s.ball.z, 0xffffff, 1.2);
+          if (s.units[e.who].side === mySide) pop('サーブ!', s.units[e.who].x, 2.8, s.units[e.who].z, 'me', 700);
           break;
         case 'hit': {
           const u = game.units[e.who];
           u.hitT = 1;
           u.hitKind = e.kind;
           const su = s.units[e.who];
+          const bb = s.ball;
           if (e.kind === 'spike') {
             sfx.spike();
-            pop('スパイク!', su.x, 3.4, su.z, e.who === game.meIdx ? 'gold' : 'me', 900);
-            sparkle(s.ball.x, s.ball.y, s.ball.z, 8, 0xffe07a);
-            game.shake = 0.18;
-          } else if (e.kind === 'toss') sfx.toss();
-          else sfx.bump();
+            pop('スパイク!', su.x, 3.6, su.z, e.who === game.meIdx ? 'gold' : 'me', 900);
+            sparkle(bb.x, bb.y, bb.z, 12, 0xffe07a);
+            flash(bb.x, bb.y, bb.z, 0xffe07a, 2.2);
+            game.shake = 0.22;
+          } else {
+            if (e.kind === 'toss') sfx.toss();
+            else sfx.bump();
+            flash(bb.x, bb.y, bb.z, 0xffffff, e.kind === 'toss' ? 0.9 : 1.3);
+            // レシーブは 足もとから 砂が ぱっ
+            if (e.kind === 'pass' || e.kind === 'lob') sandBurst(su.x, su.z, 5, 1.2);
+          }
           if (e.kind !== 'spike' && su.side === mySide) pop(['', 'レシーブ', 'トス', 'アタック'][Math.min(3, e.touches)] || '', su.x, 2.6, su.z, 'me', 600);
           break;
         }
         case 'net':
           sfx.net();
+          stage.shakeNet();
           pop('ネット!', 0, 2.6, e.z, 'red', 900);
           break;
-        case 'land':
+        case 'land': {
           sfx.land();
-          sandBurst(e.x, e.z, e.inside ? 14 : 8);
+          const spike = s.ball.kind === 'spike';
+          sandBurst(e.x, e.z, spike ? 26 : e.inside ? 14 : 8, spike ? 3.6 : 2.4);
+          if (spike) { shock(e.x, e.z, 0xfff2c0); game.shake = Math.max(game.shake, 0.3); pop('ドカン!', e.x, 1.2, e.z, 'red', 800); }
+          if (!e.inside) pop('アウト', e.x, 1.0, e.z, 'red', 800);
+          // 落ちた ところの 近くの 子は 飛びこむ(とどかなかった…)
+          let diver = null, dd = 2.2;
+          s.units.forEach((su, j) => {
+            if (Math.sign(su.x) !== Math.sign(e.x)) return;
+            const d = Math.hypot(su.x - e.x, su.z - e.z);
+            if (d < dd && d > 0.35) { dd = d; diver = j; }
+          });
+          if (diver !== null) {
+            const su = s.units[diver];
+            game.units[diver].dive = { t: 0, dir: Math.atan2(e.x - su.x, e.z - su.z), reach: Math.min(0.9, dd - 0.3) };
+            setTimeout(() => game && sandBurst(su.x + Math.sin(game.units[diver]?.dive?.dir || 0) * 0.8, su.z + Math.cos(game.units[diver]?.dive?.dir || 0) * 0.8, 10, 1.8), 180);
+          }
           break;
+        }
         case 'point': {
           for (const f of fans) f.cheer = 1.2 + Math.random() * 0.6;
           owl.play('flap', { fade: 0.1 });
@@ -620,8 +701,31 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
         px += ((su.side === 'L' ? -4.2 : 4.2) - su.x) * e;
         pz += ((k - 1) * 1.25 - su.z) * e;
       } else u.gather = 0;
+      // 飛びこみ: ぐっと 前へ たおれこんで、すこし ねて、おきあがる
+      let pitch = 0;
+      if (u.dive) {
+        u.dive.t += dt;
+        const t = u.dive.t;
+        const out = t < 0.22 ? t / 0.22 : t < 0.9 ? 1 : Math.max(0, 1 - (t - 0.9) / 0.4);
+        px += Math.sin(u.dive.dir) * u.dive.reach * Math.min(1, t / 0.22);
+        pz += Math.cos(u.dive.dir) * u.dive.reach * Math.min(1, t / 0.22);
+        pitch = 1.35 * out;
+        y = t < 0.22 ? Math.sin((t / 0.22) * Math.PI) * 0.25 : 0;
+        u.holder.rotation.y = u.dive.dir;
+        face = 'surprised';
+        clip = 'idle';
+        if (t > 1.3 || s.ball.state === 'serve') u.dive = null;
+      } else if (u.hitT > 0 && (u.hitKind === 'pass' || u.hitKind === 'lob')) {
+        // レシーブ: ひざを まげて ぐっと 低く
+        pitch = Math.sin(u.hitT * Math.PI) * 0.35;
+      } else if (u.hitT > 0 && u.hitKind === 'toss') {
+        y += Math.sin(u.hitT * Math.PI) * 0.15;
+      }
+      u.model.root.rotation.x = pitch;
+      const sq = u.hitT > 0 && (u.hitKind === 'pass' || u.hitKind === 'lob') ? Math.sin(u.hitT * Math.PI) * 0.12 : 0;
+      u.model.root.scale.set(1 + sq, 1 - sq, 1 + sq);
       u.holder.position.set(px, y, pz);
-      if (moving && y < 0.05 && s.phase === 'play') {
+      if (moving && y < 0.05 && s.phase === 'play' && !u.dive) {
         u.stepT = (u.stepT || 0) - dt;
         if (u.stepT <= 0) { u.stepT = 0.17; u.foot = -(u.foot || 1); footprint(px, pz, su.face, u.foot); }
       }
@@ -648,8 +752,10 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     }
     // ボール
     if (b.state === 'serve') {
-      // サーバーの 手の上で ぽんぽん
-      ball.position.set(b.x + (b.x < 0 ? 0.3 : -0.3), 1.5 + Math.abs(Math.sin(time * 5)) * 0.4, b.z);
+      // サーバーの 手の上で ぽんぽん → うつ 前に 高く トス
+      const k = s.phase === 'play' && s.pause < 0.7 ? 1 - Math.max(0, s.pause) / 0.7 : 0;
+      const bounce = k > 0 ? 0 : Math.abs(Math.sin(time * 5)) * 0.4;
+      ball.position.set(b.x + (b.x < 0 ? 0.3 : -0.3) * (1 - k), 1.5 + bounce + k * 2.4 - k * k * 1.7, b.z);
     } else ball.position.set(b.x, b.y, b.z);
     ball.rotation.x += dt * (b.kind === 'spike' ? 22 : 6);
     ball.rotation.z += dt * 3;
