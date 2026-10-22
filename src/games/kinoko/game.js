@@ -172,6 +172,31 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
     const dir = Math.random() * Math.PI * 2;
     fx.push({ obj: m, t: 0, life: 0.9, vel: new THREE.Vector3(Math.cos(dir) * 1.6, 4.4, Math.sin(dir) * 1.6), kind: 'fish', dir });
   }
+  // あわ(しずむ キノコから ぶくぶく)
+  const bubbleMat = new THREE.MeshBasicMaterial({ color: 0xe8f8ff, transparent: true, opacity: 0.8 });
+  function bubble(x, z) {
+    const m = new THREE.Mesh(puffGeo, bubbleMat.clone());
+    m.position.set(x + (Math.random() - 0.5) * 2.6, WATER_Y + 0.02, z + (Math.random() - 0.5) * 2.6);
+    m.scale.setScalar(0.3 + Math.random() * 0.5);
+    m.scale.y *= 0.5;
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.5 + Math.random() * 0.3, vel: new THREE.Vector3(0, 0.2, 0), kind: 'bubble' });
+  }
+  // しずく(上がってきた キノコの ふちから ぽたぽた)
+  function drip(x, y, z) {
+    const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: 0xc8ecff, transparent: true }));
+    m.scale.set(0.3, 0.45, 0.3);
+    m.position.set(x, y, z);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.6, vel: new THREE.Vector3(0, -0.5, 0), kind: 'drop' });
+  }
+  // 旗の キノコに 立つ 光の 柱
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(RULES.hexR * 0.8, RULES.hexR * 0.95, 6, 6, 1, true), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+  beam.rotation.y = Math.PI / 6;
+  beam.position.y = 3;
+  scene.add(beam);
+  // うきわ(落ちた 子が 湖で つかまる)
+  const tubeGeo = new THREE.TorusGeometry(0.55, 0.2, 8, 18).rotateX(Math.PI / 2);
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
   function confetti(x, z) {
     const colors = Object.values(PALETTE).map((p) => p.top);
@@ -203,6 +228,9 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       } else if (f.kind === 'ring') {
         f.obj.scale.setScalar(f.size * (0.4 + k * 1.8));
         f.obj.material.opacity = 0.8 * (1 - k);
+      } else if (f.kind === 'bubble') {
+        f.obj.material.opacity = 0.8 * (1 - k);
+        f.obj.scale.multiplyScalar(1 + dt * 1.5);
       } else if (f.kind === 'fish') {
         f.vel.y -= 10 * dt;
         f.obj.rotation.set(-Math.atan2(f.vel.y, 1.6), Math.PI / 2 - f.dir, 0);
@@ -466,6 +494,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
           break;
         case 'slam': {
           sfx.slam(volFor(e.x, e.z));
+          { const h = HEXES.find((q) => Math.hypot(q.x - e.x, q.z - e.z) < RULES.hexR); if (h) { mushrooms[h.id].userData.boing = 1; ripple(h.x, h.z, WATER_Y + 0.03, 0xffffff, 2.2); } }
           puff(e.x, 0.05, e.z, 8, 0xffffff, 1.2);
           ripple(e.x, e.z, 0.04, 0xffd23c, 1.5);
           stars(e.x, 0.6, e.z, 10);
@@ -546,7 +575,19 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       const id = m.userData.hex.id;
       const k = s.sink[id];
       const e = k * k * (3 - 2 * k);
+      // 上がりきったら ぽよん
+      if (k === 0 && (m.userData.prevK ?? 0) > 0) m.userData.boing = 1;
+      if (k > 0 && k < 1 && s.stage !== 'rise' && Math.random() < 0.5) bubble(m.userData.hex.x, m.userData.hex.z);
+      if (s.stage === 'rise' && k > 0.02 && k < 0.6 && Math.random() < 0.35) {
+        const a = Math.random() * Math.PI * 2;
+        drip(m.userData.hex.x + Math.cos(a) * RULES.hexR * 0.85, m.position.y - 0.3, m.userData.hex.z + Math.sin(a) * RULES.hexR * 0.85);
+      }
+      m.userData.prevK = k;
+      m.userData.boing = Math.max(0, (m.userData.boing || 0) - dt * 2.5);
+      const bo = Math.sin(m.userData.boing * Math.PI * 2) * m.userData.boing * 0.08;
+      m.scale.set(1 - bo, 1 + bo, 1 - bo);
       m.position.y = SINK_Y * e;
+      m.rotation.x = Math.sin(id * 1.7) * 0.12 * Math.sin(k * Math.PI);
       const warn = s.stage === 'signal' && id !== s.flag && s.stageT < 0.9;
       const w = warn ? (0.9 - s.stageT) * 0.06 : 0;
       m.position.x = m.userData.hex.x + Math.sin(time * 45 + id) * w;
@@ -556,7 +597,15 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       m.userData.flash = Math.max(0, (m.userData.flash || 0) - dt * 1.5);
       const glow = s.stage === 'signal' && id === s.flag ? 0.25 + Math.sin(time * 10) * 0.1 : m.userData.flash * 0.5;
       m.userData.top.emissive.setRGB(glow, glow, glow * 0.8);
+      // 旗の あいだ、ほかの キノコは 少し くらく
+      const dim = s.stage === 'signal' && s.flag !== null && id !== s.flag ? Math.min(1, (1 - s.stageT / moveTime(s.round)) * 1.5) * 0.3 : 0;
+      m.userData.top.color.setScalar(1 - dim);
     }
+    // 光の 柱: 旗の キノコに
+    const show = (s.stage === 'signal' || s.stage === 'sink') && s.flag !== null;
+    if (show) { const h = HEXES[s.flag]; beam.position.x = h.x; beam.position.z = h.z; beam.material.color.set(colorCss(h.color)); }
+    beam.material.opacity += ((show ? 0.22 + Math.sin(time * 6) * 0.05 : 0) - beam.material.opacity) * Math.min(1, dt * 8);
+    beam.visible = beam.material.opacity > 0.01;
     // 先生の 旗: 旗の あいだは 上に、ほかは 下に
     const want = s.stage === 'signal' || s.stage === 'sink' || s.stage === 'hold' ? 1 : 0;
     flagUp += (want - flagUp) * Math.min(1, dt * 10);
@@ -574,7 +623,16 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
         if (!o.splashed) {
           o.vy -= 18 * dt;
           o.y += o.vy * dt;
-          if (o.y < WATER_Y) { o.splashed = true; splashAt(o.x, o.z); sfx.splash(volFor(o.x, o.z)); }
+          if (o.y < WATER_Y) {
+            o.splashed = true;
+            splashAt(o.x, o.z);
+            sfx.splash(volFor(o.x, o.z));
+            // ぷかっと うきわが 出てくる
+            if (!u.tube) { u.tube = new THREE.Mesh(tubeGeo, new THREE.MeshToonMaterial({ color: PLAYER_COLORS[slot].hex })); u.holder.add(u.tube); }
+            u.tube.visible = true;
+            u.tube.position.y = 0.55;
+            u.tube.scale.setScalar(0.01);
+          }
         } else {
           o.y += (WATER_Y - 0.55 + Math.sin(o.t * 2.5 + slot) * 0.06 - o.y) * Math.min(1, dt * 4);
           // しずむ キノコから 少し はなれて ただよう
@@ -583,6 +641,8 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
         }
         u.holder.position.set(o.x, o.y, o.z);
         u.holder.rotation.set(0, u.holder.rotation.y + dt * 0.4, 0);
+        if (u.tube) u.tube.scale.setScalar(Math.min(1, u.tube.scale.x + dt * 4));
+        if (o.splashed && Math.random() < dt * 1.2) ripple(o.x, o.z, WATER_Y + 0.03, 0xffffff, 0.7);
         clip = o.splashed ? 'wave' : 'dizzy';
         face = 'frustrated';
       } else {
@@ -592,7 +652,9 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
         let base = 0;
         if (!r.air) for (const m of mushrooms) { const h = m.userData.hex; if (Math.hypot(r.x - h.x, r.z - h.z) < RULES.hexR * 0.95) { base = m.position.y; break; } }
         u.holder.position.set(r.x, r.y + base, r.z);
-        u.holder.rotation.set(r.dropping ? Math.PI * 0.15 : 0, r.face, 0);
+        // ヒップドロップ: 空中で くるっと 1回転してから まっすぐ
+        u.spin = r.dropping && r.drop > 0 ? (u.spin || 0) + dt * 40 : 0;
+        u.holder.rotation.set(r.dropping ? Math.PI * 0.15 : 0, r.face + u.spin, 0);
         // ふんづけられて ぺしゃんこ / 着地で むにゅっ
         if (!r.air && u.wasAir) u.landK = 1;
         u.wasAir = r.air;
