@@ -260,6 +260,12 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
         f.vel.y -= 9 * dt;
         if (f.obj.position.y < 0.05) { f.obj.position.y = 0.05; f.vel.set(0, 0, 0); }
         f.obj.material.opacity = Math.min(1, (1 - k) * 3);
+      } else if (f.kind === 'bball') {
+        f.vel.y -= 9.8 * dt;
+        f.obj.rotation.x += f.spin.x * dt;
+        f.obj.rotation.z += f.spin.z * dt;
+        if (f.obj.position.y < RULES.ballR * 1.5) { f.obj.position.y = RULES.ballR * 1.5; f.vel.y = Math.abs(f.vel.y) * 0.62; f.vel.x *= 0.8; f.vel.z *= 0.8; }
+        f.obj.scale.setScalar(Math.min(1, (1 - k) * 6));
       } else if (f.kind === 'flash') {
         f.obj.scale.setScalar((0.3 + k * 1.2) * f.size);
         f.obj.material.opacity = 1 - k;
@@ -277,7 +283,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       }
       if (k >= 1) {
         scene.remove(f.obj);
-        f.obj.material.dispose();
+        if (!f.shared) f.obj.material.dispose();
         fx.splice(i, 1);
       }
     }
@@ -354,6 +360,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     me.holder.add(marker);
     me.marker = marker;
     await buildFans(state, players);
+    $('hudP').classList.remove('mp', 'spurt');
     game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, meIdx, focus: new THREE.Vector3() };
     atmosphere.apply(params.get('time') || 'day');
     atmosphere.setupShadows([...units.map((u) => u.holder), ball], [stage.group]);
@@ -508,6 +515,23 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
   function renderHud() {
     const s = game.state;
     $('timeP').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
+    // ラリーの 回数(4回から)
+    const rl = $('rallyP');
+    const showR = s.phase === 'play' && s.ball.state === 'fly' && s.rally >= 4;
+    rl.hidden = !showR;
+    if (showR && rl.dataset.n !== String(s.rally)) {
+      rl.dataset.n = String(s.rally);
+      rl.innerHTML = `ラリー <b>${s.rally}</b>`;
+      rl.classList.toggle('hot', s.rally >= 8);
+      rl.classList.remove('bump');
+      void rl.offsetWidth;
+      rl.classList.add('bump');
+    }
+    // マッチポイント(どちらかが あと 1点)・のこり 10 秒
+    const mp = s.phase === 'play' && (s.score.L === RULES.winScore - 1 || s.score.R === RULES.winScore - 1);
+    $('hudP').classList.toggle('mp', mp);
+    for (const side of ['L', 'R']) $(`team${side}P`).classList.toggle('mp', s.phase === 'play' && s.score[side] === RULES.winScore - 1);
+    $('hudP').classList.toggle('spurt', s.phase === 'play' && timeLeft(s) <= 10);
     const me = s.units[game.meIdx];
     const b = s.ball;
     $('hitP').hidden = s.phase === 'finished';
@@ -613,11 +637,19 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
           el.classList.remove('bump');
           void el.offsetWidth;
           el.classList.add('bump');
+          // れんぞくで 決めた 子 / 長い ラリー
+          const streak = e.by !== null && game.lastBy === e.by;
+          game.lastBy = e.by;
           if (s.phase !== 'finished') {
             const by = e.by !== null ? s.units[e.by] : null;
             const name = by && by.slot === 0 ? 'ナイス!' : '';
-            splash(`${WHY[e.why]} ${name}`.trim(), (win ? 'gold' : 'red') + ' small');
+            if (e.rally >= 8) {
+              splash(`ロングラリー ${e.rally}回!`, 'gold small');
+              for (const f of fans) f.cheer = 2.4 + Math.random() * 0.6;
+              sfx.fanfare();
+            } else splash(`${WHY[e.why]} ${name}`.trim(), (win ? 'gold' : 'red') + ' small');
           }
+          if (streak) setTimeout(() => game?.state === s && pop('れんぞく!', s.units[e.by].x, 3.3, s.units[e.by].z, 'gold', 1000), 300);
           for (const j of s.teams[e.side]) game.units[j].cheer = 1.4;
           if (e.by !== null) pop('+1', s.units[e.by].x, 2.6, s.units[e.by].z, 'gold', 900);
           // マッチポイント
@@ -635,6 +667,9 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
           splash(e.timeUp ? (win ? 'じかんぎれ! かち!' : 'じかんぎれ… まけ') : win ? 'かった!' : 'まけた…', win ? 'gold' : 'red');
           if (win) sfx.fanfare();
           confetti(e.winner === 'L' ? -3.5 : 3.5, 0);
+          game.rain = 0; // ビーチボールの 雨
+          owl.play('flap', { fade: 0.1 });
+          for (const f of fans) f.cheer = 5;
           break;
         }
       }
@@ -784,10 +819,23 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     });
     stage.update(time, s.wind.until > s.t ? s.wind.z / RULES.windAcc : 0);
     updateSteps(dt);
+    if (s.phase === 'finished' && game.rain !== undefined && game.rain < 3.5) {
+      game.rain += dt;
+      if (Math.random() < dt * 5) {
+        const m = new THREE.Mesh(ball.geometry, ball.material);
+        // 勝った チームの うしろ(ネットがわ)に ふらせる。カメラの 前を ふさがない
+        const sw = s.winner === 'L' ? -1 : 1;
+        m.position.set(sw * (0.6 + Math.random() * 3.2), 7 + Math.random() * 2, (Math.random() - 0.5) * 7);
+        m.castShadow = true;
+        scene.add(m);
+        fx.push({ obj: m, t: 0, life: 3.5, vel: new THREE.Vector3((Math.random() - 0.5) * 1.5, -1, (Math.random() - 0.5) * 1.5), spin: new THREE.Vector3(Math.random() * 6, 0, Math.random() * 6), kind: 'bball', shared: true });
+      }
+    }
     // 見物: ふだんは ゆらゆら。点が 入ると ばんざい
     for (const f of fans) {
       f.cheer = Math.max(0, f.cheer - dt);
-      f.model.play(f.cheer > 0 || s.phase === 'finished' ? 'cheer' : 'idle');
+      // ラリーが 続くと 手を ふって もりあがる
+      f.model.play(f.cheer > 0 || s.phase === 'finished' ? 'cheer' : s.rally >= 6 && b.state === 'fly' ? 'wave' : 'idle');
       f.model.setFace(f.cheer > 0 || s.phase === 'finished' ? 'happy' : 'normal');
       f.model.root.position.y = f.cheer > 0 ? Math.abs(Math.sin(f.cheer * 8 + f.phase)) * 0.2 : 0;
       // ボールを 目で おう

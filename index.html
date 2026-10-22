@@ -489,6 +489,15 @@
   #hudP .splash.gold.small { color: #ffd24a; }
   #hudP .splash.blue { color: #3aa0f0; }
   #hudP .splash.orange { color: #ff7a4a; }
+  #hudP .rally { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 104px); transform: translateX(-50%); padding: 3px 14px; border-radius: 999px; background: rgba(31,42,51,.55); color: #fff; font: 800 14px var(--font-body); }
+  #hudP .rally[hidden] { display: none; }
+  #hudP .rally b { font-size: 20px; }
+  #hudP .rally.bump { animation: ptbump .35s ease-out; }
+  #hudP .rally.hot { background: #ff7a3a; box-shadow: 0 0 0 3px #ffd24a; }
+  #hudP .team.mp { animation: mpglow .6s ease-in-out infinite alternate; }
+  @keyframes mpglow { 0% { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 0 #ffd24a; } 100% { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 5px #ffd24a; } }
+  #hudP.mp::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 8px rgba(255,210,74,.4); animation: eruptglow .7s ease-in-out infinite alternate; }
+  #hudP.spurt .timer { background: #e8402f; color: #fff; }
   .tame.hit { background: #ffb02a; font-size: 22px; -webkit-tap-highlight-color: transparent; user-select: none; touch-action: none; transition: background .12s; }
   .tame.hit.down { transform: translateY(5px); }
   .tame.hit.near { background: #ff5a3a; box-shadow: 0 7px 0 rgba(31,42,51,.25), 0 0 0 5px rgba(255,210,74,.8); animation: tamefull .4s infinite; }
@@ -1566,6 +1575,7 @@
     <div class="team R" id="teamRP" aria-label="みぎの チーム"><span class="pt" id="ptRP">0</span><span class="mem"></span></div>
     <button class="pausebtn" id="pauseBtnP" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
   </div>
+  <div class="rally" id="rallyP" hidden></div>
   <div class="wind" id="windP" hidden><span>かぜ</span><b>↑</b><span id="windTxtP">おくへ</span></div>
   <div class="pops" id="popsP"></div>
   <div class="splash" id="splashP"></div>
