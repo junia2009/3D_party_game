@@ -93,7 +93,64 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     },
   };
 
-  await preload([...CHARACTERS.map((c) => c.key), 'risu', 'harinezumi', 'komadori']);
+  await preload([...CHARACTERS.map((c) => c.key), 'risu', 'harinezumi', 'komadori', 'mogura', 'hoho']);
+
+  // ── しんぱんの フクロウ先生 ─────────────────────────
+  const owl = await createModel('hoho');
+  owl.play('idle');
+  owl.root.position.copy(stage.umpire);
+  owl.root.scale.setScalar(0.62);
+  scene.add(owl.root);
+
+  // ── 見物の なかま(試合に 出ていない 子が 砂に すわって 見る) ──────────
+  const fans = [];
+  async function buildFans(state, players) {
+    for (const f of fans.splice(0)) scene.remove(f.model.root);
+    const used = new Set([...players.map((p) => p.character), ...state.units.filter((u) => u.slot < 0).map((u) => u.kind)]);
+    const keys = [...CHARACTERS.map((c) => c.key), 'risu', 'harinezumi', 'komadori', 'mogura'].filter((k) => !used.has(k)).slice(0, stage.seats.length);
+    for (const [k, key] of keys.entries()) {
+      const m = await createModel(key);
+      m.play('idle');
+      m.setFace('normal');
+      const st = stage.seats[k];
+      m.root.position.set(st.x, 0, st.z);
+      m.root.rotation.y = Math.PI + (st.x * -0.05);
+      m.root.scale.setScalar(0.85);
+      scene.add(m.root);
+      fans.push({ model: m, cheer: 0, seat: st, phase: k * 1.3 });
+    }
+  }
+
+  // ── 砂の 足あと(見た目だけ。走ると ぽつぽつ のこって、だんだん 消える) ───────
+  const STEPS = 160;
+  const stepMesh = new THREE.InstancedMesh(new THREE.CircleGeometry(0.1, 10).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xa8824a, transparent: true, opacity: 0.5, depthWrite: false }), STEPS);
+  stepMesh.count = STEPS;
+  const stepAge = new Float32Array(STEPS).fill(99);
+  let stepNext = 0;
+  const stepM = new THREE.Matrix4(), stepQ = new THREE.Quaternion(), stepS = new THREE.Vector3(), stepP = new THREE.Vector3(), upY = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < STEPS; i++) stepMesh.setMatrixAt(i, stepM.makeScale(0, 0, 0));
+  scene.add(stepMesh);
+  function footprint(x, z, face, side) {
+    const i = stepNext;
+    stepNext = (stepNext + 1) % STEPS;
+    stepAge[i] = 0;
+    const ox = Math.cos(face) * 0.11 * side, oz = -Math.sin(face) * 0.11 * side;
+    stepMesh.setMatrixAt(i, stepM.compose(stepP.set(x + ox, 0.013, z + oz), stepQ.setFromAxisAngle(upY, face), stepS.set(0.8, 1, 1.25)));
+  }
+  function updateSteps(dt) {
+    let dirty = false;
+    for (let i = 0; i < STEPS; i++) {
+      if (stepAge[i] >= 6) continue;
+      stepAge[i] += dt;
+      dirty = true;
+      stepMesh.getMatrixAt(i, stepM);
+      stepM.decompose(stepP, stepQ, stepS);
+      const k = Math.max(0, 1 - stepAge[i] / 6);
+      stepS.set(0.8 * k, 1, 1.25 * k);
+      stepMesh.setMatrixAt(i, stepM.compose(stepP, stepQ, stepS));
+    }
+    if (dirty) stepMesh.instanceMatrix.needsUpdate = true;
+  }
 
   // ── ボール(白・黄・青の ビーチボール)と 影・落ちる ところ ──────────────
   const ballTex = (() => {
@@ -241,6 +298,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     me.holder.add(marker);
     me.marker = marker;
+    await buildFans(state, players);
     game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, meIdx, focus: new THREE.Vector3() };
     atmosphere.apply(params.get('time') || 'day');
     atmosphere.setupShadows([...units.map((u) => u.holder), ball], [stage.group]);
@@ -463,6 +521,9 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
           sandBurst(e.x, e.z, e.inside ? 14 : 8);
           break;
         case 'point': {
+          for (const f of fans) f.cheer = 1.2 + Math.random() * 0.6;
+          owl.play('flap', { fade: 0.1 });
+          setTimeout(() => owl.play('idle', { fade: 0.3 }), 900);
           const win = e.side === mySide;
           sfx.whistle();
           setTimeout(() => sfx.point(win), 250);
@@ -560,8 +621,12 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
         pz += ((k - 1) * 1.25 - su.z) * e;
       } else u.gather = 0;
       u.holder.position.set(px, y, pz);
+      if (moving && y < 0.05 && s.phase === 'play') {
+        u.stepT = (u.stepT || 0) - dt;
+        if (u.stepT <= 0) { u.stepT = 0.17; u.foot = -(u.foot || 1); footprint(px, pz, su.face, u.foot); }
+      }
       u.model.play(clip, { timeScale: clip === 'run' ? 1.4 : 1 });
-      u.model.setFace(u.hitT > 0.5 && u.hitKind === 'spike' ? 'angry' : face);
+      u.model.setFace(u.hitT > 0.5 && u.hitKind === 'spike' ? 'surprised' : face);
       u.model.update(dt);
       // 腕: レシーブ(両手を 前で そろえる)/ トス(両手を 上へ)/ スパイク・サーブ(右手を ふりおろす)
       const [aL, aR] = u.arms;
@@ -612,6 +677,20 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       m.material.opacity = 0.55 * (1 - k / trail.length);
     });
     stage.update(time, s.wind.until > s.t ? s.wind.z / RULES.windAcc : 0);
+    updateSteps(dt);
+    // 見物: ふだんは ゆらゆら。点が 入ると ばんざい
+    for (const f of fans) {
+      f.cheer = Math.max(0, f.cheer - dt);
+      f.model.play(f.cheer > 0 || s.phase === 'finished' ? 'cheer' : 'idle');
+      f.model.setFace(f.cheer > 0 || s.phase === 'finished' ? 'happy' : 'normal');
+      f.model.root.position.y = f.cheer > 0 ? Math.abs(Math.sin(f.cheer * 8 + f.phase)) * 0.2 : 0;
+      // ボールを 目で おう
+      f.model.root.rotation.y = lerpAngle(f.model.root.rotation.y, Math.atan2(b.x - f.seat.x, b.z - f.seat.z), Math.min(1, dt * 3));
+      f.model.update(dt);
+    }
+    // フクロウ先生も ボールを 見る
+    owl.root.rotation.y = lerpAngle(owl.root.rotation.y, Math.atan2(b.x - stage.umpire.x, b.z - stage.umpire.z), Math.min(1, dt * 4));
+    owl.update(dt);
   }
   const lerpAngle = (a, b, k) => {
     let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;

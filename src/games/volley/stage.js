@@ -230,8 +230,16 @@ export function buildStage(scene) {
   sand.userData.noMerge = true;
   group.add(sand);
   // 波うちぎわへ ゆるく さがる ぬれた 砂
-  const wet = new THREE.Mesh(new THREE.PlaneGeometry(90, 3).rotateX(-Math.PI / 2), new THREE.MeshToonMaterial({ map: sandTex, color: 0xc9b088 }));
-  wet.position.set(0, 0.005, SEA_Z + 1.2);
+  const wetTex = canvasTex(8, 128, (g, w, h) => {
+    const grd = g.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, 'rgba(150,120,80,0.75)');
+    grd.addColorStop(0.55, 'rgba(170,140,95,0.35)');
+    grd.addColorStop(1, 'rgba(190,160,110,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+  });
+  const wet = new THREE.Mesh(new THREE.PlaneGeometry(260, 4).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: wetTex, transparent: true, depthWrite: false }));
+  wet.position.set(0, 0.006, SEA_Z + 1.6);
   wet.receiveShadow = true;
   wet.userData.noMerge = true;
   group.add(wet);
@@ -288,6 +296,36 @@ export function buildStage(scene) {
   const netShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.12, D * 2 + 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xb89a6a, transparent: true, opacity: 0.35 }));
   netShadow.position.set(0, 0.012, 0);
   group.add(netShadow);
+
+  // しんぱんの 台(ネットの よこ・海がわ)。上に フクロウ先生が すわる
+  const UZ = -(D + 2.1);
+  {
+    const wood = toonMaterial(0xf4f0e8), blue = toonMaterial(0x2a6ad0);
+    for (const [dx, dz] of [[-0.35, -0.35], [0.35, -0.35], [-0.35, 0.35], [0.35, 0.35]]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.09, 1.7, 0.09), wood);
+      leg.position.set(dx, 0.85, UZ + dz);
+      leg.rotation.x = dz * -0.12;
+      group.add(leg);
+    }
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.1, 0.95), blue);
+    seat.position.set(0, 1.7, UZ);
+    group.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.6, 0.08), blue);
+    back.position.set(0, 2.0, UZ - 0.45);
+    group.add(back);
+    for (let k = 0; k < 4; k++) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.05, 0.08), wood);
+      st.position.set(0, 0.35 + k * 0.36, UZ + 0.5);
+      group.add(st);
+    }
+    // 小さな パラソル
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 6), wood);
+    pole.position.set(0.4, 2.4, UZ - 0.4);
+    group.add(pole);
+    const top = new THREE.Mesh(new THREE.ConeGeometry(0.75, 0.3, 8), toonMaterial(0xffd23a));
+    top.position.set(0.4, 3.15, UZ - 0.4);
+    group.add(top);
+  }
 
   // 吹き流し(右の 柱の 上・おく)
   const flag = new THREE.Group();
@@ -349,20 +387,148 @@ export function buildStage(scene) {
   group.traverse((o) => { if (o.name === 'merged') o.castShadow = o.receiveShadow = true; });
   scene.add(group);
 
-  // 海(うごく)
-  const seaGeo = new THREE.PlaneGeometry(260, 120, 64, 24).rotateX(-Math.PI / 2);
-  const sea = new THREE.Mesh(seaGeo, new THREE.MeshToonMaterial({ color: 0x2aa6d8, transparent: true, opacity: 0.94 }));
-  sea.position.set(0, -0.06, SEA_Z - 60);
+  // 海(うごく)。波うちぎわは あさい 水色、沖へ いくほど こい 青
+  const seaGeo = new THREE.PlaneGeometry(320, 160, 72, 30).rotateX(-Math.PI / 2);
+  {
+    const p = seaGeo.attributes.position, cols = new Float32Array(p.count * 3);
+    const near = new THREE.Color(0x4fd0e0), mid = new THREE.Color(0x2a9ad8), far = new THREE.Color(0x1a5aa8), c = new THREE.Color();
+    for (let i = 0; i < p.count; i++) {
+      const d = Math.min(1, (80 - p.getZ(i)) / 160); // 0(手前の はし)→ 1(沖)
+      if (d < 0.12) c.lerpColors(near, mid, d / 0.12); else c.lerpColors(mid, far, Math.min(1, (d - 0.12) / 0.5));
+      cols.set([c.r, c.g, c.b], i * 3);
+    }
+    seaGeo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  }
+  const sea = new THREE.Mesh(seaGeo, new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, transparent: true, opacity: 0.95 }));
+  sea.position.set(0, -0.06, SEA_Z - 80);
   scene.add(sea);
   const seaBase = Float32Array.from(seaGeo.attributes.position.array);
   // 浅い ところの 明るい 水
-  const shallow = new THREE.Mesh(new THREE.PlaneGeometry(260, 5).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7fe0e8, transparent: true, opacity: 0.6, depthWrite: false }));
+  const shallow = new THREE.Mesh(new THREE.PlaneGeometry(320, 5).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x8ae8ec, transparent: true, opacity: 0.55, depthWrite: false }));
   shallow.position.set(0, -0.02, SEA_Z - 2);
   scene.add(shallow);
-  // 白い 波(よせて かえす)
-  const foam = new THREE.Mesh(new THREE.PlaneGeometry(260, 0.5).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false }));
-  foam.position.set(0, 0.01, SEA_Z);
-  scene.add(foam);
+  // 白い 波(ふちが くねくねの あわ。2まいを ずらして よせて かえす)
+  const foamTex = canvasTex(256, 64, (g, w, h) => {
+    g.fillStyle = 'rgba(255,255,255,0.9)';
+    g.beginPath();
+    g.moveTo(0, h);
+    for (let x = 0; x <= w; x += 4) g.lineTo(x, h * 0.45 + Math.sin(x / 18) * 8 + Math.sin(x / 7) * 3);
+    g.lineTo(w, h);
+    g.fill();
+    for (let i = 0; i < 60; i++) {
+      g.fillStyle = 'rgba(255,255,255,0.8)';
+      g.beginPath();
+      g.arc(Math.random() * w, h * 0.2 + Math.random() * h * 0.35, 1 + Math.random() * 3, 0, 7);
+      g.fill();
+    }
+  });
+  foamTex.wrapS = THREE.RepeatWrapping;
+  foamTex.repeat.set(40, 1);
+  const foams = [0, 1].map((k) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(320, 1.1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: foamTex.clone(), transparent: true, depthWrite: false }));
+    m.material.map.repeat.set(40 + k * 7, 1);
+    m.material.map.needsUpdate = true;
+    m.position.set(0, 0.012 + k * 0.004, SEA_Z);
+    scene.add(m);
+    return m;
+  });
+  // 海の きらきら(日の光が はねる)
+  const glint = (() => {
+    const n = 260, pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 120; pos[i * 3 + 1] = 0.1; pos[i * 3 + 2] = SEA_Z - 3 - Math.random() * 70; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.35, transparent: true, opacity: 0.9, depthWrite: false }));
+    scene.add(m);
+    return m;
+  })();
+  // ブイの ならび(赤と 白の うき)
+  const buoys = [];
+  for (let k = 0; k < 18; k++) {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), toonMaterial(k % 2 ? 0xffffff : 0xff4a3a));
+    b.position.set(-34 + k * 4, 0, SEA_Z - 14);
+    scene.add(b);
+    buoys.push(b);
+  }
+  // 沖の 小島(ヤシ つき)と ヨット
+  const isle = new THREE.Group();
+  const mound = new THREE.Mesh(new THREE.SphereGeometry(6, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), toonMaterial(0x4a9a4a));
+  mound.scale.set(1.6, 0.45, 1);
+  isle.add(mound);
+  const beachRing = new THREE.Mesh(new THREE.CylinderGeometry(10.5, 11, 0.4, 20), toonMaterial(0xf2dfb4));
+  beachRing.scale.set(1, 1, 0.65);
+  isle.add(beachRing);
+  palm(isle, -3, -1, 5.5, 0.6, rand);
+  palm(isle, 2.5, 0.5, 4.8, -0.5, rand);
+  isle.position.set(-38, -0.1, SEA_Z - 75);
+  scene.add(isle);
+  const boat = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.6, 1.0), toonMaterial(0xffffff));
+  hull.position.y = 0.3;
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.25, 0.12, 1.05), toonMaterial(0x2a6ad0));
+  stripe.position.y = 0.42;
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.6, 6), toonMaterial(0xc8a070));
+  mast.position.y = 2.2;
+  const sailGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0.1, 0.8, 0), new THREE.Vector3(0.1, 3.9, 0), new THREE.Vector3(1.6, 0.8, 0)]);
+  sailGeo.computeVertexNormals();
+  const sail = new THREE.Mesh(sailGeo, new THREE.MeshToonMaterial({ color: 0xfff6e8, side: THREE.DoubleSide }));
+  const sail2 = new THREE.Mesh(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-0.1, 0.8, 0), new THREE.Vector3(-0.1, 3.4, 0), new THREE.Vector3(-1.2, 0.8, 0)]), new THREE.MeshToonMaterial({ color: 0xff7a4a, side: THREE.DoubleSide }));
+  boat.add(hull, stripe, mast, sail, sail2);
+  boat.position.set(20, 0, SEA_Z - 45);
+  scene.add(boat);
+  // 入道雲(夏の 空の おくに もくもく)。下は すこし 青い かげ、上は まっ白
+  const cloudGeo = new THREE.IcosahedronGeometry(1, 3);
+  {
+    const p = cloudGeo.attributes.position, cols = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) { const k = 0.82 + 0.18 * Math.max(0, p.getY(i) * 0.5 + 0.5); cols.set([k * 0.97, k * 0.99, k], i * 3); }
+    cloudGeo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  }
+  const cloudMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+  const crand = makeRand(77);
+  const thunder = (x, z, sc) => {
+    const g2 = new THREE.Group();
+    for (let k = 0; k < 30; k++) {
+      const h = crand();
+      const r = (8 + crand() * 9) * (1 - h * 0.35);
+      const m = new THREE.Mesh(cloudGeo, cloudMat);
+      m.scale.set(r, r * 0.85, r);
+      m.position.set((crand() - 0.5) * 60 * (1 - h * 0.7), h * 60, (crand() - 0.5) * 16);
+      g2.add(m);
+    }
+    g2.position.set(x, -6, z);
+    g2.scale.setScalar(sc);
+    scene.add(g2);
+  };
+  thunder(30, SEA_Z - 300, 1);
+  thunder(-110, SEA_Z - 280, 0.7);
+  thunder(140, SEA_Z - 260, 0.55);
+  // カニ(波うちぎわを よこ歩き)
+  const crabs = [0, 1].map((k) => {
+    const c = new THREE.Group();
+    const red = toonMaterial(0xe8503a);
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 6), red);
+    body.scale.set(1.3, 0.6, 1);
+    body.position.y = 0.1;
+    c.add(body);
+    for (const sx of [-1, 1]) {
+      const claw = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), red);
+      claw.position.set(sx * 0.2, 0.14, 0.12);
+      c.add(claw);
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 4), new THREE.MeshBasicMaterial({ color: 0x1a1a1a }));
+      eye.position.set(sx * 0.06, 0.22, 0.1);
+      c.add(eye);
+      for (let j = 0; j < 3; j++) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.02, 0.02), red);
+        leg.position.set(sx * 0.2, 0.05, -0.06 + j * 0.06);
+        leg.rotation.z = sx * -0.5;
+        c.add(leg);
+      }
+    }
+    c.position.set(k ? 12 : -14, 0, SEA_Z + 1.4);
+    c.userData = { x0: c.position.x, speed: 0.6 + k * 0.3, phase: k * 2 };
+    scene.add(c);
+    return c;
+  });
 
   function update(t, wind) {
     const p = seaGeo.attributes.position;
@@ -372,9 +538,33 @@ export function buildStage(scene) {
     }
     p.needsUpdate = true;
     const w = Math.sin(t * 0.8);
-    foam.position.z = SEA_Z - 0.2 + w * 0.7;
-    foam.material.opacity = 0.55 + 0.35 * Math.max(0, w);
+    foams.forEach((f, k) => {
+      const wk = Math.sin(t * 0.8 - k * 1.3);
+      f.position.z = SEA_Z - 0.3 + wk * 0.8;
+      f.material.opacity = 0.45 + 0.5 * Math.max(0, wk);
+      f.material.map.offset.x = t * 0.01 * (k ? -1 : 1);
+    });
     shallow.position.z = SEA_Z - 2 + w * 0.6;
+    // きらきら: すこしずつ 場所を かえて、ちらちら
+    const gp = glint.geometry.attributes.position;
+    for (let n = 0; n < 6; n++) {
+      const i = Math.floor(Math.random() * gp.count);
+      gp.setX(i, (Math.random() - 0.5) * 120);
+      gp.setZ(i, SEA_Z - 3 - Math.random() * 70);
+    }
+    gp.needsUpdate = true;
+    glint.material.opacity = 0.6 + Math.sin(t * 9) * 0.25;
+    buoys.forEach((b, k) => { b.position.y = Math.sin(t * 1.6 + k * 0.7) * 0.1; b.rotation.z = Math.sin(t * 1.3 + k) * 0.15; });
+    boat.position.x = 20 - ((t * 0.6) % 90);
+    if (boat.position.x < -70) boat.position.x += 90;
+    boat.position.y = Math.sin(t * 1.2) * 0.12;
+    boat.rotation.z = Math.sin(t * 1.0) * 0.05;
+    for (const c of crabs) {
+      const u = c.userData;
+      c.position.x = u.x0 + Math.sin(t * 0.25 * u.speed + u.phase) * 4;
+      c.position.y = Math.abs(Math.sin(t * 14)) * 0.02;
+      c.rotation.y = Math.sin(t * 2 + u.phase) * 0.2;
+    }
     // 吹き流し: ふだんは だらりと、風が ふくと 横へ ぴん
     const k = Math.min(1, Math.abs(wind));
     flag.rotation.y = wind >= 0 ? -Math.PI / 2 : Math.PI / 2;
@@ -382,5 +572,13 @@ export function buildStage(scene) {
     sock.rotation.x = Math.sin(t * 7) * 0.1 * k;
   }
 
-  return { group, update, flag };
+  // 見物の 席(手前・海と はんたいの がわ。砂に すわって 見ている)
+  const seats = [[-5.5, 6.0], [-2.2, 6.6], [2.4, 6.4], [5.6, 6.1], [9.5, 5.6], [-9.2, 5.5]].map(([x, z]) => ({ x, z }));
+  for (const st of seats) {
+    const towel = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.02, 0.8), toonMaterial([0xffd23a, 0x44c0d8, 0xff6a9a, 0x8ad04a][seats.indexOf(st) % 4]));
+    towel.position.set(st.x, 0.02, st.z + 0.1);
+    towel.receiveShadow = true;
+    scene.add(towel);
+  }
+  return { group, update, flag, seats, umpire: new THREE.Vector3(0, 1.75, UZ) };
 }
