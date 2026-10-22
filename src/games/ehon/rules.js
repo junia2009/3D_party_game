@@ -5,6 +5,7 @@
 // たおれた とき、穴の ところに いれば たすかる。穴の 外に いたら ぺちゃんこで 脱落。
 // 立っている ページの 穴は、たおれると 床の 同じ 場所に 来る(上の 穴ほど 手前に 来る)。床には その 影が うつる。
 // めくれる 速さが だんだん 速くなる(しかけは それだけ)。最後まで 残った子の勝ち。
+// 穴の 数: はじめの 3まいは 4つ、そのあとは 2〜4 の くじ。
 // - 走る: スティック(どこでもスティック)。ぶつかると おしあう。本の 外へは 出られない。
 //
 // inputs[slot]: { x, z(スティックの 向き。長さ 0〜1) } か null。
@@ -22,7 +23,8 @@ export const RULES = {
   D: 6.6,
   edge: 0.35, // 本の ふちから これだけ 内がわまで 走れる
   // 穴
-  holes: 4,
+  holes: [2, 4], // 1まいの 穴の 数(くじ)
+  firstPages: 3, // はじめの 3まいは いつも 4つ
   holeR: 1.0, // 穴の 大きさ(当たりの 半径)
   holeGap: 0.5, // 穴どうしの すきま
   safe: 0.18, // 体の 中心が 穴の ふちから これだけ 内がわなら たすかる
@@ -52,19 +54,24 @@ export function startPos(slot, n) {
 }
 
 // ページの 穴を くじで つくる(重ならないように)
-function makeHoles(s) {
+// このページの 穴の 数: はじめの 3まいは 4つ、そのあとは 2〜4 の くじ
+export function holeCount(s, page) {
+  if (page < RULES.firstPages) return RULES.holes[1];
+  return RULES.holes[0] + Math.floor(nextRandom(s) * (RULES.holes[1] - RULES.holes[0] + 1));
+}
+function makeHoles(s, n) {
   let best = [];
   // うまく ならばなかったら、はじめから やりなおす(いちばん 多く ならんだ ものを つかう)
-  for (let round = 0; round < 30 && best.length < RULES.holes; round++) {
-    const holes = placeHoles(s);
+  for (let round = 0; round < 30 && best.length < n; round++) {
+    const holes = placeHoles(s, n);
     if (holes.length > best.length) best = holes;
   }
   return best;
 }
-function placeHoles(s) {
+function placeHoles(s, n) {
   const holes = [];
   const m = RULES.holeR + 0.25;
-  for (let tries = 0; holes.length < RULES.holes && tries < 60; tries++) {
+  for (let tries = 0; holes.length < n && tries < 60; tries++) {
     const x = -RULES.W / 2 + m + nextRandom(s) * (RULES.W - m * 2);
     const z = m + nextRandom(s) * (RULES.D - m * 2);
     if (holes.some((h) => Math.hypot(h.x - x, h.z - z) < RULES.holeR * 2 + RULES.holeGap)) continue;
@@ -89,7 +96,7 @@ export function createGame(players, seed) {
       return { x: p.x, z: p.z, vx: 0, vz: 0, face: Math.PI, alive: true, safe: 0 };
     }),
   };
-  s.holes = makeHoles(s);
+  s.holes = makeHoles(s, holeCount(s, 0));
   s.stageT = showTime(0);
   return s;
 }
@@ -188,7 +195,7 @@ export function step(s, inputs) {
       }
     } else if (s.stage === 'after' && s.stageT <= 0) {
       s.page++;
-      s.holes = makeHoles(s);
+      s.holes = makeHoles(s, holeCount(s, s.page));
       s.stage = 'show';
       s.stageT = showTime(s.page);
       ev.push({ type: 'page', page: s.page, holes: s.holes, time: s.stageT });

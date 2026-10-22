@@ -31,7 +31,7 @@ const go = (s, sec, inputs) => {
 test('ページの 穴は 本の 中に、重ならずに ならぶ', () => {
   for (let seed = 1; seed <= 30; seed++) {
     const s = createGame(PLAYERS, seed);
-    assert.equal(s.holes.length, RULES.holes);
+    assert.equal(s.holes.length, 4, 'はじめの ページは 4つ');
     for (const h of s.holes) {
       assert.ok(Math.abs(h.x) + h.r <= RULES.W / 2 && h.z - h.r >= 0 && h.z + h.r <= RULES.D);
       for (const o of s.holes) if (o !== h) assert.ok(Math.hypot(o.x - h.x, o.z - h.z) >= h.r * 2);
@@ -71,6 +71,18 @@ test('ページが たおれた とき、穴の 中なら たすかって、外�
   assert.deepEqual(slam.squashed, [1]);
   assert.ok(a.alive && !b.alive);
   assert.equal(s.winner, 0);
+});
+
+test('穴の 数: はじめの 3まいは 4つ、そのあとは 2〜4', () => {
+  const counts = new Set();
+  for (let seed = 1; seed <= 20; seed++) {
+    const { events } = run(seed);
+    for (const e of events.filter((x) => x.type === 'page')) {
+      if (e.page < 3) assert.equal(e.holes.length, 4, `${e.page}まいめ`);
+      else { assert.ok(e.holes.length >= 2 && e.holes.length <= 4); counts.add(e.holes.length); }
+    }
+  }
+  assert.deepEqual([...counts].sort(), [2, 3, 4]);
 });
 
 test('つぎの ページは 新しい 穴。めくれる 速さは だんだん 速くなる', () => {
