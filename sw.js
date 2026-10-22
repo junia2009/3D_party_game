@@ -10,7 +10,7 @@
 // 版はファイルの中身から作るので、1つでも変われば sw.js が変わり、ブラウザが入れなおす。
 
 // <precache>
-const VERSION = '6c917358fb17';
+const VERSION = '27eeab4d6c3a';
 const PRECACHE = [
   "./",
   "./assets/thumbs/bumper.jpg",
@@ -226,9 +226,12 @@ self.addEventListener('fetch', (e) => {
     return;
   }
   if (url.origin !== self.location.origin) return;
-  // 同じサイトのもの: ネットワークを先に見て、だめならしまったもの
+  // 同じサイトのもの: ネットワークを先に見て、だめならしまったもの。
+  // ブラウザの HTTP キャッシュ(GitHub Pages は 10 分)を そのまま 使うと、新しい index.html に
+  // 古い .js が まざって 動かなくなる(一覧に 出た 競技を おしても ひらかない)ので、かならず 問いあわせる
+  // (かわっていなければ 304 で すぐ かえってくる)。ページ そのもの(navigate)は Request を 作りなおせないので そのまま
   e.respondWith(
-    fetch(req)
+    (req.mode === 'navigate' ? fetch(req) : fetch(req, { cache: 'no-cache' }))
       .then((res) => {
         if (res.ok && res.type === 'basic') {
           const copy = res.clone();

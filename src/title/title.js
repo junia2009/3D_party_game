@@ -561,6 +561,13 @@ const GAMES = {
 let current = 'daruma'; // 入口に出している競技
 let taikai = { stage: 'shiki', turns: 10 }; // 大会の入口でえらんだもの
 function openGame(key) {
+  // ページ(カード)だけ 新しくて、この title.js が 古いと 競技が 見つからない。いちど だけ 読みなおす
+  if (!GAMES[key]) {
+    let tried = false;
+    try { tried = sessionStorage.getItem('dongurinpic.reloadFor') === key; sessionStorage.setItem('dongurinpic.reloadFor', key); } catch { /* しまえない ときは そのまま */ }
+    if (!tried) location.reload();
+    return;
+  }
   current = key;
   const isTaikai = key === 'taikai';
   $('turnSel').hidden = !isTaikai;
