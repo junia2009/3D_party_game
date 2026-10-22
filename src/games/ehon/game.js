@@ -74,6 +74,7 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
     // ぺしゃっ: つぶれる
     squash() { voice({ type: 'square', pts: [[0, 420], [0.25, 90]], len: 0.3, gain: 0.05 }); },
     // セーフ!
+    tick() { voice({ type: 'square', pts: [[0, 1600]], len: 0.03, gain: 0.03 }); },
     safe() { [784, 1047].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.12, gain: 0.04, at: i * 0.07 })); },
     hurry() { [523, 659, 784, 1047, 1319].forEach((f, i) => voice({ type: 'square', pts: [[0, f]], len: 0.09, gain: 0.04, at: i * 0.06 })); },
     beep(last) { voice({ type: 'square', pts: [[0, last ? 1320 : 660]], len: last ? 0.5 : 0.16, gain: 0.05 }); },
@@ -141,6 +142,44 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 3 + Math.random() * 1.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, -(0.7 + Math.random() * 0.6), (Math.random() - 0.5) * 0.6), spin: new THREE.Vector3(Math.random() * 8, Math.random() * 8, 0), kind: 'confetti' });
     }
   }
+  // 風の すじ(ページが たおれてくる とき、床を 手前へ ふきぬける)
+  const windGeo = new THREE.PlaneGeometry(0.05, 1.4).rotateX(-Math.PI / 2);
+  function wind() {
+    for (let i = 0; i < 10; i++) {
+      const m = new THREE.Mesh(windGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false }));
+      m.position.set(-W / 2 + Math.random() * W, 0.15 + Math.random() * 0.6, Math.random() * 2);
+      scene.add(m);
+      fx.push({ obj: m, t: -Math.random() * 0.2, life: 0.45, vel: new THREE.Vector3(0, 0, 9 + Math.random() * 4), kind: 'fade' });
+    }
+  }
+  // 星(ぺちゃんこの とき)
+  const starGeo = (() => {
+    const sh = new THREE.Shape();
+    for (let i = 0; i <= 10; i++) {
+      const a = Math.PI / 2 + (i / 10) * Math.PI * 2, r = i % 2 ? 0.08 : 0.2;
+      if (i === 0) sh.moveTo(Math.cos(a) * r, Math.sin(a) * r); else sh.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    return new THREE.ShapeGeometry(sh);
+  })();
+  function stars(x, y, z, n = 8) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(starGeo, new THREE.MeshBasicMaterial({ color: [0xffd23c, 0xffffff, 0xff8fd0][i % 3], transparent: true, side: THREE.DoubleSide }));
+      m.position.set(x, y, z);
+      scene.add(m);
+      const a = (i / n) * Math.PI * 2;
+      fx.push({ obj: m, t: 0, life: 0.5, vel: new THREE.Vector3(Math.cos(a) * 3, 2 + Math.random() * 2, Math.sin(a) * 3), kind: 'spark' });
+    }
+  }
+  // 紙の 切れはし(ページが 立つ とき・ぱたんの とき)
+  const scrapGeo = new THREE.PlaneGeometry(0.22, 0.15);
+  function scraps(x, y, z, n = 6) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(scrapGeo, new THREE.MeshToonMaterial({ color: 0xf3e7cc, side: THREE.DoubleSide, transparent: true }));
+      m.position.set(x + (Math.random() - 0.5) * 2, y, z + (Math.random() - 0.5) * 0.5);
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 1.4, vel: new THREE.Vector3((Math.random() - 0.5) * 3, 2 + Math.random() * 2, (Math.random() - 0.2) * 2), spin: new THREE.Vector3(Math.random() * 9, Math.random() * 9, 0), kind: 'scrap' });
+    }
+  }
   function updateFx(dt) {
     for (let i = fx.length - 1; i >= 0; i--) {
       const f = fx[i];
@@ -151,6 +190,20 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
         f.vel.multiplyScalar(Math.exp(-3 * dt));
         f.obj.scale.setScalar(f.size * (1 + k * 1.6));
         f.obj.material.opacity = 0.85 * (1 - k);
+      } else if (f.kind === 'fade') {
+        if (f.t < 0) { f.obj.visible = false; f.obj.position.addScaledVector(f.vel, -dt); continue; }
+        f.obj.visible = true;
+        f.obj.material.opacity = 0.7 * (1 - k);
+      } else if (f.kind === 'spark') {
+        f.vel.y -= 10 * dt;
+        f.obj.lookAt(camera.position);
+        f.obj.material.opacity = 1 - k;
+      } else if (f.kind === 'scrap') {
+        f.vel.multiplyScalar(Math.exp(-dt * 1.5));
+        f.vel.y -= 2.5 * dt;
+        f.obj.rotation.x += f.spin.x * dt;
+        f.obj.rotation.y += f.spin.y * dt;
+        f.obj.material.opacity = Math.min(1, (1 - k) * 3);
       } else if (f.kind === 'confetti') {
         f.obj.rotation.x += f.spin.x * dt;
         f.obj.rotation.y += f.spin.y * dt;
@@ -366,7 +419,7 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
           setTimeout(() => $('howtoE').classList.remove('show'), 6000);
           break;
         case 'page':
-          if (e.page > 0) { newPage(e.holes, e.page); sfx.page(); }
+          if (e.page > 0) { newPage(e.holes, e.page); sfx.page(); scraps(0, D * 0.8, 0.2, 3); }
           break;
         case 'faster':
           splash('はやく なるよ!', 'gold small');
@@ -375,6 +428,7 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
           break;
         case 'flip':
           pivot.userData.flip = { t: 0, time: e.time };
+          setTimeout(wind, e.time * 600);
           owl.play('flap', { fade: 0.1 });
           setTimeout(() => owl.play('idle', { fade: 0.3 }), 700);
           sfx.whoosh(e.time);
@@ -382,6 +436,9 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
         case 'slam': {
           pivot.userData.flip = null;
           pivot.rotation.x = Math.PI / 2;
+          pivot.userData.bounce = 1; // ぱたんの あと 少し はねる
+          for (let i = 0; i < 10; i++) { const side = i % 3; const x = side === 0 ? -W / 2 - 0.1 : side === 1 ? W / 2 + 0.1 : -W / 2 + Math.random() * W; const z = side === 2 ? D + 0.2 : Math.random() * D; puff(x, 0.1, z, 1, 0xe8dcc0, 1.3); }
+          scraps(0, 0.3, D, 5);
           sfx.slam();
           game.shake = 0.3;
           // ページの ふちから 風で 紙の ほこり
@@ -397,6 +454,7 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
           const u = game.runners[e.slot];
           u.out = { t: 0, x: e.x, z: e.z };
           sfx.squash();
+          stars(e.x, 0.4, e.z, 9);
           pop('ぺちゃんこ!', e.x, 1.4, e.z, e.slot === 0 ? 'red' : 'out');
           if (e.slot === 0) splash('ぺちゃんこ…', 'red small');
           if (s.runners.filter((x) => x.alive).length === 2 && !game.duel) {
@@ -451,10 +509,18 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
       f.t += dt;
       const k = Math.min(1, f.t / f.time);
       pivot.rotation.x = (Math.PI / 2) * k * k;
+    } else if (pivot.userData.bounce > 0 && s.stage === 'after') {
+      pivot.userData.bounce = Math.max(0, pivot.userData.bounce - dt * 4);
+      pivot.rotation.x = Math.PI / 2 - Math.sin((1 - pivot.userData.bounce) * Math.PI) * 0.05;
     } else if (s.stage === 'show' || s.phase === 'ready') {
       pivot.userData.rise = Math.min(1, (pivot.userData.rise ?? 1) + dt * 5);
       const k = pivot.userData.rise;
       pivot.rotation.x = -0.35 * (1 - k) * (1 - k) + Math.sin(k * Math.PI) * 0.04;
+      // 立っている あいだ ふわっと ゆれて、たおれる 前は ぐらぐら
+      if (s.phase === 'play' && s.stage === 'show') {
+        const left = s.stageT;
+        pivot.rotation.x += Math.sin(time * 2) * 0.015 + (left < 0.5 ? Math.sin(time * 40) * 0.025 * (1 - left / 0.5) : 0);
+      }
     }
     if (fallen) {
       // たおれた ページは 少しのあいだ 床に のこってから 消える
@@ -465,7 +531,8 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
     const show = s.phase === 'play' || s.phase === 'ready';
     const fk = f ? Math.min(1, f.t / f.time) : 0;
     const late = s.stage === 'show' ? 1 - Math.min(1, s.stageT / showTime(s.page)) : 1;
-    shadow.material.opacity = show && (s.stage === 'show' || s.stage === 'flip') ? 0.35 + late * 0.25 + fk * 0.4 : 0;
+    const pulse = s.stage === 'show' && s.stageT < 0.6 ? Math.sin(time * 30) * 0.12 : 0;
+    shadow.material.opacity = show && (s.stage === 'show' || s.stage === 'flip') ? 0.35 + late * 0.25 + fk * 0.4 + pulse : 0;
     // 子
     for (const [slot, u] of game.runners.entries()) {
       const r = s.runners[slot];
@@ -494,7 +561,14 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
         // ページが たおれてくる: 穴の 外だと びっくり。たすかったら ばんざい
         if (s.stage === 'flip') face = 'surprised';
         u.safeT = Math.max(0, u.safeT - dt);
-        if (u.safeT > 0) { clip = 'cheer'; face = 'happy'; }
+        if (u.safeT > 0) {
+          clip = 'cheer';
+          face = 'happy';
+          // 穴から ひょこっ
+          const k = 1 - u.safeT / 0.6;
+          u.holder.position.y = Math.sin(Math.min(1, k * 2) * Math.PI) * 0.35;
+          u.holder.scale.set(1 + Math.sin(k * Math.PI * 2) * 0.08 * (1 - k), 1 - Math.sin(k * Math.PI * 2) * 0.08 * (1 - k), 1);
+        }
         if (s.phase === 'finished') { clip = 'cheer'; face = 'happy'; }
       }
       u.model.play(clip);
@@ -508,6 +582,8 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
     stage.glow.material.opacity = 0.85 + Math.sin(time * 2.3) * 0.08;
     stage.update(time);
     owl.update(dt);
+    // たおれる 少し前: チッ チッ
+    if (s.phase === 'play' && s.stage === 'show' && s.stageT < 0.6) { game.tickT = (game.tickT ?? 0) - dt; if (game.tickT <= 0) { game.tickT = 0.15; sfx.tick(); } }
   }
 
   let freeCamera = false;
