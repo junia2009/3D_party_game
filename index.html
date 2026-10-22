@@ -459,15 +459,16 @@
   #hudG .splash.small { font-size: clamp(26px, 8.5vw, 50px); }
   #hudG .splash.gold.small { color: #ffd24a; }
   .flagcall {
-    position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 64px); transform: translateX(-50%);
-    display: grid; grid-template-columns: auto auto; align-items: center; gap: 4px 10px; padding: 8px 18px 10px 12px;
-    background: rgba(31,42,51,.78); border-radius: 18px; box-shadow: 0 4px 0 rgba(31,42,51,.2); animation: flagin .3s ease-out;
+    position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 60px); transform: translateX(-50%);
+    display: grid; justify-items: center; gap: 6px; padding: 10px 16px 10px;
+    background: rgba(31,42,51,.72); border-radius: 18px; box-shadow: 0 4px 0 rgba(31,42,51,.2); animation: flagin .3s ease-out;
   }
-  .flagcall i { width: 40px; height: 40px; border-radius: 10px; background: var(--c, #fff); box-shadow: 0 0 0 3px #fff; }
-  .flagcall b { font: 400 30px var(--font-display); color: var(--c, #333); -webkit-text-stroke: 6px var(--hud-ink); paint-order: stroke fill; }
-  .flagcall .bar { grid-column: 1 / 3; height: 8px; border-radius: 4px; background: rgba(255,255,255,.2); overflow: hidden; }
+  .flagcall svg { width: 78px; height: 68px; display: block; }
+  .flagcall .cloth { fill: var(--c, #fff); animation: wave .5s ease-in-out infinite alternate; transform-origin: 11px 20px; }
+  .flagcall .bar { width: 88px; height: 8px; border-radius: 4px; background: rgba(255,255,255,.2); overflow: hidden; }
   .flagcall .bar span { display: block; height: 100%; width: calc(var(--k, 1) * 100%); background: var(--c, #fff); }
   .flagcall.hurry { animation: flaghurry .25s infinite alternate; }
+  @keyframes wave { to { transform: skewY(-4deg) scaleX(.96); } }
   @keyframes flagin { from { transform: translateX(-50%) scale(.6); opacity: 0; } }
   @keyframes flaghurry { to { transform: translateX(-50%) scale(1.06); } }
   /* 遊園地の バンパーカー: 上に のこっている子と のこり時間、右下に ダッシュ(つかったあとは 輪が たまっていく) */
@@ -1290,7 +1291,7 @@
     <button class="card" type="button" data-open="kinoko">
       <span class="thumb"><img src="./assets/thumbs/kinoko.jpg" alt="" width="640" height="360"><span class="ribbon">第17競技</span><span class="go-mark" aria-hidden="true"></span></span>
       <span class="name">森の湖の いろいろキノコ</span>
-      <span class="meta"><span>30〜60びょう</span></span>
+      <span class="meta"><span>40〜70びょう</span></span>
     </button>
   </div>
 </section>
@@ -1467,7 +1468,7 @@
     <div class="scores" id="chipsG" aria-label="のこっている子"></div>
     <button class="pausebtn" id="pauseBtnG" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
   </div>
-  <div class="flagcall" id="flagG" hidden><i></i><b></b><span class="bar"><span></span></span></div>
+  <div class="flagcall" id="flagG" hidden><svg viewBox="0 0 64 56" aria-hidden="true"><rect x="6" y="2" width="5" height="54" rx="2.5" fill="#8a5a32"/><path class="cloth" d="M11 5 C26 0 34 12 58 6 L58 34 C34 40 26 28 11 33 Z" stroke="#fff" stroke-width="3" stroke-linejoin="round"/><circle cx="8.5" cy="3" r="3.5" fill="#ffd23c"/></svg><span class="bar"><span></span></span></div>
   <div class="pops" id="popsG"></div>
   <div class="splash" id="splashG"></div>
   <p class="howto" id="howtoG">ゆびを おいて ずらすと はしる。先生の 旗と おなじ 色の キノコへ!<br>「ジャンプ」中に もう一度 おすと ヒップドロップ</p>

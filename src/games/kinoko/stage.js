@@ -14,7 +14,7 @@ import { HEXES, RULES } from './rules.js';
 
 export const WATER_Y = -0.8;
 export const SINK_Y = -2.4; // しずみきった ときの キノコの 高さ
-export const OWL_AT = new THREE.Vector3(3.4, WATER_Y + 1.0, -6.4); // 右奥(カメラに 入る ところ)
+export const OWL_AT = new THREE.Vector3(5.2, WATER_Y + 1.0, -9.2); // 右奥(カメラに 入る ところ)
 
 // キノコの 色(上の 面 / もようの 色 / 横)
 export const PALETTE = {
@@ -148,7 +148,7 @@ export function buildStage(scene) {
   bed.position.y = WATER_Y - 1.6;
   g.add(bed);
   // 岸(遠くの 丘)と 木
-  const SHORE = 15;
+  const SHORE = 20;
   const shore = new THREE.Mesh(new THREE.RingGeometry(SHORE, 70, 64, 4).rotateX(-Math.PI / 2), toonMaterial(0x6aa956));
   shore.position.y = WATER_Y + 0.2;
   g.add(shore);
@@ -189,7 +189,7 @@ export function buildStage(scene) {
   // 蓮の葉
   const pad = toonMaterial(0x4f9a46), flower = toonMaterial(0xffb8d8);
   for (let i = 0; i < 26; i++) {
-    const a = rand() * Math.PI * 2, d = 7 + rand() * 7;
+    const a = rand() * Math.PI * 2, d = 10 + rand() * 9;
     const m = new THREE.Mesh(new THREE.CircleGeometry(0.4 + rand() * 0.4, 14, 0.3, Math.PI * 1.8).rotateX(-Math.PI / 2), pad);
     m.position.set(Math.cos(a) * d, WATER_Y + 0.02, Math.sin(a) * d);
     m.rotation.y = rand() * 6;

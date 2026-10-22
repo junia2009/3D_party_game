@@ -10,7 +10,7 @@ import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
-import { COLOR_NAMES, HEXES, RULES, STEP, createGame, moveTime, ranking, step } from './rules.js';
+import { HEXES, RULES, STEP, createGame, moveTime, ranking, step } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { OWL_AT, PALETTE, SINK_Y, WATER_Y, buildFlag, buildMushrooms, buildStage, css as colorCss } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -107,8 +107,8 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
   owl.root.scale.setScalar(1.3);
   scene.add(owl.root);
   const flag = buildFlag();
-  flag.g.position.set(OWL_AT.x - 0.85, OWL_AT.y, OWL_AT.z + 0.55);
-  flag.g.scale.setScalar(1.6);
+  flag.g.position.set(OWL_AT.x - 1.7, OWL_AT.y, OWL_AT.z + 0.4); // 先生の よこ(カメラから 見て 体に かさならない)
+  flag.g.scale.setScalar(2.0);
   scene.add(flag.g);
   let flagUp = 0; // 0 さげている 〜 1 あげている
 
@@ -415,7 +415,6 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
         case 'flag': {
           const el = $('flagG');
           el.style.setProperty('--c', colorCss(e.color));
-          el.querySelector('b').textContent = COLOR_NAMES[e.color] + '!';
           el.hidden = false;
           el.classList.remove('hurry');
           el.style.animation = 'none';
@@ -611,7 +610,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    const pos = portrait ? new THREE.Vector3(0, 15, 12.5) : new THREE.Vector3(0, 9.5, 10.5);
+    const pos = portrait ? new THREE.Vector3(0, 21, 17) : new THREE.Vector3(0, 13, 14.5);
     const look = new THREE.Vector3(0, portrait ? -0.6 : -0.3, portrait ? 0.4 : 0.2);
     const s = game?.state;
     if (s && (game.duel || s.phase === 'finished')) {

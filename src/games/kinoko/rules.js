@@ -18,25 +18,25 @@ export const STEP = 1 / 60;
 export const RULES = {
   readyTime: 3,
   timeLimit: 120, // これをこえたら、旗の キノコの まん中に 近い順
-  hexR: 1.62, // キノコの 六角の 大きさ(中心から かどまで)
+  hexR: 2.4, // キノコの 六角の 大きさ(中心から かどまで)
   gap: 0.06, // キノコの あいだの すきま(この ぶん 小さく)
   // 旗の ながれ
   waitTime: [0.9, 1.7], // 旗が あがるまで
-  moveFirst: 2.6, // 旗が あがってから しずむまで(はじめ)
-  moveMin: 0.95, // いちばん 短い とき
-  moveStep: 0.2, // 1回ごとに 短くなる
+  moveFirst: 4.0, // 旗が あがってから しずむまで(はじめ)
+  moveMin: 1.0, // いちばん 短い とき
+  moveStep: 0.38, // 1回ごとに 短くなる
   sinkTime: 0.45, // しずむ
   holdTime: 1.1, // しずんだ まま
   riseTime: 0.8, // 上がってくる
   // 走る・とぶ
-  speed: 3.6,
+  speed: 4.2,
   accel: 16,
   airControl: 0.55,
   gravity: 22,
   jumpV: 7.0,
   dropV: -15, // ヒップドロップ
   dropPause: 0.12, // 空中で 一瞬 とまってから 落ちる
-  dropR: 1.5, // ヒップドロップで はじく はんい
+  dropR: 1.8, // ヒップドロップで はじく はんい
   dropKick: 6.0,
   stompBounce: 6.5,
   squash: 0.8, // ふんづけられて 動けない
