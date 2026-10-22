@@ -447,6 +447,29 @@
   .hold b { position: absolute; inset: 10px; border-radius: 50%; background: #fff; display: grid; place-items: center; font: 800 13px var(--font-body); color: var(--hud-ink); }
   .hold.full b { background: #ffd24a; }
   .hold.full b::after { content: '大ジャンプ!'; position: absolute; top: -28px; white-space: nowrap; font: 400 20px var(--font-display); color: #ffd24a; -webkit-text-stroke: 5px var(--hud-ink); paint-order: stroke fill; }
+  /* 森の湖の いろいろキノコ: 上に のこっている子、まん中に 旗の 色(しずむまでの のこりの 帯)、右下に ジャンプ */
+  #hudG .chip { padding: 4px; }
+  #hudG .chip i { width: 18px; height: 18px; }
+  #hudG .chip b:empty { display: none; }
+  #hudG .chip.out { opacity: .35; filter: grayscale(1); }
+  #hudG .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
+  @media (orientation: landscape) and (max-height: 560px) {
+    #hudG .howto { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 62px); font-size: 14px; }
+  }
+  #hudG .splash.small { font-size: clamp(26px, 8.5vw, 50px); }
+  #hudG .splash.gold.small { color: #ffd24a; }
+  .flagcall {
+    position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 64px); transform: translateX(-50%);
+    display: grid; grid-template-columns: auto auto; align-items: center; gap: 4px 10px; padding: 8px 18px 10px 12px;
+    background: rgba(31,42,51,.78); border-radius: 18px; box-shadow: 0 4px 0 rgba(31,42,51,.2); animation: flagin .3s ease-out;
+  }
+  .flagcall i { width: 40px; height: 40px; border-radius: 10px; background: var(--c, #fff); box-shadow: 0 0 0 3px #fff; }
+  .flagcall b { font: 400 30px var(--font-display); color: var(--c, #333); -webkit-text-stroke: 6px var(--hud-ink); paint-order: stroke fill; }
+  .flagcall .bar { grid-column: 1 / 3; height: 8px; border-radius: 4px; background: rgba(255,255,255,.2); overflow: hidden; }
+  .flagcall .bar span { display: block; height: 100%; width: calc(var(--k, 1) * 100%); background: var(--c, #fff); }
+  .flagcall.hurry { animation: flaghurry .25s infinite alternate; }
+  @keyframes flagin { from { transform: translateX(-50%) scale(.6); opacity: 0; } }
+  @keyframes flaghurry { to { transform: translateX(-50%) scale(1.06); } }
   /* 遊園地の バンパーカー: 上に のこっている子と のこり時間、右下に ダッシュ(つかったあとは 輪が たまっていく) */
   #hudQ .chip { padding: 4px; }
   #hudQ .chip i { width: 18px; height: 18px; }
@@ -1264,6 +1287,11 @@
       <span class="name">遊園地の バンパーカー</span>
       <span class="meta"><span>30〜50びょう</span></span>
     </button>
+    <button class="card" type="button" data-open="kinoko">
+      <span class="thumb"><img src="./assets/thumbs/kinoko.jpg" alt="" width="640" height="360"><span class="ribbon">第17競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">森の湖の いろいろキノコ</span>
+      <span class="meta"><span>30〜60びょう</span></span>
+    </button>
   </div>
 </section>
 
@@ -1432,6 +1460,19 @@
   <p class="call" id="callJ"></p>
   <p class="howto" id="howtoJ">なわが 来たら タップで ジャンプ!<br>「大なみ!」は 長おしで 大ジャンプ</p>
   <div class="hold" id="holdJ" hidden aria-hidden="true"><b>ジャンプ</b></div>
+</div>
+
+<div class="hud" id="hudG" hidden>
+  <div class="top">
+    <div class="scores" id="chipsG" aria-label="のこっている子"></div>
+    <button class="pausebtn" id="pauseBtnG" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="flagcall" id="flagG" hidden><i></i><b></b><span class="bar"><span></span></span></div>
+  <div class="pops" id="popsG"></div>
+  <div class="splash" id="splashG"></div>
+  <p class="howto" id="howtoG">ゆびを おいて ずらすと はしる。先生の 旗と おなじ 色の キノコへ!<br>「ジャンプ」中に もう一度 おすと ヒップドロップ</p>
+  <div class="stick" id="stickG" hidden><i></i></div>
+  <button class="tame jump" id="jumpG" type="button">ジャンプ</button>
 </div>
 
 <div class="hud" id="hudQ" hidden>
