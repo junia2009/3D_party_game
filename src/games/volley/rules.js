@@ -24,8 +24,8 @@ export const TEAM_SIZE = 3;
 
 export const RULES = {
   readyTime: 3.0,
-  timeLimit: 100,
-  winScore: 7,
+  timeLimit: 120,
+  winScore: 5,
   halfW: 7.0, // コートの よこ(x)の 半分
   halfD: 3.6, // おくゆき(z)の 半分
   netGap: 0.45, // ネットから これだけ はなれる
@@ -33,20 +33,23 @@ export const RULES = {
   speed: 4.6,
   accel: 16,
   bodyR: 0.36,
-  reach: 1.05, // うてる ところ(よこの きょり)
+  reach: 1.35, // うてる ところ(よこの きょり)
   reachLo: 0.4, // ボールの 高さが この あいだで うてる
-  reachHi: 2.3,
+  reachHi: 2.6,
   spikeHi: 3.1, // ジャンプして とどく 高さ(スパイク)
-  buffer: 0.32, // ボタンを おしてから 待つ 時間
+  buffer: 0.5, // ボタンを おしてから 待つ 時間
   cool: 0.35, // うった あと
   gravity: 9.8,
   ballR: 0.22,
   // とび方(とぶ 時間 秒)
-  passT: 1.35,
-  tossT: 1.05,
-  lobT: 1.55,
-  spikeT: 0.62,
-  serveT: 1.75,
+  // レシーブ・トスは 高く 上げて、ねらった ところで 手の 高さ(passY / tossY)まで 落ちてくる
+  passT: 1.9,
+  passY: 1.1,
+  tossT: 1.6,
+  tossY: 1.9,
+  lobT: 1.8,
+  spikeT: 0.72,
+  serveT: 2.0,
   spikeX: 2.6, // ネットから これより 近いと スパイク
   // 風
   windFirst: 14,
@@ -123,11 +126,12 @@ const sideOf = (x) => (x < 0 ? 'L' : 'R');
 export const inCourt = (x, z) => Math.abs(x) <= RULES.halfW && Math.abs(z) <= RULES.halfD;
 
 // ボールを (tx, tz) に T 秒で 落とす(風は 入れない)
-function launch(s, tx, tz, T, kind) {
+// (endY: T 秒 あとの 高さ。ふつうは 地面)
+function launch(s, tx, tz, T, kind, endY = RULES.ballR) {
   const b = s.ball;
   b.vx = (tx - b.x) / T;
   b.vz = (tz - b.z) / T;
-  b.vy = (RULES.ballR - b.y + 0.5 * RULES.gravity * T * T) / T;
+  b.vy = (endY - b.y + 0.5 * RULES.gravity * T * T) / T;
   b.state = 'fly';
   b.kind = kind;
   b.target = { x: tx, z: tz };
@@ -166,13 +170,14 @@ function hit(s, i, ev) {
   u.want = 0;
   s.rally++;
   const nearNet = Math.abs(u.x) < RULES.spikeX;
-  const attack = b.touches >= 3 || (b.touches === 2 && nearNet);
+  // 2回目は ふつう トス(レシーブ → トス → アタック)。サーブや アタックを 1回で かえされた ボールが ネットぎわに 来たときだけ 2回目でも たたく
+  const attack = b.touches >= 3 || (b.touches === 2 && nearNet && b.kind !== 'pass');
   if (!attack) {
     // レシーブ: ネットの 前へ 高く / トス: ネットの 近くへ(味方が アタックできる ところ)
     const toss = b.touches === 2;
     const tx = sx * (toss ? 1.4 : 2.0 + nextRandom(s) * 0.6);
     const tz = (nextRandom(s) - 0.5) * (toss ? 2.4 : 2.2);
-    launch(s, tx, tz, toss ? RULES.tossT : RULES.passT, toss ? 'toss' : 'pass');
+    launch(s, tx, tz, toss ? RULES.tossT : RULES.passT, toss ? 'toss' : 'pass', toss ? RULES.tossY : RULES.passY);
     ev.push({ type: 'hit', who: i, kind: b.kind, touches: b.touches });
     return;
   }
@@ -242,8 +247,10 @@ export function autoInput(s, i, skill, rand) {
         const k2 = Math.min(1, seen / 0.3);
         u.aim = u.aim || { ex: (rand() - 0.5) * skill.err, ez: (rand() - 0.5) * skill.err, id: s.rally };
         if (u.aim.id !== s.rally) u.aim = { ex: (rand() - 0.5) * skill.err, ez: (rand() - 0.5) * skill.err, id: s.rally };
-        gx = u.x + (land.x + u.aim.ex - u.x) * k2;
-        gz = u.z + (land.z + u.aim.ez - u.z) * k2;
+        // 読みの ずれは、ボールが 近づくほど 小さくなる(さいごまで 少し のこる)
+        const e = 0.35 + 0.65 * Math.min(1, land.t / 0.9);
+        gx = u.x + (land.x + u.aim.ex * e - u.x) * k2;
+        gz = u.z + (land.z + u.aim.ez * e - u.z) * k2;
       }
     } else if (b.lastSide === u.side) {
       // 相手の ほうへ 行った: 立ち位置へ(前の 子は ネットの 前)
@@ -251,7 +258,8 @@ export function autoInput(s, i, skill, rand) {
   }
   const dx = gx - u.x, dz = gz - u.z, d = Math.hypot(dx, dz);
   const m = Math.min(1, d / 0.6);
-  const reachable = b.state === 'fly' && Math.hypot(b.x - u.x, b.z - u.z) < RULES.reach * 1.15 && b.vy < 0 && b.y < RULES.reachHi + 0.3 && b.y > RULES.reachLo;
+  // もうすぐ 手の とどく ところに 来そうなら おす(待ってくれる あいだに 来る)
+  const reachable = b.state === 'fly' && b.lastSide !== null && Math.hypot(b.x - u.x, b.z - u.z) < RULES.reach * 1.5 && b.vy < 0 && b.y < RULES.reachHi + 1.2 && b.y > RULES.reachLo && sideOf(b.x) === u.side;
   const press = reachable && rand() < skill.press * STEP;
   return { x: d > 0.05 ? (dx / d) * m : 0, z: d > 0.05 ? (dz / d) * m : 0, hit: press };
 }
@@ -359,7 +367,9 @@ export function step(s, inputs) {
       return ev;
     }
     // うつ: ボタンを おしてある 子の 手の とどく ところに 来たら(ボールの 来た ほうの チーム)
-    if (b.vy < 0 || b.kind === 'serve') {
+    // アタックした ボールが ネットを こえる 前に 味方が また さわる ことは しない(相手へ とんでいく ボール)
+    const outgoing = b.lastSide === sideOf(b.x) && (b.kind === 'spike' || b.kind === 'lob' || b.kind === 'serve');
+    if ((b.vy < 0 || b.kind === 'serve') && !outgoing) {
       const side = sideOf(b.x);
       let hitter = null, hd = Infinity;
       for (const i of s.teams[side]) {
@@ -396,7 +406,7 @@ export function step(s, inputs) {
 }
 
 // すけっとの うでまえ
-export const HELPER = { react: 0.35, err: 0.55, press: 7 };
+export const HELPER = { react: 0.32, err: 0.8, press: 18 };
 
 export function ranking(s) {
   const players = s.units.map((u, i) => i).filter((i) => s.units[i].slot >= 0);

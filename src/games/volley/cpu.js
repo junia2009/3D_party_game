@@ -10,9 +10,9 @@ import { nextRandom, seedFrom } from '../../rng.js';
 import { autoInput } from './rules.js';
 
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', react: 0.3, err: 0.45, press: 8 },
-  normal: { label: 'ふつう', react: 0.27, err: 0.5, press: 9 },
-  bold: { label: 'つよき', react: 0.24, err: 0.6, press: 10 },
+  cautious: { label: 'しんちょう', react: 0.27, err: 0.7, press: 22 },
+  normal: { label: 'ふつう', react: 0.27, err: 0.8, press: 24 },
+  bold: { label: 'つよき', react: 0.25, err: 0.95, press: 26 },
 };
 
 export function createCpu(personality, seed, slot) {

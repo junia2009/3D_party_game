@@ -799,7 +799,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     shadow.scale.setScalar(1 + hy * 0.12);
     shadow.material.opacity = Math.max(0.15, 0.5 - hy * 0.05);
     // 落ちる ところ(自分の チームへ 来る ボール)
-    const land = b.state === 'fly' ? landing(s) : null;
+    const land = b.state === 'fly' ? landing(s, 1.0) : null;
     const toMe = land && Math.sign(land.x) === (mySide === 'L' ? -1 : 1) && b.lastSide !== mySide;
     landRing.visible = !!toMe;
     if (toMe) {

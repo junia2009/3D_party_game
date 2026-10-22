@@ -96,7 +96,7 @@ test('チームが 勝つ 回数は 左右で かたよらない', () => {
 });
 
 test('人くらいの うでまえでも、CPU と互角に戦える', () => {
-  PERSONALITIES.human = { label: 'ひと', react: 0.36, err: 0.6, press: 7 };
+  PERSONALITIES.human = { label: 'ひと', react: 0.36, err: 1.0, press: 16 };
   try {
     let rankSum = 0, wins = 0;
     const NN = 100;
