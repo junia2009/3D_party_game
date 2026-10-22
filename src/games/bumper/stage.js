@@ -391,15 +391,22 @@ export function buildStage(scene) {
       const blink = s.shrinking && s.radius > RULES.rMin + 0.01 ? 0.5 + Math.sin(t * 12) * 0.5 : 1;
       edge.material.color.setHex(blink > 0.5 ? 0xff6fd0 : 0xffffff);
       edgeGlow.material.opacity = 0.35 + blink * 0.35;
-      // 外の 輪: ふちが 輪の 中に 入ったら 暗くなって、輪を こえたら 沈む
+      // 外の 輪: ふちが 輪の 中に 入ったら 暗くなって、輪を こえたら 沈む(かわった 輪を かえす)
+      disk.scale.x = s.spinDir; // 回る 向きが かわると、矢印も うらがえる
+      const changed = { dimmed: [], gone: [] };
       for (const r of rings) {
         const dim = s.radius < r.outer - 0.05;
         const gone = s.radius <= r.inner + 0.02;
+        if (dim && !r.dim) changed.dimmed.push(r);
+        if (gone && !r.gone) changed.gone.push(r);
+        r.dim = dim;
+        r.gone = gone;
         r.sink = gone ? Math.min(1, r.sink + dt * 0.8) : 0;
         r.mesh.position.y = FLOOR_Y - r.sink * 0.6;
         r.mesh.material.color.setScalar(dim ? 0.45 : 1);
         r.mesh.visible = r.sink < 1;
       }
+      return changed;
     },
   };
 }

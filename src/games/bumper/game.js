@@ -90,6 +90,8 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
     // くるりん: 回る 向きが かわる
     flip() { [660, 880, 660].forEach((f, i) => voice({ pts: [[0, f]], len: 0.12, gain: 0.04, at: i * 0.08 })); },
     whistle() { voice({ pts: [[0, 1400], [0.5, 500]], len: 0.5, gain: 0.03 }); },
+    // ガコン: 床の 輪が 切りはなされる
+    clunk() { noise({ len: 0.3, gain: 0.12, freq: [600, 120], type: 'lowpass', attack: 0.004 }); voice({ type: 'square', pts: [[0, 160], [0.2, 90]], len: 0.22, gain: 0.03 }); },
     fanfare() {
       [[0, 523], [0.12, 659], [0.24, 784], [0.36, 1047]].forEach(([at, f]) => voice({ type: 'square', pts: [[0, f]], len: 0.12, gain: 0.05, at }));
       voice({ type: 'square', pts: [[0, 1047]], len: 0.6, gain: 0.05, at: 0.5, vib: 12, vibRate: 7 });
@@ -193,6 +195,71 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 3 + Math.random() * 1.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, -(0.7 + Math.random() * 0.6), (Math.random() - 0.5) * 0.6), spin: new THREE.Vector3(Math.random() * 8, Math.random() * 8, 0), kind: 'confetti' });
     }
   }
+  // タイヤの あと: 横すべりや ダッシュの とき、うしろの タイヤから 黒い 点(だんだん 小さく なって 消える)
+  const SKID_N = 500;
+  const skid = new THREE.InstancedMesh(new THREE.CircleGeometry(0.09, 8).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x3a2a4a, transparent: true, opacity: 0.55, depthWrite: false }), SKID_N);
+  skid.frustumCulled = false;
+  scene.add(skid);
+  const skids = Array.from({ length: SKID_N }, () => ({ x: 0, z: 0, life: 0 }));
+  let skidAt = 0;
+  const dummy = new THREE.Object3D();
+  function addSkid(x, z) {
+    const k = skids[skidAt];
+    skidAt = (skidAt + 1) % SKID_N;
+    k.x = x; k.z = z; k.life = 2.5;
+  }
+  function updateSkids(dt) {
+    skids.forEach((k, i) => {
+      k.life = Math.max(0, k.life - dt);
+      const sc = k.life > 0 ? Math.min(1, k.life / 1.2) : 0.0001;
+      dummy.position.set(k.x, FLOOR_Y + 0.012, k.z);
+      dummy.scale.setScalar(sc);
+      dummy.updateMatrix();
+      skid.setMatrixAt(i, dummy.matrix);
+    });
+    skid.instanceMatrix.needsUpdate = true;
+  }
+  // ダッシュの 風の すじ
+  const streakGeo = new THREE.PlaneGeometry(0.06, 1.1).rotateX(-Math.PI / 2);
+  function streak(x, z, h) {
+    const m = new THREE.Mesh(streakGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false }));
+    const side = (Math.random() - 0.5) * 1.1;
+    m.position.set(x - Math.sin(h) * 0.9 + Math.cos(h) * side, FLOOR_Y + 0.3 + Math.random() * 0.5, z - Math.cos(h) * 0.9 - Math.sin(h) * side);
+    m.rotation.y = h;
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.3, vel: new THREE.Vector3(-Math.sin(h) * 3, 0, -Math.cos(h) * 3), kind: 'fade' });
+  }
+  // ぶつかった ところに 広がる 輪
+  const ringGeo = new THREE.RingGeometry(0.8, 1, 32).rotateX(-Math.PI / 2);
+  function shock(x, z, color = 0xffffff, size = 1) {
+    const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    m.position.set(x, FLOOR_Y + 0.06, z);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.45, vel: new THREE.Vector3(), kind: 'ring', size });
+  }
+  // ポールの 先の ぱちぱち(バンパーカーの 天井の 電気)
+  function zap(x, y, z, n = 5) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color: i % 2 ? 0xa8e4ff : 0xfff2a0, transparent: true }));
+      m.scale.setScalar(0.35);
+      m.position.set(x, y, z);
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 0.3, vel: new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4), kind: 'spark', spin: new THREE.Vector3() });
+    }
+  }
+  // 頭の上を まわる 星(回る 円盤・ふらふら・落ちた あと)
+  function dizzyStars(u) {
+    const g = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+      const m = new THREE.Mesh(starGeo, new THREE.MeshBasicMaterial({ color: 0xffd23c, side: THREE.DoubleSide }));
+      m.position.set(Math.cos((i / 3) * Math.PI * 2) * 0.45, 0, Math.sin((i / 3) * Math.PI * 2) * 0.45);
+      g.add(m);
+    }
+    g.position.y = 1.75;
+    g.visible = false;
+    u.holder.add(g);
+    return g;
+  }
   function updateFx(dt) {
     for (let i = fx.length - 1; i >= 0; i--) {
       const f = fx[i];
@@ -207,6 +274,11 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
         f.vel.y -= 10 * dt;
         f.obj.rotation.z += f.spin.z * dt;
         f.obj.lookAt(camera.position);
+        f.obj.material.opacity = 1 - k;
+      } else if (f.kind === 'fade') {
+        f.obj.material.opacity = 0.8 * (1 - k);
+      } else if (f.kind === 'ring') {
+        f.obj.scale.setScalar(f.size * (0.4 + k * 2.2));
         f.obj.material.opacity = 1 - k;
       } else if (f.kind === 'confetti') {
         f.obj.rotation.x += f.spin.x * dt;
@@ -251,8 +323,11 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
       car.g.add(model.root);
       holder.add(car.g);
       scene.add(holder);
-      return { model, holder, car, size, out: null, roll: 0, pitch: 0 };
+      const u = { model, holder, car, size, out: null, roll: 0, pitch: 0, squash: 0, skidT: 0, fxT: 0 };
+      u.dizzy = dizzyStars(u);
+      return u;
     }));
+    for (const k of skids) k.life = 0;
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
     runners[0].holder.add(marker);
@@ -445,6 +520,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
           const r = s.runners[e.slot];
           sfx.dash(volFor(r.x, r.z));
           puff(r.x - Math.sin(r.h) * 0.8, FLOOR_Y + 0.2, r.z - Math.cos(r.h) * 0.8, 5, 0xe8e0f0, 1.2);
+          zap(r.x - Math.sin(r.h) * 0.55, FLOOR_Y + 2.25, r.z - Math.cos(r.h) * 0.55, 6);
           break;
         }
         case 'bump': {
@@ -454,7 +530,9 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
           if (strong) pop(e.force > 6 ? 'ドカーン!' : 'ドン!', e.x, FLOOR_Y + 1.4, e.z, 'gold');
           else if (e.force > 2.5) pop('ボヨン', e.x, FLOOR_Y + 1.2, e.z);
           if (e.a === 0 || e.b === 0) game.shake = Math.max(game.shake, strong ? 0.35 : 0.15);
-          for (const i of [e.a, e.b]) game.runners[i].jolt = 0.3;
+          for (const i of [e.a, e.b]) { game.runners[i].jolt = 0.3; game.runners[i].squash = Math.min(1, 0.4 + e.force / 8); }
+          if (e.force > 1.5) shock(e.x, e.z, strong ? 0xffd23c : 0xffffff, strong ? 1.3 : 0.8);
+          if (strong) for (const i of [e.a, e.b]) { const r = s.runners[i]; zap(r.x - Math.sin(r.h) * 0.55, FLOOR_Y + 2.25, r.z - Math.cos(r.h) * 0.55, 4); }
           break;
         }
         case 'shrinkWarn':
@@ -466,8 +544,10 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
           setTimeout(() => $('hudQ').classList.remove('shrink'), 2500);
           break;
         case 'flip':
-          pop(e.dir > 0 ? 'ぎゃく回り!' : 'ぎゃく回り!', 0, FLOOR_Y + 1.6, 0, 'gold', 1200);
+          pop('ぎゃく回り!', 0, FLOOR_Y + 1.6, 0, 'gold', 1200);
           sfx.flip();
+          shock(0, 0, 0xffd23c, 2.2);
+          stars(0, 0, 10, 0.8);
           break;
         case 'fall': {
           const u = game.runners[e.slot];
@@ -543,9 +623,12 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
           o.vx *= 0.5; o.vz *= 0.5;
         }
         u.holder.position.set(o.x, o.y, o.z);
-        u.holder.rotation.y += dt * (o.landed ? 1.5 : 9);
+        u.holder.rotation.y += dt * (o.landed ? Math.max(0, 6 - o.t * 3) : 9);
+        u.holder.rotation.x = o.landed ? 0 : Math.sin(o.t * 12) * 0.4;
+        u.holder.rotation.z = o.landed ? 0 : Math.cos(o.t * 10) * 0.3;
         clip = 'dizzy';
-        face = 'surprised';
+        face = o.landed ? 'frustrated' : 'surprised';
+        u.dizzy.visible = o.landed;
       } else {
         // 走る 向き・ハンドルで かたむく・ぶつかると ぶるっ
         const speed = Math.hypot(r.vx, r.vz);
@@ -556,6 +639,24 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
         const buzz = r.wind > 0 ? Math.sin(time * 70) * 0.03 : 0;
         u.holder.position.set(r.x + buzz, FLOOR_Y + Math.abs(j) * 0.4, r.z);
         u.holder.rotation.set(u.pitch, r.h, u.roll + j);
+        // ぶつかると ボディが むにゅっ
+        u.squash = Math.max(0, u.squash - dt * 4);
+        const q = Math.sin(u.squash * Math.PI) * 0.18 * u.squash;
+        u.car.g.scale.set(1 + q, 1 - q, 1 + q);
+        // 横すべり・ダッシュ: タイヤの あと / ダッシュの すじ / ためて いる あいだの けむり
+        const lat = Math.abs(r.vx * Math.cos(r.h) - r.vz * Math.sin(r.h));
+        u.skidT -= dt;
+        if (u.skidT <= 0 && (lat > 1.1 || r.dash > 0 || r.wind > 0) && s.phase === 'play') {
+          u.skidT = 0.035;
+          const bx = r.x - Math.sin(r.h) * 0.45, bz = r.z - Math.cos(r.h) * 0.45;
+          addSkid(bx + Math.cos(r.h) * 0.38, bz - Math.sin(r.h) * 0.38);
+          addSkid(bx - Math.cos(r.h) * 0.38, bz + Math.sin(r.h) * 0.38);
+        }
+        u.fxT -= dt;
+        if (u.fxT <= 0 && r.dash > 0) { u.fxT = 0.03; streak(r.x, r.z, r.h); }
+        else if (u.fxT <= 0 && r.wind > 0) { u.fxT = 0.06; puff(r.x - Math.sin(r.h) * 0.75, FLOOR_Y + 0.25, r.z - Math.cos(r.h) * 0.75, 1, 0x9a90b0, 0.7); }
+        // 回る 円盤・ふらふら: 頭の上に 星
+        u.dizzy.visible = (onDisk(r) || r.stun > 0) && s.phase !== 'finished';
         u.car.wheel.rotation.z = -r.steer * 0.8;
         u.car.tip.material.color.setHex(r.dash > 0 || r.wind > 0 ? 0xff6fd0 : Math.floor(time * 4 + slot) % 2 ? 0xfff2a0 : 0xffffff);
         if (onDisk(r)) face = 'surprised';
@@ -566,6 +667,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
       u.model.play(clip);
       u.model.setFace(face);
       u.model.update(dt);
+      if (u.dizzy.visible) u.dizzy.rotation.y += dt * 5;
       if (u.marker) {
         u.marker.visible = !u.out;
         u.marker.position.set(0, 2.6 + 0.1 * Math.sin(performance.now() / 180), 0);
@@ -576,7 +678,14 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
       a.model.play(a.until > time ? 'cheer' : 'idle');
       a.model.update(dt);
     }
-    stage.update(time, s, dt);
+    // リンクが ちぢむ: 暗くなる 輪の ふちに 火花、沈む 輪から けむり
+    const ch = stage.update(time, s, dt);
+    for (const r of ch.dimmed) {
+      for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; zap(Math.cos(a) * r.outer, FLOOR_Y + 0.1, Math.sin(a) * r.outer, 2); }
+      sfx.clunk();
+    }
+    for (const r of ch.gone) for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2, rr = (r.inner + r.outer) / 2; puff(Math.cos(a) * rr, FLOOR_Y - 0.2, Math.sin(a) * rr, 1, 0x9a90b0, 1.2); }
+    updateSkids(dt);
   }
 
   let freeCamera = false;
