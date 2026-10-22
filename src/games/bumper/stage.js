@@ -5,7 +5,9 @@
 // まん中の 円盤は うずまきの 矢印が 回る。
 // まわりを 輪の 形の 屋根(まん中は あいていて、上から 見える。カメラの いる 手前は あけて、奥半分だけ)。
 // 屋根の ふちに 電球と ひらひら。
-// 屋根を ささえる しまの 柱。外がわには 観客と、遠くに 観覧車の かげ。
+// 屋根を ささえる しまの 柱。外がわには 観客と、遠くに 観覧車・コースターの かげ(電球つき)。
+// リンクの 側面には 電球の 列と ゴムの ふち。床の 上を スポットライトが ゆっくり 回る。
+// 手前の 広場には 街灯・きっぷ売り場・風船屋さん・ポップコーンの 屋台。
 
 import * as THREE from 'three';
 import { toonGradient, toonMaterial } from '../../runtime/models.js';
@@ -135,6 +137,9 @@ function bulbs(parent, pts, { size = 0.08, halo = 0.8, colors = [0xfff2a0, 0xffb
   };
 }
 
+// 位置を 決めて かえす
+const at = (m, x, y, z) => { m.position.set(x, y, z); return m; };
+
 export function buildStage(scene) {
   const g = new THREE.Group();
   const mat = (c) => toonMaterial(c);
@@ -142,7 +147,26 @@ export function buildStage(scene) {
   const ground = new THREE.Mesh(new THREE.CircleGeometry(60, 48).rotateX(-Math.PI / 2), mat(0x8a7aa8));
   ground.receiveShadow = true;
   g.add(ground);
-  const plaza = new THREE.Mesh(new THREE.CircleGeometry(ROOF_OUT + 2.5, 48).rotateX(-Math.PI / 2), mat(0xd8c8a8));
+  const plazaTex = canvasTex(512, 512, (c, w) => {
+    // 石だたみ: まん中から 輪に ならぶ 石
+    c.fillStyle = '#cbb894';
+    c.fillRect(0, 0, w, w);
+    for (let r = 20; r < w * 0.72; r += 22) {
+      const n = Math.max(6, Math.round((r * Math.PI * 2) / 30));
+      for (let k = 0; k < n; k++) {
+        const a = ((k + (r % 44 ? 0.5 : 0)) / n) * Math.PI * 2;
+        c.save();
+        c.translate(w / 2 + Math.cos(a) * r, w / 2 + Math.sin(a) * r);
+        c.rotate(a);
+        c.fillStyle = ['#e0d0ae', '#d6c39e', '#e8dabc'][(k + r) % 3];
+        c.beginPath();
+        c.roundRect(-9, -13, 18, 26, 5);
+        c.fill();
+        c.restore();
+      }
+    }
+  });
+  const plaza = new THREE.Mesh(new THREE.CircleGeometry(ROOF_OUT + 2.5, 48).rotateX(-Math.PI / 2), new THREE.MeshToonMaterial({ map: plazaTex, gradientMap: toonGradient }));
   plaza.position.y = 0.01;
   plaza.receiveShadow = true;
   g.add(plaza);
@@ -189,6 +213,54 @@ export function buildStage(scene) {
   const base = new THREE.Mesh(new THREE.CylinderGeometry(RULES.r0 + 0.25, RULES.r0 + 0.4, FLOOR_Y, 48), mat(0x4a3a6a));
   base.position.y = FLOOR_Y / 2 - 0.05;
   g.add(base);
+  // リンクの ふちの ゴム(上の ふち)
+  const rubber = new THREE.Mesh(new THREE.TorusGeometry(RULES.r0 + 0.3, 0.09, 6, 72).rotateX(Math.PI / 2), mat(0x2e2a3a));
+  rubber.position.y = FLOOR_Y - 0.02;
+  g.add(rubber);
+  // 手前の 広場: 街灯・きっぷ売り場・風船屋さん・ポップコーンの 屋台
+  const lampSpots = [];
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2 + 0.26;
+    const x = Math.cos(a) * (ROOF_OUT + 1.6), z = Math.sin(a) * (ROOF_OUT + 1.6);
+    if (Math.abs(x) < 3 && z > 0) continue; // 正面は あける
+    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 3, 6), mat(0x4a3a6a)), x, 1.5, z));
+    g.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff0c0 })), x, 3.1, z));
+    lampSpots.push(new THREE.Vector3(x, 3.1, z));
+  }
+  {
+    // きっぷ売り場(右手前)
+    const b = new THREE.Group();
+    b.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.8, 1.2), mat(0xff8fb8)), 0, 0.9, 0));
+    b.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.6, 0.05), new THREE.MeshBasicMaterial({ color: 0xfff2c0 })), 0, 1.15, 0.62));
+    b.add(at(new THREE.Mesh(new THREE.ConeGeometry(1.25, 0.9, 4).rotateY(Math.PI / 4), mat(0x5cc0ff)), 0, 2.25, 0));
+    b.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), mat(0xffd23c)), 0, 2.8, 0));
+    b.position.set(9.6, 0, 8.4);
+    b.rotation.y = -0.7;
+    g.add(b);
+    // ポップコーンの 屋台(左手前)
+    const p = new THREE.Group();
+    p.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.8), mat(0xe8402f)), 0, 0.6, 0));
+    p.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.8, 0.7), new THREE.MeshToonMaterial({ color: 0xfff6e0, gradientMap: toonGradient, transparent: true, opacity: 0.7 })), 0, 1.4, 0));
+    for (let k = 0; k < 14; k++) p.add(at(new THREE.Mesh(new THREE.SphereGeometry(0.09, 5, 4), mat(0xfff2b0)), (Math.random() - 0.5) * 0.7, 1.1 + Math.random() * 0.3, (Math.random() - 0.5) * 0.5));
+    for (const ox of [-0.5, 0.5]) for (const oz of [-0.3, 0.3]) p.add(at(new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.04, 5, 10), mat(0x2e2a3a)), ox, 0.16, oz));
+    p.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.5, 6), mat(0xffd23c)), 0, 2.05, 0));
+    p.position.set(-9.8, 0, 7.8);
+    p.rotation.y = 0.6;
+    g.add(p);
+  }
+  // 遠くの コースターの かげ(右奥)
+  {
+    const pts = [];
+    for (let i = 0; i <= 40; i++) {
+      const u = i / 40;
+      pts.push(new THREE.Vector3(14 + u * 26, 3 + Math.abs(Math.sin(u * Math.PI * 3)) * 7 * (1 - u * 0.4), -36 - u * 6));
+    }
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 80, 0.25, 5), mat(0x6a5a8a)));
+    for (let i = 0; i <= 40; i += 3) {
+      const p = pts[i];
+      g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, p.y, 4), mat(0x6a5a8a)), p.x, p.y / 2, p.z));
+    }
+  }
   // 遠くの 観覧車の かげ(たそがれの 空に)
   const far = new THREE.Group();
   far.add(new THREE.Mesh(new THREE.TorusGeometry(9, 0.25, 6, 40), mat(0x6a5a8a)));
@@ -236,6 +308,45 @@ export function buildStage(scene) {
   const edgeGlow = new THREE.Mesh(new THREE.RingGeometry(0.96, 1.04, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xff6fd0, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
   edgeGlow.position.y = FLOOR_Y + 0.02;
   scene.add(edgeGlow);
+  // 遠くの 観覧車は 回る(電球つき)
+  const farWheel = new THREE.Group();
+  {
+    const rim = [];
+    for (let i = 0; i < 36; i++) { const a = (i / 36) * Math.PI * 2; rim.push(new THREE.Vector3(Math.cos(a) * 9, Math.sin(a) * 9, 0.3)); }
+    farWheel.userData.upd = bulbs(farWheel, rim, { size: 0.18, halo: 2.4, chase: 6, gap: 4 });
+    farWheel.position.set(-18, 12, -42);
+    scene.add(farWheel);
+  }
+  // リンクの 側面の 電球と、円盤の ふちの 電球(円盤と いっしょに 回る)
+  const sideLights = new THREE.Group();
+  {
+    const pts = [];
+    for (let i = 0; i < 80; i++) { const a = (i / 80) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a) * (RULES.r0 + 0.34), FLOOR_Y * 0.5, Math.sin(a) * (RULES.r0 + 0.34))); }
+    sideLights.userData.upd = bulbs(sideLights, pts, { size: 0.06, halo: 0.6, chase: 10, gap: 5 });
+    scene.add(sideLights);
+    const dp = [];
+    for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; dp.push(new THREE.Vector3(Math.cos(a) * (RULES.diskR - 0.12), 0.07, Math.sin(a) * (RULES.diskR - 0.12))); }
+    disk.userData.upd = bulbs(disk, dp, { size: 0.05, halo: 0.45, colors: [0xfff2a0, 0xff8fd0], chase: 0, gap: 2 });
+  }
+  const lampGlow = new THREE.Group();
+  lampGlow.userData.upd = bulbs(lampGlow, lampSpots, { size: 0.01, halo: 2.6, colors: [0xffe0a0], chase: 0, gap: 1 });
+  scene.add(lampGlow);
+  // スポットライト: 床の 上を ゆっくり 回る 光の 丸
+  const spotTex = canvasTex(128, 128, (x, w) => {
+    const gr = x.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+    gr.addColorStop(0, 'rgba(255,255,255,.55)');
+    gr.addColorStop(0.6, 'rgba(255,255,255,.25)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = gr;
+    x.fillRect(0, 0, w, w);
+  });
+  const spots = [0xfff0a0, 0x8fd8ff, 0xffa0e0].map((c, i) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: spotTex, color: c, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    m.position.y = FLOOR_Y + 0.05;
+    m.userData.ph = (i / 3) * Math.PI * 2;
+    scene.add(m);
+    return m;
+  });
   // 屋根の 電球
   const lights = new THREE.Group();
   const pts = [];
@@ -258,8 +369,22 @@ export function buildStage(scene) {
     rings,
     edge,
     edgeGlow,
+    spots,
     update(t, s, dt) {
       updBulbs(t);
+      farWheel.rotation.z = t * 0.08;
+      farWheel.userData.upd(t);
+      sideLights.userData.upd(t);
+      disk.userData.upd(t);
+      lampGlow.userData.upd(t);
+      // スポットライト: 輪の 中を 8の字に ゆっくり
+      for (const m of spots) {
+        if (m.userData.focus) continue;
+        const a = t * 0.35 + m.userData.ph;
+        const rr = Math.min(s.radius - 1, 3.5 + Math.sin(t * 0.5 + m.userData.ph) * 1.5);
+        m.position.x = Math.cos(a) * rr;
+        m.position.z = Math.sin(a * 1.3) * rr;
+      }
       disk.rotation.y = s.diskAngle; // ルールの 回し方(x = x cos + z sin)と three の y 回転は 同じ 向き
       edge.scale.set(s.radius, 1, s.radius);
       edgeGlow.scale.set(s.radius, 1, s.radius);
