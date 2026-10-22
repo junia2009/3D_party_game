@@ -447,6 +447,20 @@
   .hold b { position: absolute; inset: 10px; border-radius: 50%; background: #fff; display: grid; place-items: center; font: 800 13px var(--font-body); color: var(--hud-ink); }
   .hold.full b { background: #ffd24a; }
   .hold.full b::after { content: '大ジャンプ!'; position: absolute; top: -28px; white-space: nowrap; font: 400 20px var(--font-display); color: #ffd24a; -webkit-text-stroke: 5px var(--hud-ink); paint-order: stroke fill; }
+  /* 空まで まめのきジャンプ: 上に みんなの 高さと のこり時間、下に 左右の 大きな ボタン */
+  #hudF .chip { padding: 4px 8px 4px 4px; }
+  #hudF .chip i { width: 18px; height: 18px; }
+  #hudF .chip b { font-size: 13px; }
+  #hudF .timer:empty { visibility: hidden; }
+  #hudF .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
+  #hudF .splash.small { font-size: clamp(26px, 8.5vw, 50px); }
+  #hudF .splash.gold.small { color: #ffd24a; }
+  #hudF .lr { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 22px); display: flex; justify-content: space-between; padding: 0 18px; pointer-events: none; }
+  #hudF .lrbtn { position: static; pointer-events: auto; width: 104px; height: 104px; font-size: 40px; background: #6ab84a; -webkit-tap-highlight-color: transparent; user-select: none; touch-action: none; }
+  #hudF .lrbtn.down { transform: translateY(5px) scale(.96); }
+  #hudF .lrbtn.ok { background: #ffd24a; }
+  #hudF .lrbtn.bad { background: #e8402f; }
+  #hudF.power .lrbtn { box-shadow: 0 7px 0 rgba(31,42,51,.25), 0 0 0 5px #ffd24a; }
   /* 森の図書館の ぱらぱらブック: 上に のこっている子と めくった ページの 数 */
   #hudE .chip { padding: 4px; }
   #hudE .chip i { width: 18px; height: 18px; }
@@ -1311,6 +1325,11 @@
       <span class="name">森の図書館の ぱらぱらブック</span>
       <span class="meta"><span>40〜70びょう</span></span>
     </button>
+    <button class="card" type="button" data-open="mame">
+      <span class="thumb"><img src="./assets/thumbs/mame.jpg" alt="" width="640" height="360"><span class="ribbon">第19競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">空まで まめのきジャンプ</span>
+      <span class="meta"><span>40びょう</span></span>
+    </button>
   </div>
 </section>
 
@@ -1479,6 +1498,21 @@
   <p class="call" id="callJ"></p>
   <p class="howto" id="howtoJ">なわが 来たら タップで ジャンプ!<br>「大なみ!」は 長おしで 大ジャンプ</p>
   <div class="hold" id="holdJ" hidden aria-hidden="true"><b>ジャンプ</b></div>
+</div>
+
+<div class="hud" id="hudF" hidden>
+  <div class="top">
+    <div class="scores" id="chipsF" aria-label="のぼった 高さ"></div>
+    <div class="timer" id="timeF" aria-label="のこり時間"></div>
+    <button class="pausebtn" id="pauseBtnF" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsF"></div>
+  <div class="splash" id="splashF"></div>
+  <p class="howto" id="howtoF">つぎの 葉っぱが 生えた ほうの ボタンを おして のぼろう!<br>まちがえると すべり落ちる。<b>金の まめ</b>で 2まい とび!</p>
+  <div class="lr">
+    <button class="tame lrbtn" id="leftF" type="button" aria-label="ひだり">◀</button>
+    <button class="tame lrbtn" id="rightF" type="button" aria-label="みぎ">▶</button>
+  </div>
 </div>
 
 <div class="hud" id="hudE" hidden>
