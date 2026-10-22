@@ -24,14 +24,12 @@ function ready(players = PLAYERS.slice(0, 2), seed = 1) {
 }
 const wait = (s, sec) => { for (let i = 0; i < sec / STEP; i++) step(s, s.runners.map(() => null)); };
 
-test('葉っぱの ならび: 左右は くじで、同じ 側は 4まい まで。金の まめも ある', () => {
+test('葉っぱの ならび: 左右は くじで、同じ 側は 4まい まで', () => {
   for (let seed = 1; seed <= 20; seed++) {
     const s = createGame(PLAYERS, seed);
     assert.equal(s.leaves.length, RULES.leaves);
     let run = 0, prev = null;
     for (const l of s.leaves) { run = l.side === prev ? run + 1 : 1; prev = l.side; assert.ok(run <= 4); }
-    assert.ok(s.leaves.slice(0, RULES.beanFrom).every((l) => !l.bean));
-    assert.ok(s.leaves.some((l) => l.bean));
   }
 });
 
@@ -64,25 +62,6 @@ test('生えた ほうを おすと 1まい 上へ。まちがえると 2まい 
   assert.ok(!step(s, [{ side: nextSide(s, r) }, null]).some((e) => e.type === 'jump'), '動けない');
   wait(s, RULES.stunTime);
   assert.ok(step(s, [{ side: nextSide(s, r) }, null]).some((e) => e.type === 'jump'));
-});
-
-test('金の まめ: 乗ると しばらく 1回で 2まい。先に 着いた 子の もの', () => {
-  const s = ready();
-  const r = s.runners[0];
-  const at = s.leaves.findIndex((l) => l.bean);
-  r.leaf = at - 1;
-  const ev = step(s, [{ side: nextSide(s, r) }, null]);
-  assert.ok(ev.some((e) => e.type === 'bean' && e.slot === 0));
-  assert.ok(r.power > 0 && !s.leaves[at].bean);
-  wait(s, RULES.jumpTime);
-  step(s, [{ side: nextSide(s, r) }, null]);
-  assert.equal(r.leaf, at + RULES.powerStep);
-  wait(s, RULES.powerTime);
-  assert.equal(r.power, 0);
-  // あとから 来た 子には もう ない
-  const o = s.runners[1];
-  o.leaf = at - 1;
-  assert.ok(!step(s, [null, { side: nextSide(s, o) }]).some((e) => e.type === 'bean'));
 });
 
 test('順位は 高さ。同じ 高さなら 先に 着いた子', () => {

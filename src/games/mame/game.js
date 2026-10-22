@@ -69,7 +69,6 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
     hop(n) { const f = 520 * 2 ** ((n % 8) / 12); voice({ type: 'triangle', pts: [[0, f], [0.07, f * 1.4]], len: 0.09, gain: 0.05 }); },
     grow() { noise({ len: 0.08, gain: 0.03, freq: [2500, 4000], q: 2 }); },
     miss() { voice({ type: 'square', pts: [[0, 420], [0.3, 150]], len: 0.32, gain: 0.05 }); noise({ len: 0.3, gain: 0.06, freq: [2000, 500], q: 0.8 }); },
-    bean() { [1047, 1319, 1568, 2093].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.14, gain: 0.05, at: i * 0.05 })); },
     beep(last) { voice({ type: 'square', pts: [[0, last ? 1320 : 660]], len: last ? 0.5 : 0.16, gain: 0.05 }); },
     tick() { voice({ type: 'square', pts: [[0, 1500]], len: 0.04, gain: 0.03 }); },
     fanfare() {
@@ -81,14 +80,12 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
   // ── 葉っぱ(木ごとに 見えている ぶんだけ) ─────────────────
   const leafMat = new THREE.MeshToonMaterial({ color: 0x3f9a2a, gradientMap: toonGradient });
   const leafNew = new THREE.MeshToonMaterial({ color: 0xa8f070, gradientMap: toonGradient, emissive: 0x3a7a10 });
-  const beanGeo = new THREE.SphereGeometry(0.13, 10, 8).scale(1, 0.8, 1.3);
-  const beanMat = new THREE.MeshToonMaterial({ color: 0xffd23c, emissive: 0x7a5a00, gradientMap: toonGradient });
-  // stalks[slot] = Map(葉っぱの 番号 → { mesh, grow, bean })
+  // stalks[slot] = Map(葉っぱの 番号 → { mesh, grow })
   const stalks = Array.from({ length: SLOTS }, () => new Map());
   const leafPos = (slot, i, side, out = new THREE.Vector3()) => out.set(stalkX(slot) + (side === 'L' ? -LEAF_X : LEAF_X), i * LEAF_H, 0.05);
   function syncLeaves(slot, s) {
     const r = s.runners[slot];
-    const top = r.leaf + (r.power > 0 ? RULES.powerStep : 1);
+    const top = r.leaf + 1;
     const lo = Math.max(1, r.leaf - SHOW_BELOW);
     const map = stalks[slot];
     for (const [i, l] of map) if (i < lo || i > top) { scene.remove(l.mesh); map.delete(i); }
@@ -103,14 +100,7 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       mesh.rotation.x = 0.6; // 上の 面を 手前(カメラ)へ 少し むける
       mesh.scale.setScalar(i === top ? 0.01 : 1);
       scene.add(mesh);
-      const l = { mesh, grow: i === top ? 0 : 1, bean: null, i };
-      // 金の まめ(まだ だれも とっていなければ)
-      if (leaf.bean) {
-        const b = new THREE.Mesh(beanGeo, beanMat);
-        b.position.set(0.45, 0.16, 0);
-        mesh.add(b);
-        l.bean = b;
-      }
+      const l = { mesh, grow: i === top ? 0 : 1, i };
       map.set(i, l);
       if (slot === 0 && i === top && game?.state.phase === 'play') sfx.grow();
     }
@@ -118,7 +108,6 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       // 生えたばかりの 葉っぱは ぷくっと ひらく
       if (l.grow < 1) { l.grow = Math.min(1, l.grow + 1 / 60 * 7); const k = l.grow; l.mesh.scale.setScalar(k < 1 ? k * (1 + Math.sin(k * Math.PI) * 0.35) : 1); }
       l.mesh.material = i === top ? leafNew : leafMat;
-      if (l.bean) { l.bean.visible = !!s.leaves[i].bean; l.bean.rotation.y += 0.05; l.bean.position.y = 0.18 + Math.sin(time * 4 + i) * 0.04; }
     }
   }
   function clearLeaves() { for (const map of stalks) { for (const l of map.values()) scene.remove(l.mesh); map.clear(); } }
@@ -203,7 +192,6 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
     atmosphere.apply('day');
     atmosphere.setupShadows([], []);
     Object.assign(input, { side: null, target: null });
-    $('hudF').classList.remove('power');
     buildChips();
     setMode('playing');
     intro = fromSky ? 0 : 1;
@@ -297,7 +285,6 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
     const s = game.state;
     [...$('chipsF').children].forEach((c, i) => { c.querySelector('b').textContent = String(s.runners[i].leaf); });
     $('timeF').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
-    $('hudF').classList.toggle('power', s.runners[0].power > 0);
     $('hudF').querySelector('.lr').hidden = s.phase === 'finished';
   }
   const tmpV = new THREE.Vector3();
@@ -341,13 +328,6 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
           u.anim = { from, to: standAt(e.slot, e.leaf, s.leaves[e.leaf]?.side || 'R'), t: 0, time: 0.4, hop: false, fall: true };
           leafBits(from, 6);
           if (e.slot === 0) { sfx.miss(); flashBtn(e.side, false); pop('すべった!', from.x, from.y + 1.4, 0.6, 'red'); }
-          break;
-        }
-        case 'bean': {
-          const p = u.holder.position.clone().add(tmpV.set(0, 0.8, 0));
-          sparkle(p, 14, 0xffd23c);
-          if (e.slot === 0) { sfx.bean(); splash('金の まめ! 2まい とび!', 'gold small'); }
-          else pop('金の まめ!', p.x, p.y + 0.8, p.z, 'gold');
           break;
         }
         case 'finished': {
@@ -405,7 +385,6 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       // 葉っぱの 上では つるの ほうを 少し 向く(手前を 見せる)
       u.holder.rotation.y = r.leaf ? (u.side === 'L' ? 0.5 : -0.5) : 0;
       if (r.stun > 0) { clip = 'dizzy'; face = 'frustrated'; }
-      else if (r.power > 0) face = 'happy';
       if (s.phase === 'finished') {
         const win = ranking(s)[0] === slot;
         clip = win ? 'cheer' : 'wave';
