@@ -87,6 +87,12 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
     stomp(vol = 1) { voice({ type: 'square', pts: [[0, 300], [0.08, 600], [0.16, 200]], len: 0.18, gain: 0.05 * vol }); },
     bump(vol = 1) { voice({ type: 'triangle', pts: [[0, 260], [0.1, 140]], len: 0.12, gain: 0.05 * vol }); },
     splash(vol = 1) { noise({ len: 0.9, gain: 0.25 * vol, freq: [1500, 300], type: 'lowpass', q: 0.6, attack: 0.005 }); voice({ pts: [[0, 500], [0.25, 120]], len: 0.3, gain: 0.08 * vol }); },
+    // テレレレッ: はやく なる 合図
+    hurry() { [523, 659, 784, 1047, 1319].forEach((f, i) => voice({ type: 'square', pts: [[0, f]], len: 0.09, gain: 0.04, at: i * 0.06 })); },
+    // ドロドロ: いっきうち
+    drum() { for (let i = 0; i < 18; i++) noise({ len: 0.06, gain: 0.05 + i * 0.004, freq: [220, 120], type: 'lowpass', at: i * 0.07 }); },
+    // ポン ポン: 胞子の 花火
+    pop(vol = 1) { voice({ pts: [[0, 700 + Math.random() * 400], [0.08, 300]], len: 0.12, gain: 0.05 * vol }); },
     beep(last) { voice({ type: 'square', pts: [[0, last ? 1320 : 660]], len: last ? 0.5 : 0.16, gain: 0.05 }); },
     fanfare() {
       [[0, 523], [0.12, 659], [0.24, 784], [0.36, 1047]].forEach(([at, f]) => voice({ type: 'square', pts: [[0, f]], len: 0.12, gain: 0.05, at }));
@@ -195,6 +201,19 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
   beam.rotation.y = Math.PI / 6;
   beam.position.y = 3;
   scene.add(beam);
+  // 胞子の 花火: ぽんっと はじけて、光る つぶが ふわふわ 広がる
+  const sporeMats = [0x8fe8ff, 0xffd0f0, 0xd8ff9a, 0xffe07a].map((c) => new THREE.MeshBasicMaterial({ color: c, transparent: true }));
+  function spores(x, z) {
+    const y = 3 + Math.random() * 2;
+    sfx.pop(0.7);
+    for (let i = 0; i < 26; i++) {
+      const m = new THREE.Mesh(puffGeo, sporeMats[i % 4].clone());
+      m.scale.setScalar(0.45);
+      m.position.set(x, y, z);
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 1.6, vel: new THREE.Vector3().randomDirection().multiplyScalar(2.6 + Math.random()), kind: 'spore' });
+    }
+  }
   // うきわ(落ちた 子が 湖で つかまる)
   const tubeGeo = new THREE.TorusGeometry(0.55, 0.2, 8, 18).rotateX(Math.PI / 2);
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
@@ -228,6 +247,10 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       } else if (f.kind === 'ring') {
         f.obj.scale.setScalar(f.size * (0.4 + k * 1.8));
         f.obj.material.opacity = 0.8 * (1 - k);
+      } else if (f.kind === 'spore') {
+        f.vel.multiplyScalar(Math.exp(-dt * 2));
+        f.vel.y += 0.4 * dt;
+        f.obj.material.opacity = 1 - k;
       } else if (f.kind === 'bubble') {
         f.obj.material.opacity = 0.8 * (1 - k);
         f.obj.scale.multiplyScalar(1 + dt * 1.5);
@@ -471,7 +494,8 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
           sfx.flag(e.id);
           // 旗の キノコが ぴかっ
           mushrooms[e.id].userData.flash = 1;
-          if (e.round === 4) setTimeout(() => splash('だんだん はやく!', 'gold small'), 300);
+          if (e.round === 4) { setTimeout(() => { splash('だんだん はやく!', 'gold small'); sfx.hurry(); }, 300); }
+          $('hudG').classList.toggle('hurry', e.round >= 4);
           break;
         }
         case 'sink':
@@ -524,7 +548,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
           if (e.slot === 0) splash('おちちゃった…', 'red small');
           if (s.phase === 'play' && s.runners.filter((x) => x.alive).length === 2 && !game.duel) {
             game.duel = true;
-            setTimeout(() => splash('いっきうち!', 'gold small'), 900);
+            setTimeout(() => { splash('いっきうち!', 'gold small'); sfx.drum(); }, 900);
           }
           break;
         }
@@ -537,6 +561,10 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
           const r = s.runners[e.winner];
           confetti(r.x, r.z);
           owl.play('flap', { fade: 0.1 });
+          // 先生の 旗は 勝った 子の 色に。岸の キノコから 胞子の 花火
+          flag.cloth.material.color.setHex(PLAYER_COLORS[e.winner].hex);
+          $('hudG').classList.remove('hurry');
+          for (let i = 0; i < 8; i++) setTimeout(() => { if (game?.state === s) spores(r.x + (Math.random() - 0.5) * 10, r.z - 5 - Math.random() * 4); }, 400 + i * 380);
           break;
         }
       }
@@ -573,7 +601,10 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
     // キノコ: しずむ / 上がる。しずむ 少し前は ぷるぷる
     for (const m of mushrooms) {
       const id = m.userData.hex.id;
-      const k = s.sink[id];
+      // 決着したら、しずんだ キノコも みんな 上がってくる(見た目だけ。state は さわらない)
+      if (s.phase === 'finished') m.userData.fin = Math.max(0, (m.userData.fin ?? s.sink[id]) - dt / RULES.riseTime);
+      else m.userData.fin = null;
+      const k = m.userData.fin ?? s.sink[id];
       const e = k * k * (3 - 2 * k);
       // 上がりきったら ぽよん
       if (k === 0 && (m.userData.prevK ?? 0) > 0) m.userData.boing = 1;
@@ -602,7 +633,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       m.userData.top.color.setScalar(1 - dim);
     }
     // 光の 柱: 旗の キノコに
-    const show = (s.stage === 'signal' || s.stage === 'sink') && s.flag !== null;
+    const show = (s.stage === 'signal' || s.stage === 'sink') && s.flag !== null && s.phase === 'play';
     if (show) { const h = HEXES[s.flag]; beam.position.x = h.x; beam.position.z = h.z; beam.material.color.set(colorCss(h.color)); }
     beam.material.opacity += ((show ? 0.22 + Math.sin(time * 6) * 0.05 : 0) - beam.material.opacity) * Math.min(1, dt * 8);
     beam.visible = beam.material.opacity > 0.01;
@@ -635,15 +666,15 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
           }
         } else {
           o.y += (WATER_Y - 0.55 + Math.sin(o.t * 2.5 + slot) * 0.06 - o.y) * Math.min(1, dt * 4);
-          // しずむ キノコから 少し はなれて ただよう
-          o.x += (o.x / (Math.hypot(o.x, o.z) || 1)) * dt * 0.15;
-          o.z += (o.z / (Math.hypot(o.x, o.z) || 1)) * dt * 0.15;
+          // キノコの 外まで ゆっくり ながされて、そこで ただよう(キノコが 上がってきても ぶつからない)
+          const d = Math.hypot(o.x, o.z) || 1, out = RULES.hexR * 3.3 + slot * 0.4;
+          if (d < out) { o.x += (o.x / d) * dt * 1.6; o.z += (o.z / d) * dt * 1.6; }
         }
         u.holder.position.set(o.x, o.y, o.z);
         u.holder.rotation.set(0, u.holder.rotation.y + dt * 0.4, 0);
         if (u.tube) u.tube.scale.setScalar(Math.min(1, u.tube.scale.x + dt * 4));
         if (o.splashed && Math.random() < dt * 1.2) ripple(o.x, o.z, WATER_Y + 0.03, 0xffffff, 0.7);
-        clip = o.splashed ? 'wave' : 'dizzy';
+        clip = o.splashed ? (s.phase === 'finished' ? 'cheer' : 'wave') : 'dizzy';
         face = 'frustrated';
       } else {
         const moving = Math.hypot(r.vx, r.vz) > 0.4;
@@ -654,7 +685,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
         u.holder.position.set(r.x, r.y + base, r.z);
         // ヒップドロップ: 空中で くるっと 1回転してから まっすぐ
         u.spin = r.dropping && r.drop > 0 ? (u.spin || 0) + dt * 40 : 0;
-        u.holder.rotation.set(r.dropping ? Math.PI * 0.15 : 0, r.face + u.spin, 0);
+        u.holder.rotation.set(r.dropping ? Math.PI * 0.15 : 0, s.phase === 'finished' ? 0 : r.face + u.spin, 0); // 決着は カメラの ほうを 向く
         // ふんづけられて ぺしゃんこ / 着地で むにゅっ
         if (!r.air && u.wasAir) u.landK = 1;
         u.wasAir = r.air;
@@ -704,6 +735,8 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
         const near = s.phase === 'finished' ? 0.5 : 0.8;
         look.set(mx * 0.6, 0.3, mz * 0.6);
         pos.set(look.x, look.y + (pos.y - look.y) * near, look.z + (pos.z - look.z) * near);
+        // 決着: 低めの 正面から(奥の 空に 胞子の 花火)
+        if (s.phase === 'finished') { look.set(mx, 1.0, mz - 0.5); pos.set(mx, 7.2, mz + 9); }
       }
     }
     camera.fov = portrait ? 52 : 45;
