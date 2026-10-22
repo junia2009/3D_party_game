@@ -159,6 +159,19 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 0.5, vel: new THREE.Vector3(Math.cos(a) * 3, 2 + Math.random() * 2, Math.sin(a) * 3), kind: 'spark' });
     }
   }
+  // 魚: 遠くの 水面から ぴょんと はねて、ぽちゃん
+  const fishGeo = new THREE.SphereGeometry(0.18, 8, 6).scale(1, 0.6, 2.2);
+  const fishMat = new THREE.MeshToonMaterial({ color: 0xff9a3a });
+  function fish() {
+    const a = Math.random() * Math.PI * 2, d = 8 + Math.random() * 8;
+    const x = Math.cos(a) * d, z = Math.sin(a) * d - 2;
+    const m = new THREE.Mesh(fishGeo, fishMat.clone());
+    m.position.set(x, WATER_Y, z);
+    scene.add(m);
+    ripple(x, z);
+    const dir = Math.random() * Math.PI * 2;
+    fx.push({ obj: m, t: 0, life: 0.9, vel: new THREE.Vector3(Math.cos(dir) * 1.6, 4.4, Math.sin(dir) * 1.6), kind: 'fish', dir });
+  }
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
   function confetti(x, z) {
     const colors = Object.values(PALETTE).map((p) => p.top);
@@ -190,6 +203,10 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       } else if (f.kind === 'ring') {
         f.obj.scale.setScalar(f.size * (0.4 + k * 1.8));
         f.obj.material.opacity = 0.8 * (1 - k);
+      } else if (f.kind === 'fish') {
+        f.vel.y -= 10 * dt;
+        f.obj.rotation.set(-Math.atan2(f.vel.y, 1.6), Math.PI / 2 - f.dir, 0);
+        if (!f.plop && f.obj.position.y < WATER_Y) { f.plop = true; ripple(f.obj.position.x, f.obj.position.z); }
       } else if (f.kind === 'confetti') {
         f.obj.rotation.x += f.spin.x * dt;
         f.obj.rotation.y += f.spin.y * dt;
@@ -603,6 +620,10 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       if (game.tick <= 0) { game.tick = 0.2; sfx.tick(); }
     }
     stage.water.material.map.offset.x += dt * 0.01;
+    stage.update(time);
+    // ときどき 魚が ぴょんと はねる
+    game.fishT = (game.fishT ?? 3) - dt;
+    if (game.fishT <= 0) { game.fishT = 4 + Math.random() * 5; fish(); }
   }
 
   let freeCamera = false;

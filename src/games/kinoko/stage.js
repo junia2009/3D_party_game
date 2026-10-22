@@ -2,7 +2,9 @@
 //
 // 森に かこまれた 湖。まん中に 7色の 六角の キノコが 花の 形に うかぶ(上の 面に それぞれの もよう)。
 // キノコの 下は 白い 柄が 水の 中へ。右奥の 切り株の 島に ホーホー先生(旗を あげる)。
-// 岸には あし と 木、水面には 蓮の葉。
+// 岸には あし と 木、大きな 森の キノコ、ほんのり 光る 小さな キノコ。水面には 蓮の葉と 倒れた 丸太。
+// 水面は 光の つぶが きらきら(update)。
+// キノコの 柄には ひらひらの えり、かさの 下には ひだ、かさの 上には しずく。
 //
 // 座標: キノコの 上の 面が y = 0。水面は y = WATER_Y。カメラは +z(手前)から。
 
@@ -115,6 +117,11 @@ export function buildMushrooms(scene) {
   skirtGeo.rotateY(Math.PI / 6);
   const stemGeo = new THREE.CylinderGeometry(0.42, 0.55, 3.2, 10);
   const stemMat = toonMaterial(0xf6ecd8);
+  const gillGeo = new THREE.CylinderGeometry(r * 0.85, 0.5, 0.18, 18, 1, true);
+  const gillMat = new THREE.MeshToonMaterial({ color: 0xe8d8bc, gradientMap: toonGradient, side: THREE.DoubleSide });
+  const frillGeo = new THREE.CylinderGeometry(0.5, 0.75, 0.22, 12, 1, true).translate(0, 0, 0);
+  const dewGeo = new THREE.SphereGeometry(0.09, 8, 6);
+  const dewMat = new THREE.MeshToonMaterial({ color: 0xe8f8ff, gradientMap: toonGradient, transparent: true, opacity: 0.85 });
   return HEXES.map((h) => {
     const g = new THREE.Group();
     const top = new THREE.MeshToonMaterial({ map: topTexture(h.color), gradientMap: toonGradient });
@@ -126,7 +133,20 @@ export function buildMushrooms(scene) {
     skirt.position.y = -0.44;
     const stem = new THREE.Mesh(stemGeo, stemMat);
     stem.position.y = -2.0;
-    g.add(cap, skirt, stem);
+    // かさの 下の ひだ(放射の すじ)と、柄の ひらひらの えり
+    const gill = new THREE.Mesh(gillGeo, gillMat);
+    gill.position.y = -0.62;
+    const frill = new THREE.Mesh(frillGeo, stemMat);
+    frill.position.y = -1.15;
+    // かさの 上の しずく(光る)
+    for (let k = 0; k < 3; k++) {
+      const a = k * 2.1 + h.id, rr = r * (0.3 + (k % 2) * 0.35);
+      const d = new THREE.Mesh(dewGeo, dewMat);
+      d.position.set(Math.cos(a) * rr, 0.04, Math.sin(a) * rr);
+      d.scale.set(1, 0.55, 1);
+      g.add(d);
+    }
+    g.add(cap, skirt, stem, gill, frill);
     g.position.set(h.x, 0, h.z);
     g.userData.hex = h;
     g.userData.top = top;
@@ -200,6 +220,36 @@ export function buildStage(scene) {
       g.add(f);
     }
   }
+  // 岸の 大きな 森の キノコ(赤い かさに 白い 水玉 / 茶色 / むらさき)
+  const capCols = [0xe8402f, 0xb06a3a, 0x9a6ad8, 0xff8fc8];
+  const dotMat = toonMaterial(0xfff6e0), shroomStem = toonMaterial(0xf6ecd8);
+  for (let i = 0; i < 16; i++) {
+    const a = rand() * Math.PI * 2;
+    if (Math.sin(a) > 0.3) continue;
+    const d = SHORE + 0.8 + rand() * 4, hgt = 1.2 + rand() * 1.8, cr = 0.7 + rand() * 0.8;
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(cr * 0.25, cr * 0.35, hgt, 8), shroomStem);
+    st.position.set(x, WATER_Y + 0.2 + hgt / 2, z);
+    const cp = new THREE.Mesh(new THREE.SphereGeometry(cr, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), toonMaterial(capCols[i % capCols.length]));
+    cp.scale.y = 0.65;
+    cp.position.set(x, WATER_Y + 0.2 + hgt, z);
+    g.add(st, cp);
+    if (i % 4 !== 1) for (let k = 0; k < 5; k++) {
+      const da = (k / 5) * Math.PI * 2 + rand(), el = 0.5 + rand() * 0.6;
+      const dt = new THREE.Mesh(new THREE.SphereGeometry(cr * 0.14, 6, 4), dotMat);
+      dt.position.set(x + Math.cos(da) * Math.cos(el) * cr, cp.position.y + Math.sin(el) * cr * 0.65, z + Math.sin(da) * Math.cos(el) * cr);
+      dt.scale.y = 0.5;
+      g.add(dt);
+    }
+  }
+  // 水ぎわの 丸太
+  const log = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 5, 10).rotateZ(Math.PI / 2), toonMaterial(0x7a5032));
+  log.position.set(-12, WATER_Y + 0.1, -11);
+  log.rotation.y = 0.6;
+  const logEnd = new THREE.Mesh(new THREE.CircleGeometry(0.36, 10).rotateY(Math.PI / 2), toonMaterial(0xe8c48c));
+  logEnd.position.set(-12 + Math.cos(0.6) * 2.51, WATER_Y + 0.1, -11 - Math.sin(0.6) * 2.51);
+  logEnd.rotation.y = 0.6;
+  g.add(log, logEnd);
   // 先生の 切り株の 島
   const stump = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.3, 2.4, 14), toonMaterial(0x8a5a32));
   stump.position.set(OWL_AT.x, OWL_AT.y - 1.2, OWL_AT.z);
@@ -208,7 +258,95 @@ export function buildStage(scene) {
   g.add(stump, ring);
   mergeStatic(g);
   scene.add(g);
-  return { group: g, water };
+
+  // ほんのり 光る 小さな キノコ(岸の 草むら)
+  const glowTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const x = c.getContext('2d');
+    const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)');
+    gr.addColorStop(0.3, 'rgba(255,255,255,.5)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = gr;
+    x.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const glowPos = [], glowCol = [];
+  const gc = new THREE.Color();
+  const tiny = new THREE.Group();
+  const tinyCap = new THREE.SphereGeometry(0.12, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+  const tinyCols = [0x8fe8ff, 0xffd0f0, 0xd8ff9a];
+  for (let i = 0; i < 40; i++) {
+    const a = rand() * Math.PI * 2;
+    if (Math.sin(a) > 0.4 && Math.abs(Math.cos(a)) < 0.5) continue;
+    const d = SHORE + 0.3 + rand() * 1.5;
+    const x = Math.cos(a) * d, z = Math.sin(a) * d, y = WATER_Y + 0.28;
+    const m = new THREE.Mesh(tinyCap, new THREE.MeshBasicMaterial({ color: tinyCols[i % 3] }));
+    m.position.set(x, y + 0.08, z);
+    tiny.add(m);
+    glowPos.push(x, y + 0.12, z);
+    gc.setHex(tinyCols[i % 3]);
+    glowCol.push(gc.r, gc.g, gc.b);
+  }
+  const glowGeo = new THREE.BufferGeometry();
+  glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(glowPos, 3));
+  glowGeo.setAttribute('color', new THREE.Float32BufferAttribute(glowCol, 3));
+  const glows = new THREE.Points(glowGeo, new THREE.PointsMaterial({ size: 0.9, map: glowTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }));
+  tiny.add(glows);
+  scene.add(tiny);
+  // 水面の きらきら(光の つぶが ついたり 消えたり)
+  const N = 90;
+  const spPos = new Float32Array(N * 3), sp = [];
+  for (let i = 0; i < N; i++) {
+    const a = rand() * Math.PI * 2, d = 4 + rand() * 14;
+    sp.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, ph: rand() * 6, sp: 1 + rand() * 2 });
+    spPos.set([sp[i].x, WATER_Y + 0.03, sp[i].z], i * 3);
+  }
+  const spGeo = new THREE.BufferGeometry();
+  spGeo.setAttribute('position', new THREE.BufferAttribute(spPos, 3));
+  const sparkles = new THREE.Points(spGeo, new THREE.PointsMaterial({ size: 0.35, map: glowTex, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  scene.add(sparkles);
+  // トンボ(湖の 上を すいすい)
+  const flies = [];
+  const wingGeo = new THREE.PlaneGeometry(0.34, 0.07);
+  for (let i = 0; i < 3; i++) {
+    const f = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, 0.36, 5).rotateX(Math.PI / 2), toonMaterial([0x3a8ad8, 0xe84a3a, 0x6ac83a][i]));
+    f.add(body);
+    for (const z of [-0.04, 0.05]) {
+      const w = new THREE.Mesh(wingGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
+      w.rotation.x = -Math.PI / 2;
+      w.position.z = z;
+      f.add(w);
+    }
+    f.userData = { ph: i * 2.1, r: 6 + i * 2.5, h: 1.2 + i * 0.4 };
+    scene.add(f);
+    flies.push(f);
+  }
+  return {
+    group: g,
+    water,
+    update(t) {
+      // きらきら: ときどき ぱっと 光る
+      sparkles.material.opacity = 0.6 + Math.sin(t * 3) * 0.2;
+      for (let i = 0; i < N; i++) {
+        const k = Math.sin(t * sp[i].sp + sp[i].ph);
+        spPos[i * 3 + 1] = k > 0.7 ? WATER_Y + 0.03 : WATER_Y - 5; // 光って いない ときは 水の 下へ
+      }
+      spGeo.attributes.position.needsUpdate = true;
+      glows.material.opacity = 0.45 + Math.sin(t * 1.3) * 0.15;
+      for (const f of flies) {
+        const u = f.userData, a = t * 0.35 + u.ph;
+        const x = Math.cos(a) * u.r + Math.sin(t * 1.7 + u.ph) * 1.2, z = Math.sin(a * 1.3) * u.r * 0.7 - 2;
+        const y = WATER_Y + u.h + Math.sin(t * 2.3 + u.ph) * 0.3;
+        f.lookAt(x, y, z);
+        f.position.set(x, y, z);
+        f.children[1].rotation.y = Math.sin(t * 40) * 0.5;
+        f.children[2].rotation.y = -Math.sin(t * 40) * 0.5;
+      }
+    },
+  };
 }
 
 // 先生の 旗: ポールと 旗(色は あとで かえる)
