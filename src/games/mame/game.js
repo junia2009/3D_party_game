@@ -395,7 +395,7 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       u.model.update(dt);
       if (u.marker) u.marker.position.set(0, 2.4 * u.size + 0.12 * Math.sin(performance.now() / 180), 0);
     }
-    stage.update(time);
+    stage.update(time, camera);
     // のこり 5 秒: チッ チッ
     if (s.phase === 'play') {
       const sec = Math.ceil(timeLeft(s));

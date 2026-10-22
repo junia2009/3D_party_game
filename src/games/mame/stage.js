@@ -3,6 +3,7 @@
 // 森の 広場から、5本の まめの木が 空へ のびる(手前から 見て よこに ならぶ)。
 // 木は くねくね ねじれた みどりの つる。葉っぱは つるの 左か 右に 生える(ハートの 形)。
 // 地面は 草と 花、上へ いくほど 雲が ふえて、高い ところには 星。
+// 空の 色も 高さで かわる(青 → 夕やけ → よぞら)。鳥が とび、つるには まきひげと 白い 花。
 //
 // 座標: 地面が y = 0。木は x に ならぶ(STALK_X)。葉っぱ i まいめは 高さ i * LEAF_H。カメラは +z(手前)から。
 
@@ -72,8 +73,82 @@ export function buildStage(scene) {
     mound.position.set(x, 0, 0);
     g.add(mound);
   }
+  // つるの まきひげ(くるん)と 白い 花
+  const curlGeo = new THREE.TorusGeometry(0.16, 0.025, 4, 12, Math.PI * 1.6);
+  const flowerGeo = new THREE.SphereGeometry(0.09, 6, 4);
+  const flowerMat = toonMaterial(0xfff6e0), heart = toonMaterial(0xffd23c);
+  for (let c = 0; c < 5; c++) {
+    const x = (c - 2) * GAP;
+    for (let y = 2.2; y < TOP; y += 2.6 + rand() * 1.8) {
+      const side = rand() < 0.5 ? -1 : 1;
+      const curl = new THREE.Mesh(curlGeo, vine2);
+      curl.position.set(x + side * 0.22, y, -0.05);
+      curl.rotation.set(0, side > 0 ? 0 : Math.PI, rand() * 6);
+      g.add(curl);
+      if (rand() < 0.45) {
+        for (let k = 0; k < 5; k++) {
+          const a = (k / 5) * Math.PI * 2;
+          const f = new THREE.Mesh(flowerGeo, flowerMat);
+          f.position.set(x - side * 0.2 + Math.cos(a) * 0.08, y + 0.5 + Math.sin(a) * 0.08, 0.12);
+          f.scale.set(1, 1, 0.4);
+          g.add(f);
+        }
+        const h = new THREE.Mesh(flowerGeo, heart);
+        h.position.set(x - side * 0.2, y + 0.5, 0.15);
+        h.scale.setScalar(0.6);
+        g.add(h);
+      }
+    }
+  }
   mergeStatic(g);
   scene.add(g);
+
+  // 空の 色(高さで かわる): 大きな 球を 空の 前に かぶせる
+  const SKY = [
+    [0, new THREE.Color(0x7ab8f0), 0], // 地面の 近くは もとの 空
+    [30, new THREE.Color(0x5a9ae8), 0.6],
+    [55, new THREE.Color(0xf0a070), 0.85], // 夕やけ
+    [78, new THREE.Color(0x6a4a9a), 0.95],
+    [100, new THREE.Color(0x141838), 1], // よぞら
+  ];
+  const skyBall = new THREE.Mesh(new THREE.SphereGeometry(400, 24, 12), new THREE.MeshBasicMaterial({ side: THREE.BackSide, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+  skyBall.renderOrder = 0;
+  scene.add(skyBall);
+  const skyAt = (y, out) => {
+    for (let i = 1; i < SKY.length; i++) {
+      if (y <= SKY[i][0] || i === SKY.length - 1) {
+        const [y0, c0, o0] = SKY[i - 1], [y1, c1, o1] = SKY[i];
+        const k = Math.max(0, Math.min(1, (y - y0) / (y1 - y0)));
+        out.copy(c0).lerp(c1, k);
+        return o0 + (o1 - o0) * k;
+      }
+    }
+    return 0;
+  };
+  // 星(よぞらで 見える)
+  const SN = 260;
+  const starPos = new Float32Array(SN * 3);
+  for (let i = 0; i < SN; i++) {
+    const a = rand() * Math.PI * 2, e = (rand() - 0.3) * 1.3;
+    starPos.set([Math.cos(a) * Math.cos(e) * 300, Math.sin(e) * 300, Math.sin(a) * Math.cos(e) * 300 - 80], i * 3);
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
+  scene.add(stars);
+  // 鳥(V の 形。羽ばたきながら よこぎる)
+  const birds = [];
+  const wing = new THREE.PlaneGeometry(0.5, 0.12).translate(0.25, 0, 0);
+  const birdMat = new THREE.MeshBasicMaterial({ color: 0x3a3a4a, side: THREE.DoubleSide });
+  for (let i = 0; i < 6; i++) {
+    const b = new THREE.Group();
+    const l = new THREE.Mesh(wing, birdMat), r = new THREE.Mesh(wing, birdMat);
+    l.rotation.y = Math.PI;
+    b.add(l, r);
+    b.userData = { l, r, y: 12 + i * 9 + rand() * 4, sp: 1.5 + rand(), ph: rand() * 30, dir: i % 2 ? 1 : -1 };
+    scene.add(b);
+    birds.push(b);
+  }
 
   // 雲(高く なるほど 多い)と 高い 空の 星
   const cloudMat = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: toonGradient, transparent: true, opacity: 0.92 });
@@ -121,6 +196,21 @@ export function buildStage(scene) {
   return {
     group: g,
     leafGeo: leafGeo(),
-    update(t) { for (const cl of clouds.children) cl.position.x += Math.sin(t * 0.1 + cl.position.y) * 0.002 * cl.userData.sp * 10; },
+    update(t, camera) {
+      for (const cl of clouds.children) cl.position.x += Math.sin(t * 0.1 + cl.position.y) * 0.002 * cl.userData.sp * 10;
+      const y = camera.position.y;
+      skyBall.position.copy(camera.position);
+      skyBall.material.opacity = skyAt(y, skyBall.material.color);
+      stars.position.copy(camera.position);
+      stars.material.opacity = Math.max(0, Math.min(1, (y - 62) / 25));
+      for (const b of birds) {
+        const u = b.userData;
+        const x = ((t * u.sp + u.ph) % 30) - 15;
+        b.position.set(x * u.dir, u.y + Math.sin(t + u.ph) * 0.5, -3);
+        b.rotation.y = u.dir > 0 ? 0 : Math.PI;
+        const f = Math.sin(t * 10 + u.ph) * 0.6;
+        u.l.rotation.z = f; u.r.rotation.z = -f;
+      }
+    },
   };
 }
