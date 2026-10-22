@@ -345,12 +345,13 @@ export function buildStage(scene) {
 
   // まわりの ヤシ・パラソル
   // カメラは どちらかの はしの うしろに 立つので、コートの 両はし(x の 外)の まん中あたりは あけておく
-  for (const [x, z, h, lean] of [[-4.5, 9.5, 6.2, 0.4], [3.5, 10.5, 5.4, -0.3], [9.5, 8.5, 6.4, -0.9], [-10.5, 8.2, 5.6, 1.0], [-3, -7.6, 5.0, 2.8], [4.5, -7.9, 5.8, -2.6], [-14, 10.5, 6.0, 1.3], [26, 3, 6.4, -1.6], [-26, -2, 6.0, 1.6]]) palm(group, x, z, h, lean, rand);
-  parasol(group, -7.5, 7.0, 0xffb03a, rand);
-  parasol(group, 0.5, 7.6, 0x44c0d8, rand);
-  parasol(group, 7.0, 6.8, 0xff6a9a, rand);
-  parasol(group, 13.5, 7.8, 0x8ad04a, rand);
-  tower(group, -6.5, SEA_Z + 2.4);
+  // カメラは 手前(+z)の 上から 真横に 見るので、手前の コートの 前は ひくい ものだけ(タオル・貝がら)。
+  // 背の 高い ものは 奥(海がわ)と 左右の はしへ
+  for (const [x, z, h, lean] of [[-12.5, 8.5, 6.2, 0.6], [13, 9, 5.8, -0.6], [-3, -7.6, 5.0, 2.8], [4.5, -7.9, 5.8, -2.6], [-16, 4, 6.0, 1.3], [26, 3, 6.4, -1.6], [-26, -2, 6.0, 1.6]]) palm(group, x, z, h, lean, rand);
+  parasol(group, -10.8, -5.6, 0xffb03a, rand);
+  parasol(group, 10.6, -5.9, 0xff6a9a, rand);
+  parasol(group, 13.2, -3.4, 0x44c0d8, rand);
+  tower(group, -12.5, SEA_Z + 2.2);
   // コートの 両はしの 奥(むこうの はしは カメラから よく 見える): 海の家・ヤシ・ビーチチェア
   for (const sx of [-1, 1]) {
     hut(group, sx * 22, 1.5, sx);
@@ -577,11 +578,11 @@ export function buildStage(scene) {
     sock.rotation.x = Math.sin(t * 7) * 0.1 * k;
   }
 
-  // 見物の 席(手前・海と はんたいの がわ。砂に すわって 見ている)
-  const seats = [[-5.5, 6.0], [-2.2, 6.6], [2.4, 6.4], [5.6, 6.1], [9.5, 5.6], [-9.2, 5.5]].map(([x, z]) => ({ x, z }));
+  // 見物の 席(奥・海がわ。カメラから 顔が 見える)
+  const seats = [[-3.0, -5.5], [3.0, -5.6], [-5.6, -5.4], [5.6, -5.5], [-8.2, -5.2], [8.2, -5.3]].map(([x, z]) => ({ x, z }));
   for (const st of seats) {
     const towel = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.02, 0.8), toonMaterial([0xffd23a, 0x44c0d8, 0xff6a9a, 0x8ad04a][seats.indexOf(st) % 4]));
-    towel.position.set(st.x, 0.02, st.z + 0.1);
+    towel.position.set(st.x, 0.02, st.z - 0.1);
     towel.receiveShadow = true;
     scene.add(towel);
   }

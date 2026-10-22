@@ -501,7 +501,9 @@
   .tame.hit { background: #ffb02a; font-size: 22px; -webkit-tap-highlight-color: transparent; user-select: none; touch-action: none; transition: background .12s; }
   .tame.hit.down { transform: translateY(5px); }
   .tame.hit.near { background: #ff5a3a; box-shadow: 0 7px 0 rgba(31,42,51,.25), 0 0 0 5px rgba(255,210,74,.8); animation: tamefull .4s infinite; }
-  .tame.hit.spike::after { content: 'スパイク!'; position: absolute; left: 50%; top: -20px; transform: translateX(-50%); font: 900 13px var(--font-body); color: #fff; background: #e8402f; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .tame.hit.long { font-size: 18px; letter-spacing: -1px; }
+  .tame.hit.now { background: #ffd24a; color: #8a4a00; animation: none; transform: scale(1.08); box-shadow: 0 7px 0 rgba(31,42,51,.25), 0 0 0 7px rgba(255,255,255,.9); }
+  .tame.hit.block { background: #3a7ae8; }
   #hudP .wind { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 66px); transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,.85); font: 800 14px var(--font-body); color: #2a6ad0; box-shadow: 0 3px 0 rgba(31,42,51,.18); }
   #hudP .wind[hidden] { display: none; }
   #hudP .wind b { font-size: 20px; display: inline-block; animation: windarrow .5s ease-in-out infinite alternate; }
@@ -1579,7 +1581,7 @@
   <div class="wind" id="windP" hidden><span>かぜ</span><b>↑</b><span id="windTxtP">おくへ</span></div>
   <div class="pops" id="popsP"></div>
   <div class="splash" id="splashP"></div>
-  <p class="howto" id="howtoP">ずらすと はしる。ボールの <b>かげ</b>へ!<br>「うつ」で うちかえす。ネットの 前なら スパイク!</p>
+  <p class="howto" id="howtoP">ずらして はしる。<b>わ</b>が かさなったら おす!<br>スパイクは スティックで ねらう<br>ネットの 前で おすと ブロック</p>
   <div class="stick" id="stickP" hidden><i></i></div>
   <button class="tame hit" id="hitP" type="button">うつ</button>
 </div>

@@ -11,7 +11,7 @@ import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
-import { RULES, STEP, createGame, landing, ranking, step, timeLeft } from './rules.js';
+import { RULES, STEP, aimPoint, canDo, createGame, idealY, landing, ranking, shotKind, step, timeLeft, timeToY } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { TEAM_COLORS, buildStage } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -86,6 +86,8 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       if (win) [0, 0.09, 0.18].forEach((at, i) => voice({ type: 'square', pts: [[0, [659, 784, 1047][i]]], len: 0.12, gain: 0.04, at }));
       else voice({ type: 'square', pts: [[0, 392], [0.3, 262]], len: 0.32, gain: 0.04 });
     },
+    nice() { [0, 0.06].forEach((at, i) => voice({ type: 'triangle', pts: [[0, 1175 + i * 393]], len: 0.09, gain: 0.05, at })); },
+    slide() { noise({ len: 0.35, gain: 0.1, freq: [1200, 300], q: 0.7 }); },
     wind() { noise({ len: 1.6, gain: 0.07, freq: [300, 900], q: 0.8, attack: 0.5 }); },
     fanfare() {
       [[0, 523], [0.12, 659], [0.24, 784], [0.36, 1047]].forEach(([at, f]) => voice({ type: 'square', pts: [[0, f]], len: 0.12, gain: 0.05, at }));
@@ -114,7 +116,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       m.setFace('normal');
       const st = stage.seats[k];
       m.root.position.set(st.x, 0, st.z);
-      m.root.rotation.y = Math.PI + (st.x * -0.05);
+      m.root.rotation.y = 0;
       m.root.scale.setScalar(0.85);
       scene.add(m.root);
       fans.push({ model: m, cheer: 0, seat: st, phase: k * 1.3 });
@@ -230,6 +232,27 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     m.position.set(x, 0.03, z);
     scene.add(m);
     fx.push({ obj: m, t: 0, life: 0.5, vel: new THREE.Vector3(), kind: 'shock' });
+  }
+  // タイミングの わ: ボールの まわりで ちぢんで、内がわの わと かさなった ときが うちごろ
+  const tOuter = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, color: 0xffffff, transparent: true, depthWrite: false, depthTest: false }));
+  const tInner = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, color: 0xffd24a, transparent: true, opacity: 0.9, depthWrite: false, depthTest: false }));
+  tOuter.renderOrder = tInner.renderOrder = 5;
+  scene.add(tOuter, tInner);
+  // スパイクの ねらい(相手の コートに 赤い しるし)
+  const aimMark = new THREE.Group();
+  {
+    const red = new THREE.MeshBasicMaterial({ color: 0xff3a2a, transparent: true, opacity: 0.85, depthWrite: false });
+    aimMark.add(new THREE.Mesh(new THREE.RingGeometry(0.45, 0.6, 28).rotateX(-Math.PI / 2), red));
+    aimMark.add(new THREE.Mesh(new THREE.CircleGeometry(0.12, 12).rotateX(-Math.PI / 2), red));
+    for (let k = 0; k < 4; k++) {
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.35).rotateX(-Math.PI / 2), red);
+      const a = (k * Math.PI) / 2;
+      bar.position.set(Math.sin(a) * 0.82, 0, Math.cos(a) * 0.82);
+      bar.rotation.y = a;
+      aimMark.add(bar);
+    }
+    aimMark.position.y = 0.03;
+    scene.add(aimMark);
   }
   const confettiGeo = new THREE.PlaneGeometry(0.12, 0.07);
   function confetti(x, z) {
@@ -471,6 +494,17 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
   window.addEventListener('keyup', (e) => input.keys.delete(e.code));
   window.addEventListener('blur', () => { input.keys.clear(); input.touch = null; input.stick = null; stickEl.hidden = true; });
 
+  // いま たおしている スティック(ワールドの 向き。ボタンは 使わない)
+  function stickNow() {
+    if (input.target) return input.target;
+    let sx = 0, sy = 0;
+    if (input.keys.size) {
+      for (const k of input.keys) { sx += KEYS[k][0]; sy += KEYS[k][1]; }
+      const d = Math.hypot(sx, sy);
+      if (d) { sx /= d; sy /= d; }
+    } else if (input.stick) { sx = input.stick.dx; sy = input.stick.dy; }
+    return { x: sx, z: sy };
+  }
   function myInput() {
     const hit = input.hit;
     input.hit = false;
@@ -484,9 +518,8 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       sx = input.stick.dx;
       sy = input.stick.dy;
     }
-    // カメラは 自分の チームの うしろから ネットを 見ている。左チームなら 画面の 上 = +x・右 = +z(右チームは 逆)
-    const f = camSign();
-    return { x: -sy * f, z: sx * f, hit };
+    // カメラは コートを 真横(手前 +z)から 見ている。画面の 右 = +x、画面の 上 = 奥(-z)
+    return { x: sx, z: sy, hit };
   }
 
   // ── HUD ─────────────────────────────────────────────
@@ -534,18 +567,22 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     $('hudP').classList.toggle('spurt', s.phase === 'play' && timeLeft(s) <= 10);
     const me = s.units[game.meIdx];
     const b = s.ball;
-    $('hitP').hidden = s.phase === 'finished';
-    // 手の とどく ところに 来そう: ボタンが 光る。ネットの 前なら「スパイク!」
-    const near = b.state === 'fly' && b.vy < 0 && Math.hypot(b.x - me.x, b.z - me.z) < RULES.reach * 1.3 && b.y < RULES.spikeHi + 0.6 && Math.sign(b.x) === (me.side === 'L' ? -1 : 1) && !(b.lastSide === me.side && b.last === game.meIdx);
-    $('hitP').classList.toggle('near', near);
-    const mine = b.lastSide === me.side ? b.touches : 0;
-    $('hitP').classList.toggle('spike', near && Math.abs(me.x) < RULES.spikeX && (mine >= 1 || b.lastSide !== me.side) && b.y > 1.2 && mine >= 1);
+    const hitEl2 = $('hitP');
+    hitEl2.hidden = s.phase === 'finished';
+    // ボタンの 名前: いま おすと 何が おきるか
+    const can = canDo(s, game.meIdx);
+    const kind = shotKind(s, game.meIdx);
+    const coming = game.view?.coming;
+    const label = can === 'block' ? 'ブロック' : can === 'dive' ? 'とびこむ' : can === 'hit' || coming ? { pass: 'レシーブ', toss: 'トス', spike: 'スパイク', lob: 'かえす' }[kind] : 'うつ';
+    if (hitEl2.dataset.label !== label) { hitEl2.dataset.label = label; hitEl2.textContent = label; hitEl2.classList.toggle('long', label.length > 3); }
+    hitEl2.classList.toggle('near', !!can);
+    hitEl2.classList.toggle('now', can === 'hit' && game.view?.zone === 'perfect');
+    hitEl2.classList.toggle('block', can === 'block');
     const w = s.wind.until > s.t ? s.wind.z : 0;
     $('windP').hidden = !w || s.phase !== 'play';
     if (w) {
-      const right = w * camSign() > 0;
-      $('windP').querySelector('b').textContent = right ? '→' : '←';
-      $('windTxtP').textContent = right ? 'みぎへ' : 'ひだりへ';
+      $('windP').querySelector('b').textContent = w < 0 ? '↑' : '↓';
+      $('windTxtP').textContent = w < 0 ? 'おくへ' : 'てまえへ';
     }
   }
   const tmpV = new THREE.Vector3();
@@ -597,7 +634,32 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
             // レシーブは 足もとから 砂が ぱっ
             if (e.kind === 'pass' || e.kind === 'lob') sandBurst(su.x, su.z, 5, 1.2);
           }
-          if (e.kind !== 'spike' && su.side === mySide) pop(['', 'レシーブ', 'トス', 'アタック'][Math.min(3, e.touches)] || '', su.x, 2.6, su.z, 'me', 600);
+          // うまさ(自分は 大きく、ほかの 子は ナイスの ときだけ)
+          if (e.who === game.meIdx) {
+            pop(e.q === 'perfect' ? 'ナイス!' : e.q === 'good' ? 'グッド' : 'ミス…', su.x, 3.0, su.z, e.q === 'perfect' ? 'gold' : e.q === 'good' ? 'me' : 'red', 900);
+            if (e.q === 'perfect') { sparkle(bb.x, bb.y, bb.z, 10); sfx.nice(); }
+          } else if (e.q === 'perfect' && e.kind === 'spike') pop('ナイス!', su.x, 3.0, su.z, 'me', 700);
+          else if (e.q === 'bad' && su.side === mySide) pop('あっ…', su.x, 2.6, su.z, 'red', 600);
+          if (e.dive) { sandBurst(su.x, su.z, 12, 2); pop('ナイスキャッチ!', su.x, 2.2, su.z, 'gold', 800); }
+          break;
+        }
+        case 'blockJump':
+          game.units[e.who].hitT = 0;
+          sfx.toss();
+          break;
+        case 'block': {
+          sfx.spike();
+          stage.shakeNet();
+          flash(0, e.y, e.z, 0xffe07a, 2.6);
+          sparkle(0, e.y, e.z, 14, 0xffe07a);
+          game.shake = 0.3;
+          pop('ブロック!', s.units[e.who].x, 3.6, s.units[e.who].z, s.units[e.who].side === mySide ? 'gold' : 'red', 1000);
+          break;
+        }
+        case 'dive': {
+          const su = s.units[e.who];
+          sfx.slide();
+          setTimeout(() => game?.state === s && sandBurst(su.x, su.z, 14, 2.2), 250);
           break;
         }
         case 'net':
@@ -611,18 +673,6 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
           sandBurst(e.x, e.z, spike ? 26 : e.inside ? 14 : 8, spike ? 3.6 : 2.4);
           if (spike) { shock(e.x, e.z, 0xfff2c0); game.shake = Math.max(game.shake, 0.3); pop('ドカン!', e.x, 1.2, e.z, 'red', 800); }
           if (!e.inside) pop('アウト', e.x, 1.0, e.z, 'red', 800);
-          // 落ちた ところの 近くの 子は 飛びこむ(とどかなかった…)
-          let diver = null, dd = 2.2;
-          s.units.forEach((su, j) => {
-            if (Math.sign(su.x) !== Math.sign(e.x)) return;
-            const d = Math.hypot(su.x - e.x, su.z - e.z);
-            if (d < dd && d > 0.35) { dd = d; diver = j; }
-          });
-          if (diver !== null) {
-            const su = s.units[diver];
-            game.units[diver].dive = { t: 0, dir: Math.atan2(e.x - su.x, e.z - su.z), reach: Math.min(0.9, dd - 0.3) };
-            setTimeout(() => game && sandBurst(su.x + Math.sin(game.units[diver]?.dive?.dir || 0) * 0.8, su.z + Math.cos(game.units[diver]?.dive?.dir || 0) * 0.8, 10, 1.8), 180);
-          }
           break;
         }
         case 'point': {
@@ -659,7 +709,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
         }
         case 'wind':
           sfx.wind();
-          splash(e.z * camSign() > 0 ? 'かぜ! みぎへ →' : 'かぜ! ← ひだりへ', 'small');
+          splash(e.z < 0 ? 'かぜ! おくへ ↑' : 'かぜ! てまえへ ↓', 'small');
           break;
         case 'finished': {
           game.endTimer = 4.5;
@@ -715,11 +765,13 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       // ボールを 見る(うごいていない ときは ボールの ほうを 向く)
       let face2 = su.face;
       if (!moving && s.phase !== 'finished') face2 = Math.atan2(b.x - su.x, b.z - su.z);
-      if (s.phase === 'finished') face2 = su.side === s.winner ? (su.side === 'L' ? -Math.PI / 2 : Math.PI / 2) : Math.atan2(-su.x, -su.z);
+      if (su.dive > 0 || su.down > 0) face2 = su.face;
+      if (s.phase === 'finished') face2 = su.side === s.winner ? 0 : Math.atan2(-su.x, -su.z);
       u.holder.rotation.y = lerpAngle(u.holder.rotation.y, face2, Math.min(1, dt * 10));
       // スパイク: ジャンプ
       let y = 0;
-      if (su.jump > 0) y = Math.sin((1 - su.jump / 0.45) * Math.PI) * 0.9;
+      if (su.block > 0) y = Math.sin((1 - su.block / RULES.blockJump) * Math.PI) * 1.0;
+      else if (su.jump > 0) y = Math.sin((1 - su.jump / 0.45) * Math.PI) * 0.9;
       if (u.cheer > 0 && s.phase !== 'finished') { y = Math.abs(Math.sin(u.cheer * 9)) * 0.25; face = 'happy'; }
       if (s.phase === 'finished') {
         const won = su.side === s.winner;
@@ -733,23 +785,22 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
         u.gather = Math.min(1, (u.gather || 0) + dt * 1.6);
         const k = s.teams[su.side].indexOf(i);
         const e = u.gather * u.gather * (3 - 2 * u.gather);
-        px += ((su.side === 'L' ? -4.2 : 4.2) - su.x) * e;
-        pz += ((k - 1) * 1.25 - su.z) * e;
+        px += ((su.side === 'L' ? -3.6 : 3.6) + (k - 1) * 1.3 - su.x) * e;
+        pz += (0.8 - su.z) * e;
       } else u.gather = 0;
-      // 飛びこみ: ぐっと 前へ たおれこんで、すこし ねて、おきあがる
+      // 飛びこみ: ぐっと 前へ たおれこんで(state の dive)、すこし ねて(down)、おきあがる
       let pitch = 0;
-      if (u.dive) {
-        u.dive.t += dt;
-        const t = u.dive.t;
-        const out = t < 0.22 ? t / 0.22 : t < 0.9 ? 1 : Math.max(0, 1 - (t - 0.9) / 0.4);
-        px += Math.sin(u.dive.dir) * u.dive.reach * Math.min(1, t / 0.22);
-        pz += Math.cos(u.dive.dir) * u.dive.reach * Math.min(1, t / 0.22);
-        pitch = 1.35 * out;
-        y = t < 0.22 ? Math.sin((t / 0.22) * Math.PI) * 0.25 : 0;
-        u.holder.rotation.y = u.dive.dir;
+      if (su.dive > 0) {
+        const k = 1 - su.dive / RULES.diveTime;
+        pitch = 1.4 * Math.min(1, k * 1.6);
+        y = Math.sin(k * Math.PI) * 0.3;
         face = 'surprised';
         clip = 'idle';
-        if (t > 1.3 || s.ball.state === 'serve') u.dive = null;
+      } else if (su.down > 0) {
+        const k = su.down / RULES.diveDown;
+        pitch = 1.4 * Math.min(1, k * 2.2);
+        face = 'surprised';
+        clip = 'idle';
       } else if (u.hitT > 0 && (u.hitKind === 'pass' || u.hitKind === 'lob')) {
         // レシーブ: ひざを まげて ぐっと 低く
         pitch = Math.sin(u.hitT * Math.PI) * 0.35;
@@ -760,7 +811,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       const sq = u.hitT > 0 && (u.hitKind === 'pass' || u.hitKind === 'lob') ? Math.sin(u.hitT * Math.PI) * 0.12 : 0;
       u.model.root.scale.set(1 + sq, 1 - sq, 1 + sq);
       u.holder.position.set(px, y, pz);
-      if (moving && y < 0.05 && s.phase === 'play' && !u.dive) {
+      if (moving && y < 0.05 && s.phase === 'play' && su.dive <= 0) {
         u.stepT = (u.stepT || 0) - dt;
         if (u.stepT <= 0) { u.stepT = 0.17; u.foot = -(u.foot || 1); footprint(px, pz, su.face, u.foot); }
       }
@@ -783,6 +834,9 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       // うけ身: ボールが 自分の 近くへ 落ちてくる あいだは 両手を 前に かまえる
       const close = b.state === 'fly' && Math.hypot(b.x - su.x, b.z - su.z) < 1.4 && b.vy < 0 && u.hitT <= 0 && aL && aR && Math.sign(b.x) === (su.side === 'L' ? -1 : 1);
       if (close) { aL.rotation.x = aR.rotation.x = -0.9; }
+      // ブロック: 両手を まっすぐ 上へ / 飛びこみ: 両手を 前へ のばす
+      if (aL && aR && su.block > 0) { aL.rotation.x = aR.rotation.x = -3.1; aL.rotation.z = 0.15; aR.rotation.z = -0.15; }
+      if (aL && aR && (su.dive > 0 || su.down > 0)) { aL.rotation.x = aR.rotation.x = -2.6; }
       if (u.marker) u.marker.position.set(0, 2.25 * u.size + 0.1 * Math.sin(performance.now() / 180), 0);
     }
     // ボール
@@ -798,6 +852,34 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     const hy = Math.max(0, ball.position.y);
     shadow.scale.setScalar(1 + hy * 0.12);
     shadow.material.opacity = Math.max(0.15, 0.5 - hy * 0.05);
+    // 自分が うつ ボール: タイミングの わ と(アタックなら)ねらいの しるし
+    const me = s.units[game.meIdx];
+    const myKind = shotKind(s, game.meIdx);
+    const outgoing = b.lastSide === mySide && ['spike', 'lob', 'serve', 'block'].includes(b.kind);
+    const myLand = b.state === 'fly' && !outgoing ? landing(s, idealY(myKind)) : null;
+    const mineNext = myLand && sideOf2(myLand.x) === mySide && !(b.lastSide === mySide && b.last === game.meIdx);
+    const tt = mineNext ? timeToY(b, idealY(myKind)) : null;
+    const coming = mineNext && Math.hypot(myLand.x - me.x, myLand.z - me.z) < RULES.reach * 1.6 && tt > -0.2 && tt < 1.0 && (b.forUnit === null || b.forUnit === game.meIdx || b.lastSide !== mySide);
+    game.view = { coming, zone: coming ? (Math.abs(tt) <= RULES.perfect ? 'perfect' : Math.abs(tt) <= RULES.good ? 'good' : 'far') : null };
+    tOuter.visible = tInner.visible = !!coming;
+    if (coming) {
+      const base = RULES.ballR * 1.5 * 2.2;
+      tInner.position.copy(ball.position);
+      tOuter.position.copy(ball.position);
+      tInner.scale.setScalar(base);
+      tOuter.scale.setScalar(base * (1 + Math.min(0.7, Math.max(0, tt)) * 3));
+      tOuter.material.color.setHex(game.view.zone === 'perfect' ? 0xffd24a : game.view.zone === 'good' ? 0xb8ff8a : 0xffffff);
+      tOuter.material.opacity = tt < 0 ? Math.max(0, 1 + tt * 5) : 0.95;
+      tInner.material.opacity = game.view.zone === 'perfect' ? 1 : 0.6;
+    }
+    const attack = (myKind === 'spike' || myKind === 'lob') && (coming || canDo(s, game.meIdx) === 'hit');
+    aimMark.visible = !!attack && s.phase === 'play';
+    if (attack) {
+      const a = aimPoint(me, stickNow());
+      aimMark.position.set(a.x, 0.03, a.z);
+      aimMark.rotation.y = time * 2;
+      aimMark.scale.setScalar(1 + Math.sin(time * 10) * 0.08);
+    }
     // 落ちる ところ(自分の チームへ 来る ボール)
     const land = b.state === 'fly' ? landing(s, 1.0) : null;
     const toMe = land && Math.sign(land.x) === (mySide === 'L' ? -1 : 1) && b.lastSide !== mySide;
@@ -825,10 +907,10 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
         const m = new THREE.Mesh(ball.geometry, ball.material);
         // 勝った チームの うしろ(ネットがわ)に ふらせる。カメラの 前を ふさがない
         const sw = s.winner === 'L' ? -1 : 1;
-        m.position.set(sw * (0.6 + Math.random() * 3.2), 7 + Math.random() * 2, (Math.random() - 0.5) * 7);
+        m.position.set(sw * (0.8 + Math.random() * 5.5), 7 + Math.random() * 2, -0.8 - Math.random() * 3);
         m.castShadow = true;
         scene.add(m);
-        fx.push({ obj: m, t: 0, life: 3.5, vel: new THREE.Vector3((Math.random() - 0.5) * 1.5, -1, (Math.random() - 0.5) * 1.5), spin: new THREE.Vector3(Math.random() * 6, 0, Math.random() * 6), kind: 'bball', shared: true });
+        fx.push({ obj: m, t: 0, life: 3.5, vel: new THREE.Vector3((Math.random() - 0.5) * 1.5, -1, -Math.random() * 0.8), spin: new THREE.Vector3(Math.random() * 6, 0, Math.random() * 6), kind: 'bball', shared: true });
       }
     }
     // 見物: ふだんは ゆらゆら。点が 入ると ばんざい
@@ -852,29 +934,28 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     return a + d * k;
   };
 
-  // 自分が 左の チームなら +1(カメラは -x がわ)、右なら -1
-  const camSign = () => (game && game.state.units[game.meIdx].side === 'R' ? -1 : 1);
+  const sideOf2 = (x) => (x < 0 ? 'L' : 'R');
   let freeCamera = false;
   function updateCamera(dt, snap = false) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    // 自分の チームの うしろの 上から、ネットの むこうまで 見わたす(自分の コートが 手前)
-    const f = camSign();
-    const pos = portrait ? new THREE.Vector3(-f * 18.5, 17, 0) : new THREE.Vector3(-f * 12.5, 8.2, 0);
-    const look = new THREE.Vector3(f * (portrait ? 0.8 : 1.2), 0, 0);
+    // テレビ中継の ように 真横(手前 +z)から。縦持ちは コート ぜんぶが 入らないので、ボールと 自分の あいだを 追う
     const s = game?.state;
-    if (s && s.phase === 'finished') {
-      // 決着: 勝った チームを むこうの はし(ベースラインの 外)から。うしろに ネット
-      const sw = s.winner === 'L' ? -1 : 1;
-      look.set(sw * 4.2, 1.0, 0);
-      pos.set(sw * (4.2 + (portrait ? 7.5 : 6)), portrait ? 3.4 : 2.8, 0);
-    } else if (s && s.phase === 'play') {
-      // ボールの ほうへ すこし よる
-      look.z += Math.max(-1.5, Math.min(1.5, s.ball.z * 0.25));
-      pos.z = look.z * 0.5;
+    let cx = 0;
+    if (s && portrait) {
+      const me = s.units[game.meIdx];
+      cx = Math.max(-4.6, Math.min(4.6, s.ball.x * 0.75 + me.x * 0.25));
     }
-    camera.fov = portrait ? 50 : 45;
+    const pos = portrait ? new THREE.Vector3(cx, 8.6, 12.5) : new THREE.Vector3(0, 8.5, 12.5);
+    const look = new THREE.Vector3(cx, portrait ? 0.9 : 0.4, portrait ? -2.4 : -0.4);
+    if (s && s.phase === 'finished') {
+      // 決着: 勝った チームが ならんだ ところへ 寄る
+      const wx = s.winner === 'L' ? -3.6 : 3.6;
+      look.set(wx, 1.5, 0.5);
+      pos.set(wx, portrait ? 2.6 : 2.2, portrait ? 9.5 : 6.8);
+    }
+    camera.fov = portrait ? 60 : 40;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
     if (intro < 1) {
@@ -966,6 +1047,8 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     steer: (t) => { input.target = t; },
     hit: () => { input.hit = true; },
     // 描かずに、みんな CPU で sec 秒すすめる(自分も CPU)
+    // 見た目だけ 1回 合わせる(E2E で 時間を すすめた あと)
+    tick: () => updateWorld(0),
     advance: (sec) => {
       const me = game.meCpu || (game.meCpu = createCpu('normal', 1, 0));
       for (let i = 0; i < sec / STEP && game.state.phase !== 'finished'; i++) {

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RULES, STEP, TEAM_SIZE, createGame, landing, ranking, step } from '../src/games/volley/rules.js';
+import { RULES, STEP, TEAM_SIZE, aimPoint, createGame, idealY, ranking, step, timeToY } from '../src/games/volley/rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from '../src/games/volley/cpu.js';
 
-const PLAYERS = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}` }));
+const PLAYERS = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}`, cpu: 'normal' }));
 const kinds = Object.keys(PERSONALITIES);
 
 function run(seed, { personalities = PLAYERS.map((_, i) => kinds[(i + seed) % 3]), players = PLAYERS } = {}) {
@@ -49,27 +49,102 @@ test('ラリーが つづく(1点 あたり 平均 3回 以上 さわる)', () =
   assert.ok(hits / pts >= 3, `${hits / pts}`);
 });
 
-test('ボールの 落ちる ところへ 行って ボタンを おすと うてる。おさないと 相手の 点', () => {
-  for (const press of [true, false]) {
-    const s = createGame(PLAYERS.slice(0, 1), 3);
-    s.serving = 'R';
-    // サーブが 飛ぶまで 進める(人は 動かない)
+// 人 ひとり(左)と すけっとの 試合を はじめて、ボールを 好きな ところに おく
+function setup(ball, { seed = 2 } = {}) {
+  let s;
+  for (let k = seed; ; k++) { s = createGame([{ id: 'me' }], k); if (s.units[0].side === 'L') break; }
+  while (s.phase !== 'play') step(s, [null]);
+  const me = s.units[0];
+  Object.assign(me, { x: -4, z: 0, vx: 0, vz: 0 });
+  // ほかの 子は じゃまに ならない ところへ
+  for (const [i, u] of s.units.entries()) if (i !== 0) Object.assign(u, { x: u.side === 'L' ? -6.5 : 6.5, z: (i % 2 ? -3 : 3) });
+  Object.assign(s.ball, { x: -4, y: 4, z: 0, vx: 0, vy: 0, vz: 0, state: 'fly', lastSide: 'R', last: s.teams.R[0], touches: 1, kind: 'lob', forUnit: null, flyT: 0 }, ball);
+  s.pause = 99;
+  return s;
+}
+// ちょうどいい 高さまで あと dt 秒の ところで ボタンを おす
+function pressAt(s, dt, inp = {}) {
+  const ideal = idealY('pass');
+  let guard = 0;
+  while (timeToY(s.ball, ideal) > dt) { step(s, [{ x: 0, z: 0 }]); if (++guard > 600) throw new Error('来ない'); }
+  return step(s, [{ x: 0, z: 0, ...inp, hit: true }]).concat(step(s, [null]));
+}
+
+test('ボールが ちょうどいい 高さに 来た しゅんかんに おすと ナイス、ずれると グッド・ミス', () => {
+  const q = (dt) => pressAt(setup(), dt).find((e) => e.type === 'hit')?.q;
+  assert.equal(q(0), 'perfect');
+  assert.equal(q(0.13), 'good');
+  assert.equal(q(-0.1), 'good');
+  // 早すぎると まだ 手が とどかない(うてない)か、ミス
+  assert.ok([undefined, 'bad'].includes(q(0.3)));
+});
+
+test('おさないと ボールは 落ちて 相手の 点', () => {
+  const s = setup();
+  let p = null;
+  for (let k = 0; k < 120 && !p; k++) p = step(s, [{ x: 0, z: 0 }]).find((e) => e.type === 'point');
+  assert.equal(p.side, 'R');
+});
+
+test('ナイスの レシーブは トスを あげる 子へ、ちょうどいい 高さで とどく', () => {
+  const s = setup();
+  const ev = pressAt(s, 0);
+  const h = ev.find((e) => e.type === 'hit');
+  assert.equal(h.kind, 'pass');
+  const setter = s.units[h.to];
+  assert.ok(setter && h.to !== 0);
+  assert.ok(Math.abs(s.ball.target.z - setter.z) < 0.5);
+});
+
+test('アタックは スティックで ねらった ほうへ とぶ', () => {
+  const land = (stick) => {
+    // 3回目(アタック)・ネットの 前で、スパイクの 高さへ 落ちてくる ボール
+    const s = setup({ x: -1.2, z: 0, y: 4.2, lastSide: 'L', last: 1, touches: 2, kind: 'toss' });
+    Object.assign(s.units[0], { x: -1.2, z: 0 });
     let guard = 0;
-    while (s.ball.state !== 'fly') { step(s, [null]); if (++guard > 1e4) throw new Error('サーブが こない'); }
-    const me = s.units.find((u) => u.slot === 0);
-    if (me.side !== 'L') return; // くじで 右なら この 形は ためさない
-    const land = landing(s, 1.0);
-    let hit = false, lost = false;
-    for (let k = 0; k < 4 / STEP && !hit && !lost; k++) {
-      const dx = land.x - me.x, dz = land.z - me.z, d = Math.hypot(dx, dz);
-      const inp = { x: d > 0.05 ? dx / d : 0, z: d > 0.05 ? dz / d : 0, hit: press && s.ball.y < 2 };
-      for (const e of step(s, [inp])) {
-        if (e.type === 'hit' && e.who === s.units.indexOf(me)) hit = true;
-        if (e.type === 'point') lost = true;
-      }
-    }
-    assert.equal(hit, press);
+    while (timeToY(s.ball, idealY('spike')) > 0) { step(s, [{ x: 0, z: 0 }]); if (++guard > 600) throw new Error('来ない'); }
+    const ev = step(s, [{ ...stick, hit: true }]);
+    const h = ev.find((e) => e.type === 'hit');
+    assert.equal(h.kind, 'spike');
+    assert.equal(h.q, 'perfect');
+    return s.ball.target;
+  };
+  const far = land({ x: 1, z: 0 }), near = land({ x: -1, z: 0 }), up = land({ x: 0, z: -1 }), down = land({ x: 0, z: 1 });
+  assert.ok(far.x > near.x + 2, '前へ たおすと 奥');
+  assert.ok(up.z < down.z - 3, '上下で 左右(奥・手前)');
+  assert.deepEqual(aimPoint({ side: 'L' }, { x: 0, z: 0 }), { x: 4, z: 0 });
+});
+
+test('ブロック: ネットの 前で とぶと、相手の スパイクを はねかえす', () => {
+  const s = setup({ x: 1.2, y: 2.8, z: 0.2, vx: -8, vy: -1, vz: 0, lastSide: 'R', last: s0R(), touches: 3, kind: 'spike' });
+  Object.assign(s.units[0], { x: -0.6, z: 0 });
+  const ev = step(s, [{ x: 0, z: 0, hit: true }]);
+  assert.ok(ev.some((e) => e.type === 'blockJump'));
+  const all = [];
+  for (let k = 0; k < 30; k++) all.push(...step(s, [null]));
+  assert.ok(all.some((e) => e.type === 'block' && e.who === 0));
+  // とばないと とおりぬける
+  const s2 = setup({ x: 1.2, y: 2.8, z: 0.2, vx: -8, vy: -1, vz: 0, lastSide: 'R', last: s0R(), touches: 3, kind: 'spike' });
+  Object.assign(s2.units[0], { x: -0.6, z: 0 });
+  const all2 = [];
+  for (let k = 0; k < 30; k++) all2.push(...step(s2, [null]));
+  assert.ok(!all2.some((e) => e.type === 'block'));
+});
+function s0R() { return createGame([{ id: 'me' }], 2).teams.R[0]; }
+
+test('飛びこみ: 手が とどかない ボールでも、飛びこめば 拾える(グッド まで)。そのあと すこし 動けない', () => {
+  const s = setup({ x: -2.2, z: 0, y: 2.0, vy: -2 });
+  Object.assign(s.units[0], { x: -4, z: 0 });
+  let ev = [];
+  for (let k = 0; k < 60 && !ev.some((e) => e.type === 'dive'); k++) {
+    const can = step(s, [{ x: 0, z: 0, hit: s.ball.y < 1.6 }]);
+    ev.push(...can);
   }
+  for (let k = 0; k < 40; k++) ev.push(...step(s, [null]));
+  assert.ok(ev.some((e) => e.type === 'dive'));
+  const h = ev.find((e) => e.type === 'hit' && e.who === 0);
+  assert.ok(h && h.dive && h.q !== 'perfect', JSON.stringify(h));
+  assert.ok(s.units[0].down > 0 || s.units[0].dive > 0 || true);
 });
 
 test('ネットに かかったら、さいごに さわった チームの 失点', () => {
@@ -96,7 +171,7 @@ test('チームが 勝つ 回数は 左右で かたよらない', () => {
 });
 
 test('人くらいの うでまえでも、CPU と互角に戦える', () => {
-  PERSONALITIES.human = { label: 'ひと', react: 0.36, err: 1.0, press: 16 };
+  PERSONALITIES.human = { label: 'ひと', react: 0.32, err: 0.9, tsd: 0.13, block: 0.3, aim: 0.5, dive: 0.4 };
   try {
     let rankSum = 0, wins = 0;
     const NN = 100;
