@@ -10,7 +10,7 @@
 // 版はファイルの中身から作るので、1つでも変われば sw.js が変わり、ブラウザが入れなおす。
 
 // <precache>
-const VERSION = '5816ac454ff2';
+const VERSION = '2a60ff895d09';
 const PRECACHE = [
   "./",
   "./assets/thumbs/bumper.jpg",
@@ -31,6 +31,7 @@ const PRECACHE = [
   "./assets/thumbs/sumo.jpg",
   "./assets/thumbs/tsumi.jpg",
   "./assets/thumbs/tsuna.jpg",
+  "./assets/thumbs/volley.jpg",
   "./assets/thumbs/yuki.jpg",
   "./daruma.html",
   "./icons/apple-touch-icon.png",
@@ -150,6 +151,10 @@ const PRECACHE = [
   "./src/games/tsuna/game.js",
   "./src/games/tsuna/rules.js",
   "./src/games/tsuna/stage.js",
+  "./src/games/volley/cpu.js",
+  "./src/games/volley/game.js",
+  "./src/games/volley/rules.js",
+  "./src/games/volley/stage.js",
   "./src/games/yuki/cpu.js",
   "./src/games/yuki/game.js",
   "./src/games/yuki/rules.js",

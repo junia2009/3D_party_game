@@ -71,3 +71,4 @@
 | 森の湖の いろいろキノコ | 作成中 | [minigames/kinoko.md](minigames/kinoko.md) |
 | 森の図書館の ぱらぱらブック | 作成中 | [minigames/ehon.md](minigames/ehon.md) |
 | 空まで まめのきジャンプ | 作成中 | [minigames/mame.md](minigames/mame.md) |
+| 夏の浜べの ビーチバレー | 作成中 | [minigames/volley.md](minigames/volley.md) |

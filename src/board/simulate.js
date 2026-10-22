@@ -39,6 +39,8 @@ import * as ehon from '../games/ehon/rules.js';
 import * as ehonCpu from '../games/ehon/cpu.js';
 import * as mame from '../games/mame/rules.js';
 import * as mameCpu from '../games/mame/cpu.js';
+import * as volley from '../games/volley/rules.js';
+import * as volleyCpu from '../games/volley/cpu.js';
 
 export const GAMES = {
   daruma: { rules: daruma, createCpu: darumaCpu.createCpu, input: darumaCpu.cpuHold, picked: (s) => s.runners.map((r) => r.acorns) },
@@ -60,6 +62,7 @@ export const GAMES = {
   kinoko: { rules: kinoko, createCpu: kinokoCpu.createCpu, input: kinokoCpu.cpuInput, picked: () => null },
   ehon: { rules: ehon, createCpu: ehonCpu.createCpu, input: ehonCpu.cpuInput, picked: () => null },
   mame: { rules: mame, createCpu: mameCpu.createCpu, input: mameCpu.cpuInput, picked: () => null },
+  volley: { rules: volley, createCpu: volleyCpu.createCpu, input: volleyCpu.cpuInput, picked: () => null },
 };
 
 // lineup: [{ cpu: 性格 }]。返すのは { ranking(席の番号の順), picked }
