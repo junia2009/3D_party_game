@@ -4,7 +4,8 @@
 // 手前の ページ(床)の 上で 5人が 走る。奥には 表紙が 立っていて、その 前に 穴の あいた ページが 立つ。
 // ページは 紙の 色に 森の 絵と 文字の 行。穴は どんぐり・葉っぱ・星・花・キノコの 形に 切りぬく。
 // 床には たおれてくる 穴の 影(穴の ところだけ 明るい)。
-// 奥の かべには 本棚、横に 机の ランプ(あたたかい 光)。
+// 奥の かべには 本棚、横に 机の ランプ(あたたかい 光)。窓から 光の 帯が さしこみ、ほこりが きらきら 舞う。
+// 本の 表紙には 金の かど、とじめから 赤い しおりの ひも。手前の ページの ふちには 紙の かさなりの すじ。
 //
 // 座標: 本の とじめ(ページが たおれる 軸)が x 軸(z = 0)。手前の ページの 面が y = 0。
 
@@ -216,8 +217,70 @@ export function buildStage(scene) {
     b.rotation.y = (k % 2 ? 0.15 : -0.1);
     g.add(b);
   }
+  // 表紙の 金の かど と、手前に たれる しおり
+  const gold = toonMaterial(0xe8b84a);
+  for (const sx of [-1, 1]) {
+    const c = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.14, 0.7), gold);
+    c.position.set(sx * (W / 2 + 0.05), -0.28, D + 0.05);
+    c.rotation.y = Math.PI / 4;
+    g.add(c);
+    const c2 = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.14), gold);
+    c2.position.set(sx * (W / 2 + 0.05), D + 0.05, -0.36);
+    c2.rotation.z = Math.PI / 4;
+    g.add(c2);
+  }
+  const ribbon = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.02, D + 1.6), toonMaterial(0xd83a3a));
+  ribbon.position.set(W * 0.28, 0.005, D / 2 + 0.6);
+  g.add(ribbon);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.0, 0.02), toonMaterial(0xd83a3a));
+  tail.position.set(W * 0.28, -0.7, D + 1.4);
+  g.add(tail);
+  // 手前の ページの かさなり(ふちの すじ)
+  const edgeMat = toonMaterial(0xd8c8a0);
+  for (let k = 0; k < 4; k++) {
+    const e = new THREE.Mesh(new THREE.BoxGeometry(W + 0.12, 0.015, 0.03), edgeMat);
+    e.position.set(0, -0.04 - k * 0.05, D + 0.04);
+    g.add(e);
+  }
   mergeStatic(g);
   scene.add(g);
+
+  // 窓からの 光の 帯(左上から ななめに)と、その中の ほこり
+  const beamTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 256;
+    const x = c.getContext('2d');
+    const gr = x.createLinearGradient(0, 0, 64, 0);
+    gr.addColorStop(0, 'rgba(255,240,200,0)');
+    gr.addColorStop(0.5, 'rgba(255,240,200,.5)');
+    gr.addColorStop(1, 'rgba(255,240,200,0)');
+    x.fillStyle = gr;
+    x.fillRect(0, 0, 64, 256);
+    const fade = x.createLinearGradient(0, 0, 0, 256);
+    fade.addColorStop(0, 'rgba(0,0,0,0)');
+    fade.addColorStop(1, 'rgba(0,0,0,1)');
+    x.globalCompositeOperation = 'destination-out';
+    x.fillStyle = fade;
+    x.fillRect(0, 0, 64, 256);
+    return new THREE.CanvasTexture(x.canvas);
+  })();
+  const beams = [];
+  for (let i = 0; i < 3; i++) {
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(2.2 + i * 0.6, 22), new THREE.MeshBasicMaterial({ map: beamTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.35, side: THREE.DoubleSide }));
+    b.position.set(-9 + i * 3.2, 6, -4 + i * 1.2);
+    b.rotation.set(0.2, 0.3, -0.55);
+    scene.add(b);
+    beams.push(b);
+  }
+  const DN = 70;
+  const dustPos = new Float32Array(DN * 3), dust = [];
+  for (let i = 0; i < DN; i++) {
+    dust.push({ x: (rand() - 0.5) * 16, y: rand() * 9, z: -6 + rand() * 12, ph: rand() * 6 });
+    dustPos.set([dust[i].x, dust[i].y, dust[i].z], i * 3);
+  }
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
 
   // ランプの あかり(やわらかい 光の まる)
   const glowTex = (() => {
@@ -252,5 +315,19 @@ export function buildStage(scene) {
     return m;
   })();
   scene.add(floorPage);
-  return { group: g, floorPage, glow };
+  const dustPts = new THREE.Points(dustGeo, new THREE.PointsMaterial({ size: 0.16, map: glowTex, color: 0xfff0c8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  scene.add(dustPts);
+  return {
+    group: g, floorPage, glow,
+    update(t) {
+      for (let i = 0; i < DN; i++) {
+        const d = dust[i];
+        dustPos[i * 3] = d.x + Math.sin(t * 0.3 + d.ph) * 0.6;
+        dustPos[i * 3 + 1] = ((d.y + t * 0.15) % 9) + 0.2;
+        dustPos[i * 3 + 2] = d.z + Math.cos(t * 0.25 + d.ph) * 0.5;
+      }
+      dustGeo.attributes.position.needsUpdate = true;
+      beams.forEach((b, i) => { b.material.opacity = 0.28 + Math.sin(t * 0.4 + i) * 0.07; });
+    },
+  };
 }

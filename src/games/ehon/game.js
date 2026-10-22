@@ -172,7 +172,14 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
   let intro = 1;
   const INTRO_TIME = 2.4;
   const input = { touch: null, stick: null, keys: new Set(), target: null };
-  await preload(CHARACTERS.map((c) => c.key));
+  await preload([...CHARACTERS.map((c) => c.key), 'hoho']);
+  // ホーホー先生: 本の 手前の 机で 見まもる(ページが たおれると ばさっ)
+  const owl = await createModel('hoho');
+  owl.play('idle');
+  owl.root.position.set(W / 2 - 1.7, -0.35, D + 1.0); // 本の 手前の 机に ちょこんと(こちらを 向いて 見まもる)
+  owl.root.rotation.y = -0.45;
+  owl.root.scale.setScalar(0.75);
+  scene.add(owl.root);
 
   async function startGame({ fromSky = false } = {}) {
     const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
@@ -368,6 +375,8 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
           break;
         case 'flip':
           pivot.userData.flip = { t: 0, time: e.time };
+          owl.play('flap', { fade: 0.1 });
+          setTimeout(() => owl.play('idle', { fade: 0.3 }), 700);
           sfx.whoosh(e.time);
           break;
         case 'slam': {
@@ -497,6 +506,8 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
       }
     }
     stage.glow.material.opacity = 0.85 + Math.sin(time * 2.3) * 0.08;
+    stage.update(time);
+    owl.update(dt);
   }
 
   let freeCamera = false;
