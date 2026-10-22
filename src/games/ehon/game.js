@@ -420,9 +420,19 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
           break;
         case 'page':
           if (e.page > 0) { newPage(e.holes, e.page); sfx.page(); scraps(0, D * 0.8, 0.2, 3); }
+          // 10まいごとに「とっぱ!」(先生も ばさばさ)
+          if (e.page > 0 && e.page % 10 === 0) {
+            setTimeout(() => { splash(`${e.page}まい とっぱ!`, 'gold small'); sfx.hurry(); }, 200);
+            owl.play('flap', { fade: 0.1 });
+            setTimeout(() => owl.play('idle', { fade: 0.3 }), 1200);
+            const el = $('pageE');
+            el.classList.remove('bump');
+            void el.offsetWidth;
+            el.classList.add('bump');
+          }
           break;
         case 'faster':
-          splash('はやく なるよ!', 'gold small');
+          if (e.page % 10 !== 0) splash('はやく なるよ!', 'gold small');
           sfx.hurry();
           $('hudE').classList.toggle('fast', e.page >= 10);
           break;
@@ -470,6 +480,9 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
           if (win) sfx.fanfare();
           const r = s.runners[e.winner];
           confetti(r.x, r.z);
+          // 本から ページが ぱらぱら 舞いあがる。先生も 大よろこび
+          for (let i = 0; i < 6; i++) setTimeout(() => scraps(-W / 2 + Math.random() * W, 0.4, Math.random() * D, 8), i * 250);
+          owl.play('flap', { fade: 0.1 });
           break;
         }
       }
@@ -544,10 +557,12 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
         if (o.t < 0.5) u.holder.scale.set(1.5, 0.06, 1.5);
         else {
           const k = o.t - 0.5;
-          u.holder.position.set(o.x + Math.sin(k * 3 + slot) * 0.8 * k, 0.05 + k * 1.6, o.z + k * 0.6);
+          // 奥(本棚の ほう)へ ひらひら 飛んで、小さくなって 消える
+          u.holder.position.set(o.x + Math.sin(k * 3 + slot) * 0.8 * k, 0.05 + k * 2.2, o.z - k * 2.5);
           u.holder.rotation.set(Math.sin(k * 4) * 1.2, k * 2, Math.cos(k * 3) * 0.6);
-          u.holder.scale.set(1.5, 0.06, 1.5);
-          u.holder.visible = k < 3;
+          const sc = Math.max(0.01, 1 - k / 1.6);
+          u.holder.scale.set(1.5 * sc, 0.06, 1.5 * sc);
+          u.holder.visible = k < 1.6;
         }
         if (o.t < 0.5) u.holder.position.set(o.x, 0.02, o.z);
         clip = 'dizzy';
@@ -580,6 +595,7 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
       }
     }
     stage.glow.material.opacity = 0.85 + Math.sin(time * 2.3) * 0.08;
+    stage.glow.scale.setScalar(game.duel && s.phase === 'play' ? 8.5 + Math.sin(time * 6) * 0.6 : 7);
     stage.update(time);
     owl.update(dt);
     // たおれる 少し前: チッ チッ
@@ -596,8 +612,8 @@ export async function createEhon({ renderer, settings, getAudio, onExit }) {
     const s = game?.state;
     if (s && s.phase === 'finished' && s.winner !== null) {
       const r = s.runners[s.winner];
-      look.set(r.x * 0.7, 1.0, r.z);
-      pos.set(r.x * 0.7, 5.5, r.z + 7.5);
+      look.set(r.x * 0.7, 1.0, r.z - 0.5);
+      pos.set(r.x * 0.7 - 1.2, 6.2, r.z + 9);
     } else if (s && game.duel) {
       pos.multiplyScalar(0.88);
     }
