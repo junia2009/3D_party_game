@@ -69,6 +69,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
   const sfx = {
     fizz(k) { noise({ len: 0.12, gain: 0.02 + k * 0.03, freq: [4000, 7000], type: 'highpass', q: 0.5 }); },
     rattle() { noise({ len: 0.06, gain: 0.06, freq: [900, 1400], q: 4 }); },
+    clink() { voice({ type: 'triangle', pts: [[0, 2400 + Math.random() * 600]], len: 0.05, gain: 0.03 }); },
     pop() { voice({ pts: [[0, 180], [0.05, 900]], len: 0.12, gain: 0.14 }); noise({ len: 0.25, gain: 0.1, freq: [6000, 2000], type: 'highpass' }); },
     burst() { noise({ len: 0.9, gain: 0.16, freq: [3000, 500], q: 0.6, attack: 0.02 }); voice({ type: 'square', pts: [[0, 400], [0.5, 150]], len: 0.55, gain: 0.04 }); },
     go() { voice({ type: 'square', pts: [[0, 880]], len: 0.18, gain: 0.05 }); },
@@ -100,6 +101,21 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 1.3, vel: v, kind: 'fire' });
     }
   }
+  // ポンの ときの 光の わ
+  function ringAt(at, color = 0xffffff) {
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.15, 0.22, 24), new THREE.MeshBasicMaterial({ color, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+    m.position.copy(at);
+    m.lookAt(camera.position);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.45, vel: new THREE.Vector3(), kind: 'ring' });
+  }
+  // ふきこぼれの 水たまり
+  function puddle(at) {
+    const m = new THREE.Mesh(new THREE.CircleGeometry(0.4, 18).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xf4fbff, transparent: true, depthWrite: false }));
+    m.position.set(at.x, 0.012, at.z + 0.1);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 4, vel: new THREE.Vector3(), kind: 'puddle' });
+  }
   function updateFx(dt) {
     for (let i = fx.length - 1; i >= 0; i--) {
       const f = fx[i];
@@ -108,6 +124,8 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       f.obj.position.addScaledVector(f.vel, dt);
       if (f.kind === 'drop') f.vel.y -= 12 * dt;
       if (f.kind === 'fire') { f.vel.multiplyScalar(1 - dt * 1.6); f.vel.y -= 2 * dt; }
+      if (f.kind === 'ring') f.obj.scale.setScalar(1 + k * 6);
+      if (f.kind === 'puddle') f.obj.scale.setScalar(Math.min(1, f.t * 3) * 1.4);
       f.obj.material.opacity = 1 - k * k;
       if (k >= 1) { scene.remove(f.obj); f.obj.material.dispose(); fx.splice(i, 1); }
     }
@@ -161,7 +179,14 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     units[0].holder.add(marker);
     units[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, camY: 0 };
+    const swoosh = [0, 1].map(() => {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.012, 4, 16, Math.PI * 0.7), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false }));
+      m.visible = false;
+      scene.add(m);
+      return m;
+    });
+    if (game?.swoosh) for (const m of game.swoosh) scene.remove(m);
+    game = { swoosh, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, camY: 0 };
     atmosphere.apply(params.get('time') || 'night');
     atmosphere.setupShadows(units.map((u) => u.holder), [stage.group]);
     input.pop = false;
@@ -318,6 +343,15 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     $('meterR').hidden = !(s.phase === 'shake' || s.phase === 'prep');
     $('hudR').classList.toggle('danger', active && rattleK(s, b) > 0.5);
   }
+  // ほかの 子の ようす(自分の びんを アップ している あいだ)
+  function toast(slot, text) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    const name = CHARACTERS.find((c) => c.key === game.players[slot].character)?.name || '';
+    el.innerHTML = `<i style="background:${css(PLAYER_COLORS[slot].hex)}"></i>${name}が ${text}`;
+    $('toastR').append(el);
+    setTimeout(() => el.remove(), 1700);
+  }
   const tmpV = new THREE.Vector3();
   function pop(text, at, cls = '', life = 900) {
     tmpV.copy(at).project(camera);
@@ -360,19 +394,25 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
           u.flyFrom = s.t;
           u.flyH = e.height;
           u.capFly.visible = true;
-          spray(u.bottle.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 16, 1.2, 0xe8f8ff, 3);
+          const mouth = u.bottle.position.clone().add(new THREE.Vector3(0, 0.75 * u.bs, 0));
+          spray(mouth, e.slot === 0 ? 36 : 16, 1.0, 0xe8f8ff, e.slot === 0 ? 5 : 3);
+          ringAt(mouth, 0xffffff);
           if (e.slot === 0) {
             sfx.pop();
             sfx.whistle();
-            pop(e.auto ? 'じかんぎれ ポン!' : 'ポン!', u.bottle.position.clone().add(new THREE.Vector3(0, 1.2, 0)), 'gold', 800);
-          }
+            game.shake = 0.15;
+            pop(e.auto ? 'じかんぎれ ポン!' : 'しゅぽん!', mouth.clone().add(new THREE.Vector3(0, 0.35, 0)), 'gold', 800);
+          } else if ((game.zoom ?? 0) > 0.5) toast(e.slot, 'ポン!');
           break;
         }
         case 'burst': {
           const u = game.units[e.slot];
           u.burst = 1;
-          spray(u.bottle.position.clone().add(new THREE.Vector3(0, 0.9, 0)), 50, 2.6, 0xffffff, 5);
+          u.fountain = 1.2; // しばらく あわが ふきだしつづける
+          spray(u.bottle.position.clone().add(new THREE.Vector3(0, 0.75 * u.bs, 0)), 50, 2.6, 0xffffff, 5);
+          puddle(u.bottle.position);
           if (e.slot === 0) { sfx.burst(); game.shake = 0.4; splash('ふきこぼれた!', 'red small'); }
+          else if ((game.zoom ?? 0) > 0.5) toast(e.slot, 'ふきこぼれ!');
           break;
         }
         case 'show':
@@ -434,6 +474,36 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       const pump = prep > 0.6 ? Math.abs(Math.sin(prep * 22)) * 0.08 : 0; // かまえの さいごに ぐっ ぐっ
       u.bottle.position.set(x + Math.sin(time * 60) * rk * 0.03, u.handY + (topY - u.handY) * u.lift + pump + Math.sin(u.shakeT) * amp, UNIT_Z + u.front * (1 - u.lift * 0.25));
       u.bottle.rotation.z = Math.sin(u.shakeT * 0.5) * amp * 1.5 + Math.sin(time * 47) * rk * 0.12;
+      // ビー玉: ふると くびれで カラカラ はねる
+      const { marble, drops } = u.bottle.userData;
+      marble.position.y = 0.58 + Math.abs(Math.sin(u.shakeT * 2)) * 0.03 * power;
+      if (slot === 0 && power > 0.5) { u.clinkT = (u.clinkT || 0) - dt; if (u.clinkT <= 0) { u.clinkT = 0.22 + Math.random() * 0.15; sfx.clink(); } }
+      // 水てき(つたって おちる)
+      for (const d of drops) {
+        const dd = d.userData;
+        dd.y -= dt * dd.sp * (1 + power * 3);
+        if (dd.y < 0.02) dd.y = 0.42;
+        d.position.set(Math.cos(dd.a) * 0.128, dd.y, Math.sin(dd.a) * 0.128);
+      }
+      // がたがた: 口から あわが じわっと あふれる
+      if (rk > 0.25 && Math.random() < dt * rk * (slot === 0 ? 30 : 8)) {
+        const m = u.bottle.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.08, 0.72 * u.bs, 0.02));
+        spray(m, 1, 0.3, 0xffffff, 0.6);
+      }
+      // ふきこぼれ: しばらく あわが ふきだす
+      if (u.fountain > 0) {
+        u.fountain -= dt;
+        if (Math.random() < dt * 40) spray(u.bottle.position.clone().add(new THREE.Vector3(0, 0.75 * u.bs, 0)), 2, 0.8, 0xffffff, 2.5);
+      }
+      // シャカシャカの 線(自分だけ)
+      if (slot === 0) {
+        game.swoosh.forEach((m, k) => {
+          m.visible = power > 0.25;
+          m.position.set(x + (k ? 0.32 : -0.32) * u.bs * 1.3, u.bottle.position.y + 0.35 * u.bs, u.bottle.position.z);
+          m.rotation.z = (k ? -1 : 1) * (0.4 + Math.sin(u.shakeT) * 0.5);
+          m.material.opacity = Math.min(1, power) * (0.5 + 0.5 * Math.abs(Math.sin(u.shakeT)));
+        });
+      }
       // 中を のぼる あわの つぶ(ふるほど はやく、たくさん)
       const bub = u.bottle.userData.bubbles;
       const lvl = clamp(b.fizz / limitOf(s), 0, 1);

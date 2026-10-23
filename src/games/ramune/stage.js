@@ -465,6 +465,18 @@ export function ramuneBottle(withFoam = true) {
       bubbles.push(b);
     }
   }
-  g.userData = { cap, foam, liquid, bubbles };
+  // ひえた びんの 水てき(表面を ゆっくり つたう)
+  const drops = [];
+  if (withFoam) {
+    const dm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55 });
+    for (let k = 0; k < 10; k++) {
+      const d = new THREE.Mesh(new THREE.SphereGeometry(0.011, 6, 4), dm);
+      d.scale.set(1, 1.5, 0.6);
+      d.userData = { a: (k / 10) * Math.PI * 2 + Math.random(), y: Math.random() * 0.42, sp: 0.03 + Math.random() * 0.05 };
+      g.add(d);
+      drops.push(d);
+    }
+  }
+  g.userData = { cap, foam, liquid, bubbles, marble, drops };
   return g;
 }
