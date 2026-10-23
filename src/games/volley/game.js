@@ -576,6 +576,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     const label = can === 'block' ? 'ブロック' : can === 'dive' ? 'とびこむ' : can === 'hit' || coming ? { pass: 'レシーブ', toss: 'トス', spike: 'スパイク', lob: 'かえす' }[kind] : 'うつ';
     if (hitEl2.dataset.label !== label) { hitEl2.dataset.label = label; hitEl2.textContent = label; hitEl2.classList.toggle('long', label.length > 3); }
     hitEl2.classList.toggle('near', !!can);
+    hitEl2.classList.toggle('booked', me.want > 0 && b.state === 'fly');
     hitEl2.classList.toggle('now', can === 'hit' && game.view?.zone === 'perfect');
     hitEl2.classList.toggle('block', can === 'block');
     const w = s.wind.until > s.t ? s.wind.z : 0;
@@ -635,6 +636,10 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
             if (e.kind === 'pass' || e.kind === 'lob') sandBurst(su.x, su.z, 5, 1.2);
           }
           // うまさ(自分は 大きく、ほかの 子は ナイスの ときだけ)
+          if (e.to === game.meIdx && s.units[e.who].side === mySide && e.kind !== 'spike') {
+            const me2 = s.units[game.meIdx];
+            pop(e.kind === 'toss' ? 'トスが 来るよ! スパイク!' : 'つぎは あなた!', me2.x, 2.8, me2.z, 'gold', 1000);
+          }
           if (e.who === game.meIdx) {
             pop(e.q === 'perfect' ? 'ナイス!' : e.q === 'good' ? 'グッド' : 'ミス…', su.x, 3.0, su.z, e.q === 'perfect' ? 'gold' : e.q === 'good' ? 'me' : 'red', 900);
             if (e.q === 'perfect') { sparkle(bb.x, bb.y, bb.z, 10); sfx.nice(); }
@@ -643,6 +648,16 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
           if (e.dive) { sandBurst(su.x, su.z, 12, 2); pop('ナイスキャッチ!', su.x, 2.2, su.z, 'gold', 800); }
           break;
         }
+        case 'ready':
+          // 予約できた: 自分なら わが ぱっと 光って「よし!」の 音
+          if (e.who === game.meIdx) { game.readyT = 0.35; sfx.toss(); }
+          break;
+        case 'whiff':
+          if (e.who === game.meIdx) {
+            const su = s.units[e.who];
+            pop(e.why === 'early' ? 'まだ はやい!' : e.why === 'far' ? 'とおい!' : 'とどかない…', su.x, 2.4, su.z, e.why === 'early' ? 'me' : 'red', 700);
+          }
+          break;
         case 'blockJump':
           game.units[e.who].hitT = 0;
           sfx.toss();
@@ -859,7 +874,9 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     const myLand = b.state === 'fly' && !outgoing ? landing(s, idealY(myKind)) : null;
     const mineNext = myLand && sideOf2(myLand.x) === mySide && !(b.lastSide === mySide && b.last === game.meIdx);
     const tt = mineNext ? timeToY(b, idealY(myKind)) : null;
-    const coming = mineNext && Math.hypot(myLand.x - me.x, myLand.z - me.z) < RULES.reach * 1.6 && tt > -0.2 && tt < 1.0 && (b.forUnit === null || b.forUnit === game.meIdx || b.lastSide !== mySide);
+    // わを 出すのは、おせば 予約できる ときだけ(近い か 自分あての ボール)
+    const forMe = b.forUnit === game.meIdx && b.lastSide === mySide;
+    const coming = mineNext && (Math.hypot(myLand.x - me.x, myLand.z - me.z) < RULES.magnet || forMe) && tt > -0.2 && tt < RULES.commitT + (forMe ? 0.5 : 0) && (b.forUnit === null || forMe || b.lastSide !== mySide);
     game.view = { coming, zone: coming ? (Math.abs(tt) <= RULES.perfect ? 'perfect' : Math.abs(tt) <= RULES.good ? 'good' : 'far') : null };
     tOuter.visible = tInner.visible = !!coming;
     if (coming) {
@@ -871,6 +888,10 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       tOuter.material.color.setHex(game.view.zone === 'perfect' ? 0xffd24a : game.view.zone === 'good' ? 0xb8ff8a : 0xffffff);
       tOuter.material.opacity = tt < 0 ? Math.max(0, 1 + tt * 5) : 0.95;
       tInner.material.opacity = game.view.zone === 'perfect' ? 1 : 0.6;
+      // 予約ずみ: 内がわの わが 白く 光る
+      const booked = s.units[game.meIdx].want > 0;
+      tInner.material.color.setHex(booked ? 0xffffff : 0xffd24a);
+      if (game.readyT > 0) { game.readyT -= dt; tInner.scale.setScalar(base * (1 + game.readyT * 1.5)); }
     }
     const attack = (myKind === 'spike' || myKind === 'lob') && (coming || canDo(s, game.meIdx) === 'hit');
     aimMark.visible = !!attack && s.phase === 'play';
@@ -882,7 +903,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     }
     // 落ちる ところ(自分の チームへ 来る ボール)
     const land = b.state === 'fly' ? landing(s, 1.0) : null;
-    const toMe = land && Math.sign(land.x) === (mySide === 'L' ? -1 : 1) && b.lastSide !== mySide;
+    const toMe = land && Math.sign(land.x) === (mySide === 'L' ? -1 : 1) && (b.lastSide !== mySide || forMe);
     landRing.visible = !!toMe;
     if (toMe) {
       landRing.position.set(land.x, 0.02, land.z);
@@ -1047,6 +1068,8 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     steer: (t) => { input.target = t; },
     hit: () => { input.hit = true; },
     // 描かずに、みんな CPU で sec 秒すすめる(自分も CPU)
+    // 自分だけ 人の 入力(myInput)で、描かずに 1コマ すすめる(E2E で ボタンの 手ごたえを 見る)
+    stepMe: () => { const ev = step(game.state, game.players.map((p, slot) => (slot ? cpuInput(game.cpus[slot], game.state, slot) : myInput()))); onEvents(ev); return ev; },
     // 見た目だけ 1回 合わせる(E2E で 時間を すすめた あと)
     tick: () => updateWorld(0),
     advance: (sec) => {

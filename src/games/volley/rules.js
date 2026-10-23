@@ -37,19 +37,21 @@ export const RULES = {
   speed: 4.8,
   accel: 18,
   bodyR: 0.36,
-  reach: 1.25, // うてる ところ(よこの きょり)
+  reach: 1.3, // うてる ところ(よこの きょり)
   reachLo: 0.2, // ボールの 高さが この あいだで うてる
   reachHi: 2.5,
   spikeHi: 3.2, // ジャンプして とどく 高さ(スパイク)
-  buffer: 0.1, // ボタンを おしてから 待つ 時間(ほんの すこし)
+  // おすと「予約」: ボールが ちょうどいい 高さに 来た ところで かならず うつ(うまさは おした しゅんかんで きまる)
+  commitT: 0.9, // ちょうどいい 高さまで これより 近ければ 予約できる
+  magnet: 2.0, // 予約すると、これより 近い うつ ところへ 自動で よる
   cool: 0.35, // うった あと
   gravity: 9.8,
   ballR: 0.22,
   // ちょうどいい 高さ と、その しゅんかんからの ずれ(秒)で きまる うまさ
   idealLow: 1.4,
   idealSpike: 2.6,
-  perfect: 0.08,
-  good: 0.18,
+  perfect: 0.1,
+  good: 0.24,
   // とび方(とぶ 時間 秒)。レシーブ・トスは ねらった ところで ちょうどいい 高さまで 落ちてくる
   passT: 1.5,
   tossT: 1.4,
@@ -63,7 +65,7 @@ export const RULES = {
   blockW: 0.8, // 手の はば(z)
   blockTop: 3.3,
   // 飛びこみ
-  diveReach: 2.2,
+  diveReach: 3.0,
   diveHand: 0.75, // 飛びこんで いる ときの 手の とどく ところ
   diveTime: 0.32,
   diveDown: 0.7, // たおれて 動けない
@@ -127,7 +129,7 @@ function placeTeams(s) {
     s.teams[side].forEach((i, k) => {
       const u = s.units[i];
       const [hx, hz] = HOME[k];
-      Object.assign(u, { x: sx * hx, z: hz, vx: 0, vz: 0, jump: 0, block: 0, dive: 0, down: 0, want: 0, cool: 0 });
+      Object.assign(u, { x: sx * hx, z: hz, vx: 0, vz: 0, jump: 0, block: 0, dive: 0, down: 0, want: 0, cool: 0, whiffed: false });
       u.face = side === 'L' ? Math.PI / 2 : -Math.PI / 2;
     });
   }
@@ -212,22 +214,23 @@ export function aimPoint(u, inp) {
 function pickSetter(s, i) {
   // パスした 子 いがいで、ネットに いちばん 近い 子。人の 子は なるべく アタックに まわすので、さけられれば さける
   const team = s.teams[s.units[i].side].filter((j) => j !== i);
-  const score = (j) => Math.abs(s.units[j].x) + (s.units[j].human ? 3 : 0);
+  const score = (j) => Math.abs(s.units[j].x) + (s.units[j].human ? 3 : 0) + (s.units[j].down > 0 || s.units[j].dive > 0 ? 6 : 0);
   return team.sort((a, b) => score(a) - score(b))[0];
 }
 function pickSpiker(s, i) {
   const team = s.teams[s.units[i].side].filter((j) => j !== i);
-  const score = (j) => Math.abs(s.units[j].x) * 0.3 + Math.abs(s.units[j].z) * 0.1 - (s.units[j].human ? 5 : 0);
+  const score = (j) => Math.abs(s.units[j].x) * 0.3 + Math.abs(s.units[j].z) * 0.1 - (s.units[j].human ? 5 : 0) + (s.units[j].down > 0 || s.units[j].dive > 0 ? 3 : 0);
   return team.sort((a, b) => score(a) - score(b))[0];
 }
 
 // ボールを うつ
-function hit(s, i, inp, ev, { dive = false } = {}) {
+function hit(s, i, inp, ev, { dive = false, dt } = {}) {
   const u = s.units[i];
   const b = s.ball;
   const sx = u.side === 'L' ? -1 : 1;
   const kind = shotKind(s, i);
-  let q = quality(timeToY(b, idealY(kind)));
+  // うまさ: 予約した ときの タイミング(なければ いま)
+  let q = quality(dt ?? timeToY(b, idealY(kind)));
   if (dive && q === 'perfect') q = 'good';
   if (b.lastSide !== u.side) b.touches = 0;
   b.touches++;
@@ -237,6 +240,7 @@ function hit(s, i, inp, ev, { dive = false } = {}) {
   if (q === 'perfect') u.nice++;
   u.cool = RULES.cool;
   u.want = 0;
+  for (const o of s.units) { o.want = 0; o.whiffed = false; } // ほかの 子の 予約も おしまい(ボールが かわった)
   s.rally++;
   const err = { perfect: 0.2, good: 0.8, bad: 2.0 }[q];
   const rnd = () => (nextRandom(s) * 2 - 1);
@@ -313,21 +317,28 @@ export function canDo(s, i) {
   const b = s.ball;
   if (s.phase !== 'play' || b.state !== 'fly' || u.down > 0 || u.dive > 0) return null;
   const mySide = sideOf(b.x) === u.side;
+  // ブロック: 相手が アタックしそうな とき(相手の トス)だけ。ネットの 前で
+  if (!mySide && b.lastSide !== u.side && b.kind === 'toss' && Math.abs(u.x) < RULES.blockX && u.jump <= 0) return 'block';
   const outgoing = b.lastSide === u.side && (b.kind === 'spike' || b.kind === 'lob' || b.kind === 'serve' || b.kind === 'block');
-  if (!mySide || outgoing) {
-    // ボールが 相手がわ(か、相手へ とんで いく): ネットの 前なら ブロック
-    if (!mySide && Math.abs(u.x) < RULES.blockX && u.jump <= 0 && b.lastSide !== u.side) return 'block';
-    return null;
-  }
+  if (outgoing) return null;
   if (b.lastSide === u.side && b.last === i) return null; // つづけて 2回は さわれない
+  const kind = shotKind(s, i);
+  const cp = landing(s, idealY(kind)) || landing(s, RULES.reachLo);
+  if (!cp || sideOf(cp.x) !== u.side) return null; // 自分の コートに 来ない
+  // うてる: もう 手の とどく ところに ある か、もうすぐ 来る ところ(近く)に いる → おすと「予約」
   const d = Math.hypot(b.x - u.x, b.z - u.z);
   const top = Math.abs(u.x) < RULES.spikeX ? RULES.spikeHi : RULES.reachHi;
-  const reach = reachOf(b);
-  if (d < reach && b.y >= RULES.reachLo && b.y <= top) return 'hit';
-  // 飛びこみ: 落ちる ところが 手の とどかない ところ(でも 近い)
+  if (d < reachOf(b) && b.y >= RULES.reachLo && b.y <= top) return 'hit';
+  const cd = Math.hypot(cp.x - u.x, cp.z - u.z);
+  const tt = timeToY(b, idealY(kind));
+  // 自分あての ボール(トス・レシーブ)は どこからでも 予約できる(はしって いく)
+  const forMe = b.forUnit === i && b.lastSide === u.side;
+  // 走って 間に合う ときだけ(間に合わない 遠さなら 飛びこみ)
+  const inTime = cd - reachOf(b) <= RULES.speed * 1.3 * Math.max(0, tt + 0.05) + 0.2;
+  if ((cd < RULES.magnet || forMe) && inTime && tt < RULES.commitT + (forMe ? 0.5 : 0)) return 'hit';
+  // 飛びこみ: 遠いけど、飛びこめば とどく
   const land = landing(s, 0.5);
-  const ld = land ? Math.hypot(land.x - u.x, land.z - u.z) : Infinity;
-  if (land && b.vy < 0 && land.t < 0.7 && ld > reach * 0.9 && ld < RULES.diveReach && u.jump <= 0) return 'dive';
+  if (land && land.t < 0.7 && cd < RULES.diveReach && u.jump <= 0) return 'dive';
   return null;
 }
 
@@ -358,9 +369,11 @@ export function autoInput(s, i, skill, rand) {
     const kind = shotKind(s, i);
     const land = landing(s, idealY(kind));
     const mine = land && sideOf(land.x) === u.side && !(b.lastSide === u.side && (b.kind === 'spike' || b.kind === 'lob' || b.kind === 'serve'));
+    // 味方が もう 予約している ボールは ゆずる
+    const booked = team.find((j) => j !== i && s.units[j].want > 0 && s.units[j].dive <= 0);
     if (mine) {
-      // とりに いく 子: 予定の 子(forUnit)、いなければ 落ちる ところに いちばん 近い 子
-      let go = b.forUnit !== null && b.lastSide === u.side ? b.forUnit : null;
+      // とりに いく 子: 予約した 子 → 予定の 子(forUnit)→ 落ちる ところに いちばん 近い 子
+      let go = booked ?? (b.forUnit !== null && b.lastSide === u.side ? b.forUnit : null);
       if (go === null) {
         let nd = Infinity;
         for (const j of team) {
@@ -384,7 +397,7 @@ export function autoInput(s, i, skill, rand) {
       gx = sx * 0.8;
       gz = b.kind === 'toss' && b.target ? clamp(b.target.z, -2.8, 2.8) : 0;
     }
-    const can = canDo(s, i);
+    const can = booked !== undefined && booked !== i ? null : canDo(s, i);
     if (can === 'hit') {
       const t = timeToY(b, idealY(kind));
       if (t <= p.toff || t < -0.05) {
@@ -471,7 +484,7 @@ export function step(s, inputs) {
     u.want = Math.max(0, u.want - dt);
     if (u.dive > 0) {
       u.dive = Math.max(0, u.dive - dt);
-      if (u.dive <= 0) u.down = RULES.diveDown;
+      if (u.dive <= 0) { u.down = RULES.diveDown; u.vx *= 0.15; u.vz *= 0.15; } // たおれこんで とまる
     }
     if (inp?.hit && u.cool <= 0 && u.down <= 0 && u.dive <= 0 && u.jump <= 0) {
       const can = canDo(s, i);
@@ -481,16 +494,28 @@ export function step(s, inputs) {
       } else if (can === 'dive') {
         const land = landing(s, 0.5);
         const dx = land.x - u.x, dz = land.z - u.z, d = Math.hypot(dx, dz) || 1;
-        const v = Math.min(6, d / RULES.diveTime);
+        // ボールが 落ちる ころに とどく はやさで(はやすぎは しない)
+        const T = Math.max(0.12, Math.min(RULES.diveTime, land.t));
+        const v = Math.min(9, Math.max(0, d - 0.35) / T);
         u.dvx = (dx / d) * v;
         u.dvz = (dz / d) * v;
-        u.dive = RULES.diveTime;
-        u.want = RULES.diveTime + 0.05;
+        u.dive = T;
+        u.want = T + 0.1;
         u.face = Math.atan2(dx, dz);
         ev.push({ type: 'dive', who: i });
-      } else {
-        u.want = RULES.buffer;
+      } else if (can === 'hit') {
+        // 予約(もう 予約していたら、ちょうどいい ほうの タイミングを のこす)
+        const dtNow = timeToY(b, idealY(shotKind(s, i)));
+        const first = !(u.want > 0);
+        if (first || Math.abs(dtNow) < Math.abs(u.pressDt)) u.pressDt = dtNow;
+        u.want = 1.5;
         u.aimInp = inp;
+        if (first) ev.push({ type: 'ready', who: i, dt: u.pressDt });
+      } else if (b.state === 'fly') {
+        // うてない: まだ 早い(ボールは 来る)か、遠い・来ない
+        const cp = landing(s, idealY(shotKind(s, i)));
+        const early = cp && sideOf(cp.x) === u.side && timeToY(b, idealY(shotKind(s, i))) >= RULES.commitT && Math.hypot(cp.x - u.x, cp.z - u.z) < RULES.magnet;
+        ev.push({ type: 'whiff', who: i, why: early ? 'early' : 'far' });
       }
     }
     if (inp && u.want > 0) u.aimInp = inp; // ねらいは さいごに たおした 向き
@@ -504,13 +529,23 @@ export function step(s, inputs) {
         wz = (inp.z / d) * RULES.speed * m;
       }
     }
+    // 予約した 子は、うつ ところへ 自動で よる(スティックは ねらいに つかえる)
+    if (u.want > 0 && free && u.dive <= 0 && b.state === 'fly') {
+      const cp = landing(s, idealY(shotKind(s, i)));
+      if (cp && sideOf(cp.x) === u.side) {
+        const dx = cp.x - u.x, dz = cp.z - u.z, d = Math.hypot(dx, dz);
+        const sp = Math.min(RULES.speed * 1.3, d / 0.12);
+        wx = d > 0.05 ? (dx / d) * sp : 0;
+        wz = d > 0.05 ? (dz / d) * sp : 0;
+      }
+    }
     // サーブを うつ 子は 動かない
     if (b.state === 'serve' && b.last === i) wx = wz = 0;
     if (u.dive > 0) {
       u.vx = u.dvx;
       u.vz = u.dvz;
     } else {
-      const k = Math.min(1, ((free ? RULES.accel : RULES.accel * 0.4) * dt) / RULES.speed);
+      const k = Math.min(1, ((free ? RULES.accel : u.down > 0 ? RULES.accel * 2 : RULES.accel * 0.4) * dt) / RULES.speed);
       u.vx += (wx - u.vx) * k;
       u.vz += (wz - u.vz) * k;
     }
@@ -575,12 +610,31 @@ export function step(s, inputs) {
     }
     // うつ: ボタンを おした 子(待ってくれる あいだ)
     const side = sideOf(b.x);
-    for (const i of s.teams[side]) {
+    // 人の 子の 予約を さきに(すけっとに 横取りされない)
+    const order = [...s.teams[side]].sort((a, c) => (s.units[c].human ? 1 : 0) - (s.units[a].human ? 1 : 0));
+    for (const i of order) {
       const u = s.units[i];
       if (u.want <= 0 || u.cool > 0 || b.state !== 'fly') continue;
-      if (canDo(s, i) !== 'hit' && !(u.dive > 0 && Math.hypot(b.x - u.x, b.z - u.z) < RULES.diveHand && b.y < RULES.reachHi && b.y > 0.15)) continue;
+      const diving = u.dive > 0 || u.down > 0;
+      if (diving) {
+        if (!(Math.hypot(b.x - u.x, b.z - u.z) < RULES.diveHand && b.y < RULES.reachHi && b.y > 0.15)) continue;
+      } else {
+        // 予約: 手の とどく ところで、ボールが ちょうどいい 高さまで 来たら(過ぎていたら すぐ)うつ
+        const kind = shotKind(s, i);
+        const top = Math.abs(u.x) < RULES.spikeX ? RULES.spikeHi : RULES.reachHi;
+        const d = Math.hypot(b.x - u.x, b.z - u.z);
+        const inReach = d < reachOf(b) && b.y >= RULES.reachLo && b.y <= top;
+        const low = b.y < RULES.reachLo + 0.25 && b.vy < 0;
+        // つぎの コマで 手の とどく ところを 出て しまう(速い ボール)なら いま うつ
+        const leaving = Math.hypot(b.x + b.vx * STEP - u.x, b.z + b.vz * STEP - u.z) >= reachOf(b) * 0.9;
+        if (!inReach || (timeToY(b, idealY(kind)) > 0 && !low && !leaving)) {
+          // とどかないまま 落ちていく: 空ぶり
+          if (b.y < RULES.reachLo && b.vy < 0 && !u.whiffed) { u.whiffed = true; u.want = 0; ev.push({ type: 'whiff', who: i, why: 'miss' }); }
+          continue;
+        }
+      }
       if (b.lastSide === side && b.touches >= 3 && b.kind !== 'block') { point(s, side === 'L' ? 'R' : 'L', 'touch', ev); return ev; }
-      hit(s, i, u.aimInp, ev, { dive: u.dive > 0 || u.down > 0 });
+      hit(s, i, u.aimInp, ev, { dive: diving, dt: diving ? undefined : u.pressDt });
       break;
     }
     // 落ちた

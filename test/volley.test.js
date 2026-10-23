@@ -57,7 +57,7 @@ function setup(ball, { seed = 2 } = {}) {
   const me = s.units[0];
   Object.assign(me, { x: -4, z: 0, vx: 0, vz: 0 });
   // ほかの 子は じゃまに ならない ところへ
-  for (const [i, u] of s.units.entries()) if (i !== 0) Object.assign(u, { x: u.side === 'L' ? -6.5 : 6.5, z: (i % 2 ? -3 : 3) });
+  for (const [i, u] of s.units.entries()) if (i !== 0) Object.assign(u, { x: u.side === 'L' ? -6.5 : 6.5, z: (i % 2 ? -3 : 3), down: 99 }); // ほかの 子は うごかない
   Object.assign(s.ball, { x: -4, y: 4, z: 0, vx: 0, vy: 0, vz: 0, state: 'fly', lastSide: 'R', last: s.teams.R[0], touches: 1, kind: 'lob', forUnit: null, flyT: 0 }, ball);
   s.pause = 99;
   return s;
@@ -71,12 +71,26 @@ function pressAt(s, dt, inp = {}) {
 }
 
 test('ボールが ちょうどいい 高さに 来た しゅんかんに おすと ナイス、ずれると グッド・ミス', () => {
-  const q = (dt) => pressAt(setup(), dt).find((e) => e.type === 'hit')?.q;
+  const q = (dt) => {
+    const s = setup();
+    const ev = pressAt(s, dt);
+    for (let k = 0; k < 60; k++) ev.push(...step(s, [{ x: 0, z: 0 }]));
+    return ev.find((e) => e.type === 'hit')?.q;
+  };
   assert.equal(q(0), 'perfect');
-  assert.equal(q(0.13), 'good');
+  assert.equal(q(0.18), 'good');
   assert.equal(q(-0.1), 'good');
-  // 早すぎると まだ 手が とどかない(うてない)か、ミス
-  assert.ok([undefined, 'bad'].includes(q(0.3)));
+});
+
+test('早めに おしても(予約)、ボールが 来たら かならず うつ。少し はなれていても 自動で よる', () => {
+  for (const dt of [0.5, 0.8]) {
+    const s = setup({ x: -3, z: 1.2 }); // 1.6 m はなれた ところに 落ちてくる
+    const ev = pressAt(s, dt);
+    for (let k = 0; k < 90; k++) ev.push(...step(s, [{ x: 0, z: 0 }]));
+    const h = ev.find((e) => e.type === 'hit' && e.who === 0);
+    assert.ok(h, `${dt} 秒 早く おしても うつ`);
+    assert.equal(h.q, 'bad');
+  }
 });
 
 test('おさないと ボールは 落ちて 相手の 点', () => {
@@ -115,25 +129,30 @@ test('アタックは スティックで ねらった ほうへ とぶ', () => {
   assert.deepEqual(aimPoint({ side: 'L' }, { x: 0, z: 0 }), { x: 4, z: 0 });
 });
 
-test('ブロック: ネットの 前で とぶと、相手の スパイクを はねかえす', () => {
-  const s = setup({ x: 1.2, y: 2.8, z: 0.2, vx: -8, vy: -1, vz: 0, lastSide: 'R', last: s0R(), touches: 3, kind: 'spike' });
-  Object.assign(s.units[0], { x: -0.6, z: 0 });
-  const ev = step(s, [{ x: 0, z: 0, hit: true }]);
+test('ブロック: 相手が トスを あげたら ネットの 前で とぶ。スパイクを はねかえす', () => {
+  const block = (press) => {
+    // 相手の トス(ネットの 近く)
+    const s = setup({ x: 1.2, y: 3.4, z: 0.2, vx: 0, vy: 0, vz: 0, lastSide: 'R', last: s0R(), touches: 2, kind: 'toss' });
+    Object.assign(s.units[0], { x: -0.6, z: 0 });
+    const ev = step(s, [{ x: 0, z: 0, hit: press }]);
+    // 相手が スパイク
+    Object.assign(s.ball, { y: 2.8, vx: -8, vy: -1, kind: 'spike', touches: 3 });
+    for (let k = 0; k < 30; k++) ev.push(...step(s, [null]));
+    return ev;
+  };
+  const ev = block(true);
   assert.ok(ev.some((e) => e.type === 'blockJump'));
-  const all = [];
-  for (let k = 0; k < 30; k++) all.push(...step(s, [null]));
-  assert.ok(all.some((e) => e.type === 'block' && e.who === 0));
-  // とばないと とおりぬける
-  const s2 = setup({ x: 1.2, y: 2.8, z: 0.2, vx: -8, vy: -1, vz: 0, lastSide: 'R', last: s0R(), touches: 3, kind: 'spike' });
-  Object.assign(s2.units[0], { x: -0.6, z: 0 });
-  const all2 = [];
-  for (let k = 0; k < 30; k++) all2.push(...step(s2, [null]));
-  assert.ok(!all2.some((e) => e.type === 'block'));
+  assert.ok(ev.some((e) => e.type === 'block' && e.who === 0));
+  assert.ok(!block(false).some((e) => e.type === 'block'), 'とばないと とおりぬける');
+  // 相手の トス いがいでは ブロックに ならない(レシーブの 予約に なる)
+  const s = setup({ x: 1.2, y: 3.4, z: 0.2, lastSide: 'R', touches: 1, kind: 'pass' });
+  Object.assign(s.units[0], { x: -0.6, z: 0 });
+  assert.ok(!step(s, [{ x: 0, z: 0, hit: true }]).some((e) => e.type === 'blockJump'));
 });
 function s0R() { return createGame([{ id: 'me' }], 2).teams.R[0]; }
 
 test('飛びこみ: 手が とどかない ボールでも、飛びこめば 拾える(グッド まで)。そのあと すこし 動けない', () => {
-  const s = setup({ x: -2.2, z: 0, y: 2.0, vy: -2 });
+  const s = setup({ x: -1.4, z: 0, y: 2.0, vy: -2 });
   Object.assign(s.units[0], { x: -4, z: 0 });
   let ev = [];
   for (let k = 0; k < 60 && !ev.some((e) => e.type === 'dive'); k++) {
