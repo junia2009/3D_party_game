@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { toonGradient, toonMaterial } from '../../runtime/models.js';
 import { mergeStatic } from '../../runtime/merge.js';
-import { foliageClump, makeRand } from '../daruma/trees.js';
+import { acornGeometry, foliageClump, makeRand } from '../daruma/trees.js';
 
 // 席 → よこの 位置(自分(席 0)を まん中に)
 const ORDER = [2, 1, 3, 0, 4];
@@ -95,8 +95,15 @@ export function woolMachine() {
     m.userData.noMerge = true;
     threads.push(m);
   }
-  g.add(bowl, rim, floor, head, glow, ...threads);
-  g.userData = { head, glow, threads };
+  // 台の 前の 名札(プレイヤーの 色。game.js が ぬる)
+  const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.03, 16).rotateX(Math.PI / 2), new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: toonGradient }));
+  plate.position.set(0, TABLE_Y * 0.55, 0.47);
+  plate.userData.noMerge = true;
+  const acorn = new THREE.Mesh(acornGeometry(), new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: toonGradient }));
+  acorn.position.set(0, TABLE_Y * 0.55 - 0.02, 0.5);
+  acorn.scale.setScalar(0.7);
+  g.add(bowl, rim, floor, head, glow, ...threads, plate, acorn);
+  g.userData = { head, glow, threads, plate };
   return g;
 }
 
@@ -285,6 +292,201 @@ function buildShop(g) {
   g.add(shop);
 }
 
+// お店の かざり: 光る まるい 窓・ざらめの びんの たな・えんとつ・干し柿・ねだんの こくばん
+function buildShopDetails(g, rand) {
+  const warm = new THREE.MeshBasicMaterial({ color: 0xffd890 });
+  for (const sx of [-1, 1]) {
+    const win = new THREE.Mesh(new THREE.CircleGeometry(0.36, 20), warm);
+    win.position.set(sx * 2.05, 1.95, -1.55);
+    win.rotation.y = sx * -0.55;
+    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.05, 6, 20), toonMaterial(0x5a3a22));
+    frame.position.copy(win.position);
+    frame.rotation.y = win.rotation.y;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.04, 0.03), toonMaterial(0x5a3a22));
+    bar.position.copy(win.position);
+    bar.rotation.y = win.rotation.y;
+    const bar2 = bar.clone();
+    bar2.rotation.z = Math.PI / 2;
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffb860, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.scale.setScalar(1.6);
+    glow.position.copy(win.position).add(new THREE.Vector3(0, 0, 0.05));
+    glow.userData.noMerge = true;
+    g.add(win, frame, bar, bar2, glow);
+  }
+  // うしろの たなと ざらめの びん(ピンク・ソーダ・レモン・メロン)
+  const shelfMat = toonMaterial(0x9a6a3a);
+  for (const y of [1.35, 1.85]) {
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.06, 0.4), shelfMat);
+    shelf.position.set(0, y, -2.55);
+    g.add(shelf);
+  }
+  const glassMat = new THREE.MeshToonMaterial({ color: 0xe8f4ff, gradientMap: toonGradient, transparent: true, opacity: 0.45 });
+  for (let row = 0; row < 2; row++) for (let k = 0; k < 7; k++) {
+    const x = -1.45 + k * 0.48;
+    const y = (row ? 1.85 : 1.35) + 0.03;
+    const col = WOOL_COLORS[(k + row * 2) % 4];
+    const sugar = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.16, 10), toonMaterial(col));
+    sugar.position.set(x, y + 0.09, -2.55);
+    const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.3, 12), glassMat);
+    jar.position.set(x, y + 0.15, -2.55);
+    jar.userData.noMerge = true;
+    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.05, 12), toonMaterial(0xc85a3a));
+    lid.position.set(x, y + 0.32, -2.55);
+    g.add(sugar, jar, lid);
+  }
+  // カウンターの 上: わたあめを さした どんぐりの つぼ
+  for (const [x, c] of [[-1.5, 0], [1.5, 1], [-0.7, 2], [0.8, 3]]) {
+    const pot = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), toonMaterial(0xb5702f));
+    pot.position.set(x, 1.1, -1.85);
+    g.add(pot);
+    for (let k = 0; k < 3; k++) {
+      const st = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.5, 4), toonMaterial(0xf0dcb0));
+      const ax = (k - 1) * 0.12;
+      st.position.set(x + ax, 1.35, -1.85);
+      st.rotation.z = -ax * 1.5;
+      const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.13, 2), new THREE.MeshToonMaterial({ color: WOOL_COLORS[(c + k) % 4], gradientMap: toonGradient, emissive: WOOL_COLORS[(c + k) % 4], emissiveIntensity: 0.3 }));
+      ball.position.set(x + ax * 1.8, 1.62 + (k === 1 ? 0.06 : 0), -1.85);
+      g.add(st, ball);
+    }
+  }
+  // えんとつ(やねの 上)
+  const chim = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 1.0, 10), toonMaterial(0x8a7a6a));
+  chim.position.set(1.7, 4.0, -3.9);
+  const chimTop = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.12, 10), toonMaterial(0x5a4a3a));
+  chimTop.position.set(1.7, 4.55, -3.9);
+  g.add(chim, chimTop);
+  // 干し柿の すだれ(ひさしの はしから ぶらさがる)
+  for (const sx of [-1, 1]) for (let j = 0; j < 2; j++) {
+    const x = sx * (2.35 + j * 0.25), z = -1.15 - j * 0.15;
+    const str = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 1.3, 3), toonMaterial(0x6a5030));
+    str.position.set(x, 1.85, z);
+    g.add(str);
+    for (let k = 0; k < 5; k++) {
+      const kaki = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), toonMaterial(0xe86a1a));
+      kaki.scale.y = 1.25;
+      kaki.position.set(x, 2.4 - k * 0.24, z);
+      const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.04, 4), toonMaterial(0x5a4a20));
+      leaf.position.set(x, 2.49 - k * 0.24, z);
+      g.add(kaki, leaf);
+    }
+  }
+  // ねだんの こくばん(よこの イーゼル)
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.7), new THREE.MeshBasicMaterial({ map: canvasTex(160, 128, (c, w, h) => {
+    c.fillStyle = '#2f4a3a'; c.fillRect(0, 0, w, h);
+    c.strokeStyle = '#a8784a'; c.lineWidth = 10; c.strokeRect(0, 0, w, h);
+    c.fillStyle = '#fff6e0'; c.textAlign = 'center'; c.font = 'bold 24px sans-serif'; c.fillText('わたあめ', w / 2, 38);
+    c.font = 'bold 18px sans-serif'; c.fillText('1本 どんぐり 3こ', w / 2, 70);
+    c.fillStyle = '#ffb8d8'; c.fillText('いろ ざらめ +1こ', w / 2, 100);
+  }) }));
+  board.position.set(3.2, 1.1, -0.2);
+  board.rotation.y = -0.45;
+  board.userData.noMerge = true;
+  const legMat = toonMaterial(0x8a5a32);
+  for (const [dx, dz, rz, rx] of [[-0.3, 0.05, 0.12, 0], [0.3, 0.05, -0.12, 0], [0, -0.25, 0, 0.35]]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.5, 0.05), legMat);
+    leg.position.set(3.2 + dx * Math.cos(0.45), 0.75, -0.2 + dz + dx * Math.sin(0.45) * 0.5);
+    leg.rotation.set(rx, -0.45, rz);
+    g.add(leg);
+  }
+  void rand;
+}
+
+// 遠くの 山なみ: 紅葉の 山を 2重に(手前は だいだい、おくは むらさき)
+function buildMountains(g, rand) {
+  for (const [z, h, col, step] of [[-70, 16, 0x8a4a5a, 9], [-48, 11, 0xb8603a, 6]]) {
+    const pts = [];
+    for (let x = -90; x <= 90; x += step) pts.push([x, h * (0.5 + rand() * 0.6)]);
+    const shape = new THREE.Shape();
+    shape.moveTo(-90, -2);
+    for (const [x, y] of pts) shape.lineTo(x, y);
+    shape.lineTo(90, -2);
+    const m = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: col }));
+    m.position.z = z;
+    m.userData.noMerge = true;
+    g.add(m);
+  }
+}
+
+// 地面の かざり: 落ち葉の 山・どんぐり・きのこの むれ・丸太の ベンチ・とびいし
+function buildGroundDetails(g, rand) {
+  // 落ち葉の 山(こんもり)
+  const leafMat = new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: toonGradient });
+  const pile = foliageClump(rand, { detail: 1, balls: 4, bottom: 0x9a3a1a, top: 0xf0902a });
+  for (const [x, z, sc] of [[-3.6, 1.6, 0.55], [3.9, 1.9, 0.5], [-6.2, 0.2, 0.7], [6.8, 1.0, 0.65], [-2.9, -0.9, 0.4], [4.5, -1.3, 0.45]]) {
+    const m = new THREE.Mesh(pile, leafMat);
+    m.position.set(x, 0.05, z);
+    m.scale.set(sc * 0.8, sc * 0.75, sc * 0.8);
+    m.rotation.y = rand() * 6;
+    m.userData.noMerge = true;
+    g.add(m);
+  }
+  // どんぐり(ちらばる)
+  const ac = new THREE.InstancedMesh(acornGeometry(), new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: toonGradient }), 28);
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < ac.count; i++) {
+    let x, z;
+    do { x = (rand() - 0.5) * 14; z = -1.5 + rand() * 5; } while (Math.abs(x) < 3.2 && z > -0.6 && z < 1.4);
+    dummy.position.set(x, 0.07, z);
+    dummy.rotation.set(rand() * 0.5 + 1.2, rand() * 6, 0);
+    dummy.scale.setScalar(0.6 + rand() * 0.35);
+    dummy.updateMatrix();
+    ac.setMatrixAt(i, dummy.matrix);
+  }
+  ac.userData.noMerge = true;
+  g.add(ac);
+  // きのこの むれ
+  for (const [x, z] of [[-3.4, 2.6], [3.3, 2.9], [-5.2, -1.6], [5.4, -0.8]]) {
+    for (let k = 0; k < 3; k++) {
+      const s = 0.5 + rand() * 0.5;
+      const dx = x + (rand() - 0.5) * 0.5, dz = z + (rand() - 0.5) * 0.4;
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04 * s, 0.05 * s, 0.2 * s, 6), toonMaterial(0xf4e8d0));
+      stem.position.set(dx, 0.1 * s, dz);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.13 * s, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), toonMaterial(k % 2 ? 0xd8402f : 0xc88a3a));
+      cap.position.set(dx, 0.19 * s, dz);
+      g.add(stem, cap);
+    }
+  }
+  // 丸太の ベンチ(よこ)
+  for (const sx of [-1, 1]) {
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 2.2, 12).rotateZ(Math.PI / 2), toonMaterial(0x7a4e2e));
+    log.position.set(sx * 5.0, 0.28, 2.6);
+    log.rotation.y = sx * 0.4;
+    g.add(log);
+    for (const e of [-1, 1]) {
+      const end = new THREE.Mesh(new THREE.CircleGeometry(0.27, 14), new THREE.MeshToonMaterial({ map: ringTex, gradientMap: toonGradient }));
+      const ax = new THREE.Vector3(1.1 * e, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), sx * 0.4);
+      end.position.set(sx * 5.0 + ax.x * 1.005, 0.28, 2.6 + ax.z * 1.005);
+      end.rotation.y = sx * 0.4 + e * Math.PI / 2;
+      g.add(end);
+    }
+  }
+  // とびいし(手前から お店へ)
+  const stoneMat = toonMaterial(0xb8ab98);
+  for (let k = 0; k < 7; k++) {
+    const st = new THREE.Mesh(new THREE.CylinderGeometry(0.2 + rand() * 0.06, 0.23, 0.05, 9), stoneMat);
+    st.position.set(Math.sin(k * 0.9) * 0.4 + (k % 2 ? 0.2 : -0.2), 0.025, 6.2 - k * 0.7);
+    if (st.position.z < 1.6) continue;
+    g.add(st);
+  }
+}
+
+// 上から ぶらさがる 枝(画面の 上の すみを ふちどる)
+function buildBranches(g, rand) {
+  const leafMat = new THREE.MeshToonMaterial({ color: 0xffffff, vertexColors: true, gradientMap: toonGradient });
+  const palettes = [[0x9a2a1a, 0xe8452c], [0xb4501a, 0xf39a2a], [0xb88a12, 0xf6cf3e]];
+  for (const [x, y, z, sc, k] of [[-2.7, 5.9, 2.6, 0.9, 0], [-1.6, 6.4, 2.2, 0.7, 2], [2.8, 6.0, 2.8, 0.85, 1], [1.8, 6.5, 2.0, 0.6, 0]]) {
+    const geo = foliageClump(rand, { detail: 1, balls: 4, bottom: palettes[k][0], top: palettes[k][1] });
+    const m = new THREE.Mesh(geo, leafMat);
+    m.position.set(x, y, z);
+    m.scale.set(sc * 1.4, sc * 0.7, sc);
+    m.userData.noMerge = true;
+    g.add(m);
+    const br = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 3, 6).rotateZ(Math.sign(x) * 1.2), toonMaterial(0x4a3020));
+    br.position.set(x + Math.sign(x) * 1.2, y + 0.3, z);
+    g.add(br);
+  }
+}
+
 // どんぐりの ランプ(あたたかい あかり)
 function acornLamp(color = 0xffc070) {
   const g = new THREE.Group();
@@ -310,7 +512,11 @@ export function buildStage(scene) {
   group.add(ground);
   buildLeaves(group, rand);
   buildShop(group);
+  buildShopDetails(group, rand);
   buildTrees(group, rand);
+  buildMountains(group, rand);
+  buildGroundDetails(group, rand);
+  buildBranches(group, rand);
   // ランプの ひも(屋台の 前を よこぎる)
   const lamps = [];
   const pts = [];
@@ -367,8 +573,58 @@ export function buildStage(scene) {
     scene.add(m);
     falling.push(m);
   }
+  // 木もれ日: 右上の 木の あいだから ななめに さす 光の 帯
+  const shaftTex = canvasTex(32, 128, (c, w, h) => {
+    const grd = c.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, 'rgba(255,220,160,0)'); grd.addColorStop(0.25, 'rgba(255,220,160,0.9)'); grd.addColorStop(1, 'rgba(255,220,160,0)');
+    c.fillStyle = grd; c.fillRect(0, 0, w, h);
+    const g2 = c.createLinearGradient(0, 0, w, 0);
+    g2.addColorStop(0, 'rgba(0,0,0,1)'); g2.addColorStop(0.5, 'rgba(0,0,0,0)'); g2.addColorStop(1, 'rgba(0,0,0,1)');
+    c.globalCompositeOperation = 'destination-out'; c.fillStyle = g2; c.fillRect(0, 0, w, h);
+  });
+  const shafts = [];
+  for (let k = 0; k < 5; k++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.6 + k * 0.15, 9), new THREE.MeshBasicMaterial({ map: shaftTex, color: 0xffc880, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+    m.position.set(-2.6 + k * 1.5, 3.4, -0.9 - (k % 2) * 0.7);
+    m.rotation.set(0, 0, -0.5);
+    m.userData.ph = k * 1.7;
+    scene.add(m);
+    shafts.push(m);
+  }
+  // 光の 中を ただよう ちり
+  const motes = (() => {
+    const n = 60, pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 9; pos[i * 3 + 1] = 0.6 + Math.random() * 4; pos[i * 3 + 2] = -2 + Math.random() * 3.5; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.Points(geo, new THREE.PointsMaterial({ map: glowTex, color: 0xffe2a8, size: 0.09, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }));
+    scene.add(m);
+    return m;
+  })();
+  const moteBase = Float32Array.from(motes.geometry.attributes.position.array);
+  // えんとつの けむり
+  const smoke = [];
+  for (let k = 0; k < 8; k++) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xe8e0d8, transparent: true, opacity: 0, depthWrite: false }));
+    m.userData = { ph: k / 8 };
+    scene.add(m);
+    smoke.push(m);
+  }
   function update(t) {
     for (const l of lamps) l.rotation.z = Math.sin(t * 1.2 + l.userData.ph) * 0.08;
+    for (const m of shafts) m.material.opacity = 0.2 + Math.sin(t * 0.5 + m.userData.ph) * 0.08;
+    const mp = motes.geometry.attributes.position;
+    for (let i = 0; i < mp.count; i++) {
+      mp.setX(i, moteBase[i * 3] + Math.sin(t * 0.3 + i) * 0.4);
+      mp.setY(i, moteBase[i * 3 + 1] + Math.sin(t * 0.5 + i * 1.7) * 0.3);
+    }
+    mp.needsUpdate = true;
+    for (const m of smoke) {
+      const k = (t * 0.25 + m.userData.ph) % 1;
+      m.position.set(1.7 + Math.sin(k * 5 + m.userData.ph * 7) * 0.25 + k * 0.6, 4.7 + k * 2.2, -3.9);
+      m.scale.setScalar(0.4 + k * 1.1);
+      m.material.opacity = Math.sin(k * Math.PI) * 0.4;
+    }
     for (const m of falling) {
       const d = m.userData;
       const y = 6 - ((t * d.sp + d.ph) % 6);

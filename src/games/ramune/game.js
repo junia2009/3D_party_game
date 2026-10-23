@@ -24,7 +24,7 @@ const UNIT_Z = 0.55; // キャラは カウンターの 前(お客さん)に 立
 
 export async function createRamune({ renderer, settings, getAudio, onExit }) {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 900);
   const atmosphere = createAtmosphere(scene, renderer, camera, { course: false });
   const stage = buildStage(scene);
 

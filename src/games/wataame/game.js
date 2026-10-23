@@ -25,7 +25,7 @@ const BOWL_Y = TABLE_Y + 0.16; // わたあめが できはじめる 高さ(ボ�
 
 export async function createWataame({ renderer, settings, getAudio, onExit }) {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 400);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 900);
   const atmosphere = createAtmosphere(scene, renderer, camera, { course: false });
   const stage = buildStage(scene);
 
@@ -161,6 +161,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
     units[0].marker = marker;
     game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0 };
     atmosphere.apply(params.get('time') || 'evening');
+    stage.machines.forEach((m, slot) => m.userData.plate.material.color.setHex(PLAYER_COLORS[slot].hex));
     atmosphere.setupShadows(units.map((u) => u.holder), [stage.group]);
     input.zarame = false;
     buildChips();
@@ -500,8 +501,8 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
     const portrait = aspect < 1;
     const s = game.state;
     // ふつう: お店の 正面から みんなを
-    camPos.set(0, portrait ? 2.8 : 2.2, portrait ? 11.5 : 6.4);
-    camLook.set(0, 0.9, -0.2);
+    camPos.set(0, portrait ? 2.4 : 2.1, portrait ? 12.2 : 6.6);
+    camLook.set(0, portrait ? 2.0 : 1.3, -0.4); // たては 上に お店と 空を 入れる
     // 回す あいだは 自分の わたあめを ななめ上から アップ
     const close = s.phase === 'spin' ? 1 : 0;
     game.zoom = (game.zoom ?? 0) + (close - (game.zoom ?? 0)) * Math.min(1, dt * (close ? 2.5 : 2));
