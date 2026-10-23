@@ -232,12 +232,179 @@ export function buildStage(scene) {
     group.add(g);
   }
 
+  // つり橋(谷の 上の ほう。コースの 上を よこぎる)
+  const plankMat = toonMaterial(0xb08858), ropeMat = toonMaterial(0x7a6040);
+  for (const s0 of [40, 210, 372]) {
+    const p = pathAt(s0, {});
+    const g = new THREE.Group();
+    const span = (RULES.halfW + 9) * 2, n = 34;
+    for (let k = 0; k < n; k++) {
+      const u = k / (n - 1) - 0.5;
+      const sag = (1 - (2 * u) ** 2) * 1.6;
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 1.4), plankMat);
+      plank.position.set(u * span, 19.5 - sag, 0);
+      plank.rotation.z = Math.atan(-8 * u * 1.6 / span) * 0.9;
+      plank.rotation.y = (rand() - 0.5) * 0.08;
+      g.add(plank);
+    }
+    for (const sz of [-0.75, 0.75]) {
+      const pts = [];
+      for (let k = 0; k <= 16; k++) { const u = k / 16 - 0.5; pts.push(new THREE.Vector3(u * span, 20.6 - (1 - (2 * u) ** 2) * 1.6, sz)); }
+      g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.05, 5), ropeMat));
+      // たての つな
+      for (let k = 1; k < 16; k += 2) {
+        const u = k / 16 - 0.5;
+        const v = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.1, 4), ropeMat);
+        v.position.set(u * span, 20.05 - (1 - (2 * u) ** 2) * 1.6, sz);
+        g.add(v);
+      }
+    }
+    g.position.set(p.x, 0, p.z);
+    g.rotation.y = -p.a;
+    group.add(g);
+  }
+  // がけから たれる ツタ
+  const vineMat = toonMaterial(0x3f7a34), vineLeaf = toonMaterial(0x6ab84a);
+  for (let s0 = PATH_START + 6; s0 < PATH_END; s0 += 5 + rand() * 6) {
+    const side = rand() < 0.5 ? -1 : 1;
+    const len = 5 + rand() * 8;
+    const x = side * (RULES.halfW + 5 + rand() * 1.5);
+    const top = toWorld(s0, x, 20.5, new THREE.Vector3());
+    const v = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, len, 4), vineMat);
+    v.position.copy(top).add(tmp.set(0, -len / 2, 0));
+    group.add(v);
+    for (let k = 0; k < len / 1.2; k++) {
+      const l = new THREE.Mesh(new THREE.SphereGeometry(0.22, 5, 3), vineLeaf);
+      l.scale.set(1, 0.5, 0.8);
+      l.position.copy(top).add(tmp.set((rand() - 0.5) * 0.4, -k * 1.2 - 0.4, (rand() - 0.5) * 0.4));
+      group.add(l);
+    }
+  }
+  // 川の 中の 岩(白い あわ つき)・岸の シダと キノコ
+  const rockMat = toonMaterial(0x8a8478), foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
+  for (let s0 = PATH_START + 8; s0 < PATH_END; s0 += 9 + rand() * 10) {
+    const w = toWorld(s0, (rand() - 0.5) * 6, 0, new THREE.Vector3());
+    const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5 + rand() * 0.6, 0), rockMat);
+    r.position.copy(w).add(tmp.set(0, 0.15, 0));
+    r.scale.y = 0.6;
+    r.rotation.y = rand() * 6;
+    group.add(r);
+    const foam = new THREE.Mesh(new THREE.RingGeometry(0.7, 1.15, 14).rotateX(-Math.PI / 2), foamMat);
+    foam.position.copy(w).add(tmp.set(0, 0.07, 0));
+    foam.scale.setScalar(0.7 + rand() * 0.5);
+    group.add(foam);
+  }
+  const fernMat = toonMaterial(0x4f9a3e), capMat = toonMaterial(0xe8503a), capDot = toonMaterial(0xffffff), stemMat = toonMaterial(0xf4ead8);
+  for (let s0 = PATH_START + 4; s0 < PATH_END; s0 += 3 + rand() * 3) {
+    const side = rand() < 0.5 ? -1 : 1;
+    const base = toWorld(s0, side * (RULES.halfW + 1.5 + rand() * 3.5), 0, new THREE.Vector3());
+    if (rand() < 0.6) {
+      // シダ: 弓なりの 葉を 放射状に
+      for (let k = 0; k < 6; k++) {
+        const f = new THREE.Mesh(new THREE.ConeGeometry(0.12, 1.1, 4), fernMat);
+        const a = (k / 6) * Math.PI * 2;
+        f.position.copy(base).add(tmp.set(Math.cos(a) * 0.35, 0.4, Math.sin(a) * 0.35));
+        f.rotation.set(Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9);
+        group.add(f);
+      }
+    } else {
+      // 赤い キノコ(2〜3本)
+      for (let k = 0; k < 2 + Math.floor(rand() * 2); k++) {
+        const h = 0.3 + rand() * 0.35;
+        const at = base.clone().add(tmp.set((rand() - 0.5) * 0.7, 0, (rand() - 0.5) * 0.7));
+        const st = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, h, 6), stemMat);
+        st.position.copy(at).add(tmp.set(0, h / 2, 0));
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.2 + h * 0.3, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), capMat);
+        cap.position.copy(at).add(tmp.set(0, h, 0));
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.04, 5, 3), capDot);
+        dot.position.copy(cap.position).add(tmp.set(0.08, 0.12 + h * 0.15, 0.05));
+        group.add(st, cap, dot);
+      }
+    }
+  }
+  // 谷の むこうの 山(ゴールの おく)
+  {
+    const end = pathAt(RULES.length + 60, {});
+    const hillMat = new THREE.MeshBasicMaterial({ color: 0x7aa0b8, fog: false });
+    const hillMat2 = new THREE.MeshBasicMaterial({ color: 0x9ab8c8, fog: false });
+    for (let k = 0; k < 7; k++) {
+      const m = new THREE.Mesh(new THREE.ConeGeometry(30 + rand() * 30, 40 + rand() * 40, 7), k % 2 ? hillMat : hillMat2);
+      const side = (k - 3) * 28 + (rand() - 0.5) * 10;
+      m.position.set(end.x + end.fx * (140 + rand() * 60) + end.rx * side, 10, end.z + end.fz * (140 + rand() * 60) + end.rz * side);
+      m.userData.noMerge = true;
+      group.add(m);
+    }
+  }
+
   mergeStatic(group, (o) => o.userData.noMerge);
   group.traverse((o) => { if (o.name === 'merged') o.castShadow = o.receiveShadow = true; });
   scene.add(group);
 
-  function update(t) {
+  // 光の すじ(木もれ日。谷へ ななめに さしこむ)
+  const rayTex = canvasTex(64, 256, (g, w, h) => {
+    const grd = g.createLinearGradient(0, 0, 0, h);
+    grd.addColorStop(0, 'rgba(255,248,220,0.5)');
+    grd.addColorStop(1, 'rgba(255,248,220,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, w, h);
+    const sg = g.createLinearGradient(0, 0, w, 0);
+    sg.addColorStop(0, 'rgba(0,0,0,1)'); sg.addColorStop(0.5, 'rgba(0,0,0,0)'); sg.addColorStop(1, 'rgba(0,0,0,1)');
+    g.globalCompositeOperation = 'destination-out';
+    g.fillStyle = sg;
+    g.fillRect(0, 0, w, h);
+  });
+  const rayMat = new THREE.MeshBasicMaterial({ map: rayTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const rays = [];
+  for (let s0 = 15; s0 < RULES.length + 20; s0 += 22 + rand() * 14) {
+    const w = toWorld(s0, (rand() - 0.5) * 10, 9, new THREE.Vector3());
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(6 + rand() * 4, 24), rayMat);
+    m.position.copy(w);
+    m.rotation.set(0, rand() * 3, 0.35);
+    m.userData.ph = rand() * 6;
+    scene.add(m);
+    rays.push(m);
+  }
+  // 水に うかぶ 葉っぱ(ながれる)
+  const floatGeo = new THREE.CircleGeometry(0.22, 6).rotateX(-Math.PI / 2);
+  const floaters = [];
+  const fcols = [0xe8a030, 0xd8602a, 0x8ac04a];
+  for (let k = 0; k < 40; k++) {
+    const m = new THREE.Mesh(floatGeo, toonMaterial(fcols[k % 3]));
+    m.scale.set(1, 1, 1.6);
+    m.userData = { s: PATH_START + rand() * (PATH_END - PATH_START), x: (rand() - 0.5) * 6, sp: 0.8 + rand() * 0.8 };
+    scene.add(m);
+    floaters.push(m);
+  }
+  // 空に まう 葉っぱ(カメラの まわり)
+  const driftGeo = new THREE.PlaneGeometry(0.18, 0.12);
+  const drifts = [];
+  for (let k = 0; k < 50; k++) {
+    const m = new THREE.Mesh(driftGeo, new THREE.MeshBasicMaterial({ color: fcols[k % 3], side: THREE.DoubleSide }));
+    m.userData = { ox: (rand() - 0.5) * 20, oy: rand() * 12, oz: (rand() - 0.5) * 20, sp: 0.6 + rand(), ph: rand() * 6 };
+    scene.add(m);
+    drifts.push(m);
+  }
+  const camAt = new THREE.Vector3();
+  function update(t, cam) {
     waterTex.offset.y = -t * 0.35;
+    rayMat.opacity = 0.32 + Math.sin(t * 0.6) * 0.08;
+    for (const m of floaters) {
+      const u = m.userData;
+      u.s -= u.sp * (1 / 60);
+      if (u.s < PATH_START + 2) u.s = PATH_END - 2;
+      toWorld(u.s, u.x + Math.sin(t + u.s) * 0.3, 0.09, m.position);
+      m.rotation.y = t * 0.4 + u.s;
+    }
+    if (cam) {
+      camAt.copy(cam.position);
+      for (const m of drifts) {
+        const u = m.userData;
+        u.oy -= u.sp * (1 / 60);
+        if (u.oy < -6) u.oy += 14;
+        m.position.set(camAt.x + u.ox + Math.sin(t * u.sp + u.ph) * 0.8, camAt.y + u.oy, camAt.z + u.oz + Math.cos(t * 0.7 + u.ph) * 0.8);
+        m.rotation.set(t * u.sp * 2 + u.ph, t * u.sp + u.ph, 0);
+      }
+    }
     for (const f of falls) f.material.map.offset.y = t * 1.6;
   }
   return { group, update };
@@ -297,7 +464,7 @@ export function buildCourse(scene, s) {
     for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, rr = Math.random() * RULES.liftR; pos.set([Math.cos(a) * rr, Math.random() * RULES.yMax, Math.sin(a) * rr], i * 3); }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ map: dotTex, color: 0xeaffd0, size: 0.28, transparent: true, opacity: 0.9, depthWrite: false }));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ map: dotTex, color: 0xeaffd0, size: 0.16, transparent: true, opacity: 0.9, depthWrite: false }));
     m.add(pts);
     // 柱の 長さ(s の はんい)ぶん、いくつか ならべる
     const group2 = new THREE.Group();

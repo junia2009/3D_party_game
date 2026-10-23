@@ -506,7 +506,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       }
     });
     course.update(s, time);
-    stage.update(time);
+    stage.update(time, camera);
     // 風の すじ: よこかぜの とき、自分の まわりを よこへ ながれる
     const me = s.planes[0];
     const wk = Math.min(1, Math.abs(s.wind.x) / RULES.wind);
