@@ -481,6 +481,14 @@
   #hudR .meter[hidden] { display: none; }
   #hudR .meter::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--k) * 100%); background: linear-gradient(0deg, #7ad8e8, #e8fbff); transition: height .08s linear; }
   #hudR .meter::after { content: '🫧'; position: absolute; left: 50%; top: 4px; transform: translateX(-50%); font-size: 16px; }
+  #hudR .meter { --r: 0.75; height: 200px; }
+  #hudR .meter::after { content: '💥'; top: 3px; z-index: 2; }
+  /* がたがたが はじまる ところから 上は あわで もくもく(どこまで たまったか よく 見えない) */
+  #hudR .meter .fog { position: absolute; left: 0; right: 0; top: 0; height: calc((1 - var(--r)) * 100%); z-index: 1;
+    background: radial-gradient(circle at 25% 30%, #fff 0 18%, transparent 19%), radial-gradient(circle at 70% 55%, #fff 0 22%, transparent 23%), radial-gradient(circle at 40% 80%, #fff 0 16%, transparent 17%), linear-gradient(180deg, rgba(255,255,255,.98), rgba(240,250,255,.93) 80%, rgba(240,250,255,.6));
+    background-size: 16px 16px, 20px 20px, 14px 14px, 100% 100%; border-bottom: 2px dashed rgba(255,122,58,.7); }
+  #hudR .meter.rattle .fog { animation: fogbubble .5s linear infinite; }
+  @keyframes fogbubble { 0% { background-position: 0 0, 0 0, 0 0, 0 0; } 100% { background-position: 0 -16px, 0 -20px, 0 -14px, 0 0; } }
   #hudR .meter.rattle { animation: meterrattle .08s linear infinite; border-color: #ff7a3a; }
   @keyframes meterrattle { 0% { transform: translateX(-2px); } 50% { transform: translateX(2px); } 100% { transform: translateX(-2px); } }
   #hudR.danger::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,90,60,.4); animation: eruptglow .3s ease-in-out infinite alternate; }
@@ -1701,7 +1709,7 @@
   <div class="pops" id="popsR"></div>
   <div class="splash" id="splashR"></div>
   <p class="howto" id="howtoR">スマホを ふって あわを ためよう!<br>びんが <b>がたがた</b> したら もうすぐ いっぱい<br>「ポン!」で ふたを とばす</p>
-  <div class="meter" id="meterR" hidden aria-label="あわ"></div>
+  <div class="meter" id="meterR" hidden aria-label="あわ(てっぺんで ふきこぼれ)"><i class="fog"></i></div>
   <button class="tame popbtn" id="popR" type="button" hidden>ポン!</button>
   <div class="shakeask" id="shakeAskR" hidden>
     <div class="card2">

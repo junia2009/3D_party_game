@@ -311,7 +311,9 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     const active = s.phase === 'shake' && !b.popped && !b.burst;
     popEl.hidden = !active;
     // あわの メーター(げんかいは 見せない。がたがたで わかる)
-    $('meterR').style.setProperty('--k', String(clamp(b.fizz / 100, 0, 1)));
+    // ゲージの てっぺん = その回の げんかい(こえると ふきこぼれ)。がたがたが はじまる ところから 上は あわで くもる
+    $('meterR').style.setProperty('--k', String(clamp(b.fizz / limitOf(s), 0, 1)));
+    $('meterR').style.setProperty('--r', String(s.rattleAt[Math.max(0, s.round)]));
     $('meterR').classList.toggle('rattle', b.rattle && active);
     $('meterR').hidden = !(s.phase === 'shake' || s.phase === 'prep');
     $('hudR').classList.toggle('danger', active && rattleK(s, b) > 0.5);
@@ -434,7 +436,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       u.bottle.rotation.z = Math.sin(u.shakeT * 0.5) * amp * 1.5 + Math.sin(time * 47) * rk * 0.12;
       // 中を のぼる あわの つぶ(ふるほど はやく、たくさん)
       const bub = u.bottle.userData.bubbles;
-      const lvl = clamp(b.fizz / 100, 0, 1);
+      const lvl = clamp(b.fizz / limitOf(s), 0, 1);
       bub.forEach((m, k) => {
         const d = m.userData;
         d.y += dt * d.sp * (0.15 + power * 1.2 + rk * 0.8);
@@ -444,7 +446,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       });
       // 中の あわ(びんの 高さ 0.5 まで)。ふきこぼれたら ぜんぶ あわ
       const { foam, liquid, cap } = u.bottle.userData;
-      const level = b.burst ? 1 : clamp(b.fizz / 100, 0, 1);
+      const level = b.burst ? 1 : clamp(b.fizz / limitOf(s), 0, 1); // びんの 口まで = げんかい
       liquid.scale.y = 0.42;
       liquid.position.y = 0.21;
       foam.scale.y = Math.max(0.01, level * 0.5);
