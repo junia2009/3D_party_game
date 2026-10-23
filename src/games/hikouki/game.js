@@ -189,6 +189,30 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 1.1, vel: new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 2.5, (Math.random() - 0.5) * 4), kind: 'bit', spin: Math.random() * 10 });
     }
   }
+  // ゴールの 紙ふぶき(花の アーチから)
+  function confettiAt(at, n = 60) {
+    const cols = [...PLAYER_COLORS.map((c) => c.hex), 0xffd24a, 0xffffff, 0xff8ab0];
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.12), new THREE.MeshBasicMaterial({ color: cols[i % cols.length], transparent: true, side: THREE.DoubleSide }));
+      m.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2));
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 2.6 + Math.random(), vel: new THREE.Vector3((Math.random() - 0.5) * 6, 2 + Math.random() * 5, (Math.random() - 0.5) * 6), kind: 'bit', spin: 4 + Math.random() * 8 });
+    }
+  }
+  // 王冠(勝った 子の 頭に)
+  function crownMesh() {
+    const g = new THREE.Group();
+    const gold = new THREE.MeshToonMaterial({ color: 0xffcf3a, emissive: 0x5a3a00 });
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 12, 1, true), gold);
+    band.material.side = THREE.DoubleSide;
+    g.add(band);
+    for (let k = 0; k < 5; k++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 4), gold);
+      sp.position.set(Math.cos((k / 5) * 6.28) * 0.2, 0.12, Math.sin((k / 5) * 6.28) * 0.2);
+      g.add(sp);
+    }
+    return g;
+  }
   // 上昇気流の 中: まわりで 葉っぱが まいあがる
   function liftLeaf(at) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.09), new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xbaff8a : 0xfff2a0, transparent: true, side: THREE.DoubleSide }));
@@ -252,6 +276,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
     Object.assign(input, { touch: null, stick: null, target: null });
     input.zero = null; // はじめの もちかたを「まっすぐ」に しなおす
     buildChips();
+    $('hudA').classList.remove('spurt', 'fast');
     setMode('playing');
     intro = fromSky ? 0 : 1;
     $('howtoA').classList.add('show');
@@ -505,13 +530,30 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
         case 'wind':
           sfx.wind();
           break;
-        case 'goal':
-          if (e.slot === 0) { sfx.goal(); splash(`ゴール! ${s.planes[0].points}てん`, 'gold'); }
+        case 'goal': {
+          const u = game.units[e.slot];
+          confettiAt(toWorld(RULES.length, s.planes[e.slot].x, 11, new THREE.Vector3()), e.slot === 0 ? 90 : 30);
+          if (e.slot === 0) {
+            sfx.goal();
+            u.loop = 1; // くるっと 宙がえり
+            const rank = ranking(s).indexOf(0) + 1;
+            splash(`ゴール! ${s.planes[0].points}てん`, 'gold');
+            setTimeout(() => game?.state === s && s.phase === 'play' && splash(`いま ${rank}い`, 'small'), 1300);
+          }
           break;
+        }
         case 'finished': {
-          game.endTimer = 3.5;
+          game.endTimer = 5;
           const win = e.winner === 0;
-          if (win) { sfx.fanfare(); splash('1い!', 'gold'); }
+          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
+          // 勝った 子に 王冠、アーチから 紙ふぶきを なんども
+          const w = game.units[e.winner];
+          const cr = crownMesh();
+          cr.position.set(0, 1.0, -0.15);
+          w.plane.add(cr);
+          w.crown = cr;
+          game.fete = 0;
+          $('hudA').classList.remove('spurt');
           break;
         }
       }
@@ -556,7 +598,10 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       const pitch = Math.atan2(p.vy, p.v);
       // ロール: 右へ まがる ときは 右の つばさを 下げる(機体の +x は 左の つばさ なので +回転で 左が 上がる)
       const roll = p.roll * 0.7 + u.spin * Math.PI * 4;
-      e3.set(-pitch, yaw, roll, 'YXZ');
+      // ゴールの 宙がえり
+      let loop = 0;
+      if (u.loop > 0) { u.loop = Math.max(0, u.loop - dt / 1.2); loop = (1 - u.loop) * Math.PI * 2; }
+      e3.set(-pitch - loop, yaw, roll, 'YXZ');
       u.holder.quaternion.setFromEuler(e3);
       // ゆらゆら(よこかぜの ときは ぶるぶる)
       const windy = Math.abs(s.wind.x) > 0 ? 1 : 0;
@@ -569,6 +614,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       // 急降下で ばんざい / ふだんは 紙の ふちを つかむ
       const [aL, aR] = u.arms;
       if (aL && aR && !fast) { aL.rotation.x = aR.rotation.x = -0.6; }
+      if (u.crown) { u.crown.rotation.y = time * 2; u.crown.position.y = 1.0 + Math.sin(time * 4) * 0.05; }
       // くるくるの 星
       u.stars.visible = u.spin > 0;
       if (u.spin > 0) { u.stars.position.set(0, 0.95, -0.15); u.stars.rotation.y = time * 8; }
@@ -618,6 +664,26 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
         arrow.classList.toggle('gold', nx.r.gold);
       }
     } else arrow.hidden = true;
+    // 自分の 順位が あがった
+    const myRank = ranking(s).indexOf(0) + 1;
+    if (s.phase === 'play' && game.rank && myRank < game.rank && time - (game.rankT || 0) > 1.5 && s.planes[0].points > 0) {
+      game.rankT = time;
+      pop(`${myRank}い に あがった!`, game.units[0].holder.position, myRank === 1 ? 'gold' : 'me', 1000);
+    }
+    game.rank = myRank;
+    // ラストスパート(のこり 50 m)
+    if (s.phase === 'play' && !game.spurt && s.planes[0].s > RULES.length - 50 && s.planes[0].finished === null) {
+      game.spurt = true;
+      splash('ラストスパート!', 'gold small');
+      sfx.gold();
+      $('hudA').classList.add('spurt');
+    }
+    if (s.planes[0].finished !== null) $('hudA').classList.remove('spurt');
+    // 決着の あと: アーチから 紙ふぶきを なんども
+    if (s.phase === 'finished' && game.fete !== undefined) {
+      game.fete -= dt;
+      if (game.fete <= 0) { game.fete = 0.6; confettiAt(toWorld(RULES.length, (Math.random() - 0.5) * 8, 13, new THREE.Vector3()), 40); }
+    }
     // スピード線(急降下)
     $('hudA').classList.toggle('fast', s.planes[0].v > RULES.speed + 2 && s.phase === 'play');
     stage.update(time, camera);

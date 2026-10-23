@@ -493,6 +493,8 @@
   #hudA .speedlines { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s; background: repeating-conic-gradient(from 0deg at 50% 45%, rgba(255,255,255,.0) 0deg 5deg, rgba(255,255,255,.35) 5deg 6deg); -webkit-mask: radial-gradient(circle at 50% 45%, transparent 0 32%, #000 70%); mask: radial-gradient(circle at 50% 45%, transparent 0 32%, #000 70%); }
   #hudA.fast .speedlines { opacity: 1; animation: speedspin .3s linear infinite; }
   @keyframes speedspin { 0% { transform: rotate(0deg); } 100% { transform: rotate(3deg); } }
+  #hudA.spurt::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,170,60,.4); animation: eruptglow .6s ease-in-out infinite alternate; }
+  #hudA.spurt .timer { background: #e8402f; color: #fff; }
   #hudA .tiltask { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(31,42,51,.45); pointer-events: auto; }
   #hudA .tiltask[hidden] { display: none; }
   #hudA .tiltask .card2 { width: min(84vw, 340px); padding: 18px 16px; border-radius: 22px; background: #fffaf0; text-align: center; box-shadow: 0 8px 0 rgba(31,42,51,.25); font: 700 15px/1.6 var(--font-body); color: var(--hud-ink); }
