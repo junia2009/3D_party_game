@@ -74,3 +74,4 @@
 | 夏の浜べの ビーチバレー | 作成中 | [minigames/volley.md](minigames/volley.md) |
 | 森の谷まの かみひこうき | 作成中 | [minigames/hikouki.md](minigames/hikouki.md) |
 | 夏祭りの ラムネ しゅわしゅわ | 作成中 | [minigames/ramune.md](minigames/ramune.md) |
+| 秋の森の わたあめ まき | 作成中 | [minigames/wataame.md](minigames/wataame.md) |

@@ -506,6 +506,42 @@
   @keyframes shakephone { 0% { transform: translateY(-6px) rotate(-6deg); } 100% { transform: translateY(6px) rotate(6deg); } }
   #hudR .shakeask button { display: block; width: 100%; margin-top: 10px; padding: 12px; border: 0; border-radius: 16px; font: 900 17px var(--font-body); color: #fff; background: #ff6a9a; box-shadow: 0 5px 0 rgba(31,42,51,.25); }
   #hudR .shakeask button.sub { background: #8aa0b0; font-size: 14px; padding: 9px; }
+  /* 秋の森の わたあめ まき: 上に みんなの 大きさ(cm)と のこり時間。左下に 回す はやさの メーター、右下に「ざらめ!」 */
+  #hudL .scores { display: flex; gap: 4px; flex-wrap: wrap; }
+  #hudL .chip { padding: 4px 8px 4px 4px; position: relative; }
+  #hudL .chip i { width: 18px; height: 18px; }
+  #hudL .chip b { font-size: 13px; }
+  #hudL .chip.lead { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
+  #hudL .chip.lead::after { content: '👑'; position: absolute; top: -12px; left: -2px; font-size: 13px; }
+  #hudL .timer:empty { visibility: hidden; }
+  #hudL .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); font-size: 14px; }
+  #hudL .splash.small { font-size: clamp(24px, 8vw, 46px); }
+  #hudL .splash.gold.small { color: #ffd24a; }
+  /* はやさの メーター(半円)。みどり = ちょうどいい、あか = はやすぎ。はりが たまると ふちが あかく ひかる */
+  #hudL .gauge { position: absolute; left: max(14px, env(safe-area-inset-left, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 34px); width: 150px; height: 82px; overflow: hidden; --lo: 60deg; --hi: 100deg; --w: -90deg; --strain: 0; }
+  #hudL .gauge[hidden] { display: none; }
+  #hudL .gauge .dial { position: absolute; left: 0; top: 0; width: 150px; height: 150px; border-radius: 50%;
+    background: conic-gradient(from -90deg, #c8d0d8 0deg var(--lo), #5ccf6a var(--lo) var(--hi), #ff6a4a var(--hi) 180deg, transparent 180deg);
+    box-shadow: 0 0 0 4px rgba(255,255,255,.9), 0 0 calc(var(--strain) * 26px) calc(var(--strain) * 8px) rgba(255,70,40,calc(var(--strain)));
+    -webkit-mask: radial-gradient(circle, transparent 0 44px, #000 45px); mask: radial-gradient(circle, transparent 0 44px, #000 45px); }
+  #hudL .gauge .needle { position: absolute; left: 73px; top: 10px; width: 4px; height: 65px; border-radius: 2px; background: #2a2f3a; transform-origin: 2px 65px; transform: rotate(var(--w)); transition: transform .05s linear; }
+  #hudL .gauge .hub { position: absolute; left: 63px; top: 63px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 2px 0 rgba(31,42,51,.25); }
+  #hudL .gauge .lbl { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font: 900 12px var(--font-body); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+  #hudL .gauge.over .needle { background: #e8402f; }
+  #hudL.danger::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,90,60,.4); animation: eruptglow .3s ease-in-out infinite alternate; }
+  /* ざらめ ボタン: まわりの わが ちぢんで ボタンの ふちに かさなったら おす */
+  .tame.sugarbtn { background: var(--zc, #9ad8ff); color: #2a2f3a; font-size: 22px; -webkit-tap-highlight-color: transparent; user-select: none; touch-action: none; --k: 1; overflow: visible; }
+  .tame.sugarbtn::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 5px solid #fff; transform: scale(calc(1 + var(--k) * 1.4)); opacity: calc(.35 + (1 - var(--k)) * .65); pointer-events: none; }
+  .tame.sugarbtn.now::after { border-color: #ffd24a; }
+  .tame.sugarbtn.down { transform: translateY(5px) scale(.96); }
+  #hudL .spinask { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(31,42,51,.45); pointer-events: auto; }
+  #hudL .spinask[hidden] { display: none; }
+  #hudL .spinask .card2 { width: min(84vw, 340px); padding: 18px 16px; border-radius: 22px; background: #fffaf0; text-align: center; box-shadow: 0 8px 0 rgba(31,42,51,.25); font: 700 15px/1.6 var(--font-body); color: var(--hud-ink); }
+  #hudL .spinask .card2 b { display: block; font-size: 20px; margin-bottom: 6px; }
+  #hudL .spinask .phone { font-size: 46px; display: inline-block; animation: spinphone 1s linear infinite; }
+  @keyframes spinphone { 0% { transform: translate(14px, 0); } 25% { transform: translate(0, 14px); } 50% { transform: translate(-14px, 0); } 75% { transform: translate(0, -14px); } 100% { transform: translate(14px, 0); } }
+  #hudL .spinask button { display: block; width: 100%; margin-top: 10px; padding: 12px; border: 0; border-radius: 16px; font: 900 17px var(--font-body); color: #fff; background: #ff6a9a; box-shadow: 0 5px 0 rgba(31,42,51,.25); }
+  #hudL .spinask button.sub { background: #8aa0b0; font-size: 14px; padding: 9px; }
   /* 森の谷まの かみひこうき: 上に みんなの 点(順位で ならぶ)と のこり時間。下に のこりの きょりと かたむきの めやす */
   #hudA .scores { display: flex; gap: 4px; flex-wrap: wrap; }
   #hudA .chip { padding: 4px 8px 4px 4px; position: relative; }
@@ -1475,6 +1511,11 @@
       <span class="name">夏祭りの ラムネ しゅわしゅわ</span>
       <span class="meta"><span>3かいせん</span><span>ふって</span></span>
     </button>
+    <button class="card" type="button" data-open="wataame">
+      <span class="thumb"><img src="./assets/thumbs/wataame.jpg" alt="" width="640" height="360"><span class="ribbon">第23競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">秋の森の わたあめ まき</span>
+      <span class="meta"><span>30びょう</span><span>回して</span></span>
+    </button>
   </div>
 </section>
 
@@ -1723,6 +1764,28 @@
       ふれない ときは 画面を 連打でも OK。
       <button id="shakeOnR" type="button">ふって あそぶ</button>
       <button class="sub" id="shakeOffR" type="button">タップで あそぶ</button>
+    </div>
+  </div>
+</div>
+
+<div class="hud" id="hudL" hidden>
+  <div class="top">
+    <div class="scores" id="chipsL" aria-label="みんなの 大きさ"></div>
+    <div class="timer" id="timeL" aria-label="のこり時間"></div>
+    <button class="pausebtn" id="pauseBtnL" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsL"></div>
+  <div class="splash" id="splashL"></div>
+  <p class="howto" id="howtoL"><b>ぐるぐる</b> 回して わたあめを まこう!<br>メーターの <b>みどり</b>で 回すと よく まける<br><b>はやすぎると ちぎれる</b>よ</p>
+  <div class="gauge" id="gaugeL" hidden aria-label="回す はやさ"><div class="dial"></div><div class="needle"></div><div class="hub"></div></div>
+  <button class="tame sugarbtn" id="zarameL" type="button" hidden>ざらめ!</button>
+  <div class="spinask" id="spinAskL" hidden>
+    <div class="card2">
+      <b>スマホを 回して あそぶ?</b>
+      <span class="phone">📱</span><br>
+      円を かくように ぐるぐる。<br>回せない ときは 画面を ゆびで ぐるぐる なぞっても OK。
+      <button id="spinOnL" type="button">回して あそぶ</button>
+      <button class="sub" id="spinOffL" type="button">ゆびで あそぶ</button>
     </div>
   </div>
 </div>

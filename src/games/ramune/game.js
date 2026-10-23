@@ -383,11 +383,10 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
             pop('よーし!', u0.holder.position.clone().add(new THREE.Vector3(0, u0.headY + 0.7, 0)), 'gold', 700);
           }, 800);
           sfx.ready();
-          break;
-        }
           for (const u of game.units) { u.capFly.visible = false; u.flyH = 0; u.burst = 0; }
           game.showFrom = null;
           break;
+        }
         case 'go':
           splash('ふって!', 'gold');
           sfx.go();
