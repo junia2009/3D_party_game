@@ -465,6 +465,36 @@
   #hudF .chip { position: relative; }
   #hudF.spurt::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,170,60,.35); animation: eruptglow .6s ease-in-out infinite alternate; }
   #hudF.spurt .timer { background: #e8402f; color: #fff; }
+  /* 森の谷まの かみひこうき: 上に みんなの 点(順位で ならぶ)と のこり時間。下に のこりの きょりと かたむきの めやす */
+  #hudA .scores { display: flex; gap: 4px; flex-wrap: wrap; }
+  #hudA .chip { padding: 4px 8px 4px 4px; position: relative; }
+  #hudA .chip i { width: 18px; height: 18px; }
+  #hudA .chip b { font-size: 14px; }
+  #hudA .chip.lead { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
+  #hudA .chip.lead::after { content: '👑'; position: absolute; top: -12px; left: -2px; font-size: 13px; }
+  #hudA .timer:empty { visibility: hidden; }
+  #hudA .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 120px); font-size: 14px; }
+  #hudA .splash.small { font-size: clamp(24px, 8vw, 46px); }
+  #hudA .splash.gold.small { color: #ffd24a; }
+  #hudA .prog { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 22px); transform: translateX(-50%); width: min(62vw, 300px); height: 12px; border-radius: 999px; background: rgba(255,255,255,.55); box-shadow: 0 2px 0 rgba(31,42,51,.18); --k: 0; }
+  #hudA .prog::before { content: ''; position: absolute; inset: 2px; right: calc(2px + (1 - var(--k)) * (100% - 4px)); border-radius: 999px; background: linear-gradient(90deg, #8ad04a, #ffd24a); }
+  #hudA .prog::after { content: '🏁'; position: absolute; right: -22px; top: -6px; font-size: 18px; }
+  #hudA .tiltpad { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 54px); width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,.4); border: 2px solid rgba(255,255,255,.8); pointer-events: none; }
+  #hudA .tiltpad::before { content: ''; position: absolute; left: 50%; top: 50%; width: 2px; height: 70%; transform: translate(-50%, -50%); background: rgba(31,42,51,.2); box-shadow: 0 0 0 0 transparent; }
+  #hudA .tiltpad i { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px; border-radius: 50%; background: #ff7a3a; border: 2px solid #fff; transition: transform .05s linear; }
+  #hudA .recenter { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 124px); pointer-events: auto; border: 0; border-radius: 999px; padding: 6px 10px; font: 800 12px var(--font-body); background: rgba(255,255,255,.85); color: var(--hud-ink); box-shadow: 0 3px 0 rgba(31,42,51,.18); }
+  #hudA .recenter[hidden] { display: none; }
+  #hudA .wind { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 96px); transform: translateX(-50%); padding: 4px 14px; border-radius: 999px; background: rgba(255,255,255,.85); font: 800 15px var(--font-body); color: #2a6ad0; box-shadow: 0 3px 0 rgba(31,42,51,.18); }
+  #hudA .wind[hidden] { display: none; }
+  #hudA .wind.soon { background: #ffe07a; color: #8a4a00; animation: tamefull .4s infinite; }
+  #hudA .tiltask { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(31,42,51,.45); pointer-events: auto; }
+  #hudA .tiltask[hidden] { display: none; }
+  #hudA .tiltask .card2 { width: min(84vw, 340px); padding: 18px 16px; border-radius: 22px; background: #fffaf0; text-align: center; box-shadow: 0 8px 0 rgba(31,42,51,.25); font: 700 15px/1.6 var(--font-body); color: var(--hud-ink); }
+  #hudA .tiltask .card2 b { display: block; font-size: 20px; margin-bottom: 6px; }
+  #hudA .tiltask .phone { font-size: 46px; display: inline-block; animation: tiltphone 1.6s ease-in-out infinite; }
+  @keyframes tiltphone { 0%, 100% { transform: rotate(-18deg); } 50% { transform: rotate(18deg); } }
+  #hudA .tiltask button { display: block; width: 100%; margin-top: 10px; padding: 12px; border: 0; border-radius: 16px; font: 900 17px var(--font-body); color: #fff; background: #ff7a3a; box-shadow: 0 5px 0 rgba(31,42,51,.25); }
+  #hudA .tiltask button.sub { background: #8aa0b0; font-size: 14px; padding: 9px; }
   /* 夏の浜べの ビーチバレー: 上に チームの 点(大きな 数字)と メンバー。右下に「うつ」。風の 向き */
   #hudP { --tL: #3aa0f0; --tR: #ff7a4a; }
   #hudP .team { flex: 1; min-width: 0; display: flex; gap: 4px; align-items: center; padding: 3px 6px 3px 3px; border-radius: 14px; background: rgba(255,255,255,.75); box-shadow: 0 3px 0 rgba(31,42,51,.18); }
@@ -1386,6 +1416,11 @@
       <span class="name">夏の浜べの ビーチバレー</span>
       <span class="meta"><span>60〜120びょう</span><span>3たい3</span></span>
     </button>
+    <button class="card" type="button" data-open="hikouki">
+      <span class="thumb"><img src="./assets/thumbs/hikouki.jpg" alt="" width="640" height="360"><span class="ribbon">第21競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">森の谷まの かみひこうき</span>
+      <span class="meta"><span>50びょう</span><span>かたむけて</span></span>
+    </button>
   </div>
 </section>
 
@@ -1585,6 +1620,31 @@
   <p class="howto" id="howtoP">ずらして はしる。<b>わ</b>が かさなったら おす!<br>スパイクは スティックで ねらう<br>ネットの 前で おすと ブロック</p>
   <div class="stick" id="stickP" hidden><i></i></div>
   <button class="tame hit" id="hitP" type="button">うつ</button>
+</div>
+
+<div class="hud" id="hudA" hidden>
+  <div class="top">
+    <div class="scores" id="chipsA" aria-label="みんなの 点"></div>
+    <div class="timer" id="timeA" aria-label="のこり時間"></div>
+    <button class="pausebtn" id="pauseBtnA" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="wind" id="windA" hidden>かぜ <b>→→</b></div>
+  <div class="pops" id="popsA"></div>
+  <div class="splash" id="splashA"></div>
+  <p class="howto" id="howtoA">スマホを かたむけて とぶ!<br>むこうへ たおすと 下がる・てまえへ おこすと 上がる<br>光る 風の 柱で ふわっと 上がって 金の わっかへ</p>
+  <div class="stick" id="stickA" hidden><i></i></div>
+  <div class="prog" id="progA" aria-label="のこりの きょり"></div>
+  <div class="tiltpad" aria-hidden="true"><i id="tiltDotA"></i></div>
+  <button class="recenter" id="recenterA" type="button" hidden>まっすぐ に する</button>
+  <div class="tiltask" id="tiltA" hidden>
+    <div class="card2">
+      <b>スマホを かたむけて あそぶ?</b>
+      <span class="phone">📱</span><br>
+      もちやすい かたむきで もってね。<br>その かたむきが「まっすぐ」に なるよ。
+      <button id="tiltOnA" type="button">かたむけて あそぶ</button>
+      <button class="sub" id="tiltOffA" type="button">ゆびで あそぶ</button>
+    </div>
+  </div>
 </div>
 
 <div class="hud" id="hudE" hidden>
