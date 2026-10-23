@@ -73,3 +73,4 @@
 | 空まで まめのきジャンプ | 作成中 | [minigames/mame.md](minigames/mame.md) |
 | 夏の浜べの ビーチバレー | 作成中 | [minigames/volley.md](minigames/volley.md) |
 | 森の谷まの かみひこうき | 作成中 | [minigames/hikouki.md](minigames/hikouki.md) |
+| 夏祭りの ラムネ しゅわしゅわ | 作成中 | [minigames/ramune.md](minigames/ramune.md) |

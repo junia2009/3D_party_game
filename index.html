@@ -465,6 +465,35 @@
   #hudF .chip { position: relative; }
   #hudF.spurt::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,170,60,.35); animation: eruptglow .6s ease-in-out infinite alternate; }
   #hudF.spurt .timer { background: #e8402f; color: #fff; }
+  /* 夏祭りの ラムネ しゅわしゅわ: 上に みんなの 合計(m)と 何回目か・のこり時間。左に あわの メーター、右下に「ポン!」 */
+  #hudR .scores { display: flex; gap: 4px; flex-wrap: wrap; }
+  #hudR .chip { padding: 4px 8px 4px 4px; position: relative; }
+  #hudR .chip i { width: 18px; height: 18px; }
+  #hudR .chip b { font-size: 13px; }
+  #hudR .chip.lead { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
+  #hudR .chip.lead::after { content: '👑'; position: absolute; top: -12px; left: -2px; font-size: 13px; }
+  #hudR .timer:empty { visibility: hidden; }
+  #hudR .round { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 66px); transform: translateX(-50%); padding: 3px 14px; border-radius: 999px; background: rgba(255,255,255,.85); font: 800 14px var(--font-body); color: var(--hud-ink); }
+  #hudR .round:empty { display: none; }
+  #hudR .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); font-size: 14px; }
+  #hudR .splash.small { font-size: clamp(24px, 8vw, 46px); }
+  #hudR .meter { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 40px); width: 34px; height: 180px; border-radius: 18px; background: rgba(255,255,255,.35); border: 3px solid rgba(255,255,255,.85); overflow: hidden; --k: 0; }
+  #hudR .meter[hidden] { display: none; }
+  #hudR .meter::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--k) * 100%); background: linear-gradient(0deg, #7ad8e8, #e8fbff); transition: height .08s linear; }
+  #hudR .meter::after { content: '🫧'; position: absolute; left: 50%; top: 4px; transform: translateX(-50%); font-size: 16px; }
+  #hudR .meter.rattle { animation: meterrattle .08s linear infinite; border-color: #ff7a3a; }
+  @keyframes meterrattle { 0% { transform: translateX(-2px); } 50% { transform: translateX(2px); } 100% { transform: translateX(-2px); } }
+  #hudR.danger::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,90,60,.4); animation: eruptglow .3s ease-in-out infinite alternate; }
+  .tame.popbtn { background: #ff6a9a; font-size: 26px; -webkit-tap-highlight-color: transparent; user-select: none; touch-action: none; }
+  .tame.popbtn.down { transform: translateY(5px) scale(.96); }
+  #hudR .shakeask { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(31,42,51,.45); pointer-events: auto; }
+  #hudR .shakeask[hidden] { display: none; }
+  #hudR .shakeask .card2 { width: min(84vw, 340px); padding: 18px 16px; border-radius: 22px; background: #fffaf0; text-align: center; box-shadow: 0 8px 0 rgba(31,42,51,.25); font: 700 15px/1.6 var(--font-body); color: var(--hud-ink); }
+  #hudR .shakeask .card2 b { display: block; font-size: 20px; margin-bottom: 6px; }
+  #hudR .shakeask .phone { font-size: 46px; display: inline-block; animation: shakephone .35s ease-in-out infinite alternate; }
+  @keyframes shakephone { 0% { transform: translateY(-6px) rotate(-6deg); } 100% { transform: translateY(6px) rotate(6deg); } }
+  #hudR .shakeask button { display: block; width: 100%; margin-top: 10px; padding: 12px; border: 0; border-radius: 16px; font: 900 17px var(--font-body); color: #fff; background: #ff6a9a; box-shadow: 0 5px 0 rgba(31,42,51,.25); }
+  #hudR .shakeask button.sub { background: #8aa0b0; font-size: 14px; padding: 9px; }
   /* 森の谷まの かみひこうき: 上に みんなの 点(順位で ならぶ)と のこり時間。下に のこりの きょりと かたむきの めやす */
   #hudA .scores { display: flex; gap: 4px; flex-wrap: wrap; }
   #hudA .chip { padding: 4px 8px 4px 4px; position: relative; }
@@ -1429,6 +1458,11 @@
       <span class="name">森の谷まの かみひこうき</span>
       <span class="meta"><span>50びょう</span><span>かたむけて</span></span>
     </button>
+    <button class="card" type="button" data-open="ramune">
+      <span class="thumb"><img src="./assets/thumbs/ramune.jpg" alt="" width="640" height="360"><span class="ribbon">第22競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">夏祭りの ラムネ しゅわしゅわ</span>
+      <span class="meta"><span>3かいせん</span><span>ふって</span></span>
+    </button>
   </div>
 </section>
 
@@ -1653,6 +1687,29 @@
       もちやすい かたむきで もってね。<br>その かたむきが「まっすぐ」に なるよ。
       <button id="tiltOnA" type="button">かたむけて あそぶ</button>
       <button class="sub" id="tiltOffA" type="button">ゆびで あそぶ</button>
+    </div>
+  </div>
+</div>
+
+<div class="hud" id="hudR" hidden>
+  <div class="top">
+    <div class="scores" id="chipsR" aria-label="みんなの 合計"></div>
+    <div class="timer" id="timeR" aria-label="のこり時間"></div>
+    <button class="pausebtn" id="pauseBtnR" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="round" id="roundR"></div>
+  <div class="pops" id="popsR"></div>
+  <div class="splash" id="splashR"></div>
+  <p class="howto" id="howtoR">スマホを ふって あわを ためよう!<br>びんが <b>がたがた</b> したら もうすぐ いっぱい<br>「ポン!」で ふたを とばす</p>
+  <div class="meter" id="meterR" hidden aria-label="あわ"></div>
+  <button class="tame popbtn" id="popR" type="button" hidden>ポン!</button>
+  <div class="shakeask" id="shakeAskR" hidden>
+    <div class="card2">
+      <b>スマホを ふって あそぶ?</b>
+      <span class="phone">📱</span><br>
+      ふれない ときは 画面を 連打でも OK。
+      <button id="shakeOnR" type="button">ふって あそぶ</button>
+      <button class="sub" id="shakeOffR" type="button">タップで あそぶ</button>
     </div>
   </div>
 </div>
