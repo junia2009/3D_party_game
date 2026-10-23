@@ -173,6 +173,129 @@ export function buildStage(scene) {
     band.position.set(POLE_X, m + 1.6, 1.0);
     group.add(band);
   }
+  // 盆おどりの やぐら(おくの まん中)。紅白の まく・たいこ・てっぺんから ちょうちんの ひも
+  const YZ = -17;
+  {
+    const wood = toonMaterial(0x7a4a2a);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 4.2, 0.22), wood);
+      leg.position.set(sx * 1.6, 2.1, YZ + sz * 1.6);
+      group.add(leg);
+    }
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.2, 3.8), wood);
+    deck.position.set(0, 2.4, YZ);
+    group.add(deck);
+    // 紅白の まく(下の だん)
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      const st = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.5, 0.04), toonMaterial(k % 2 ? 0xffffff : 0xe8443a));
+      st.position.set(Math.cos(a) * 1.75, 1.6, YZ + Math.sin(a) * 1.75);
+      st.rotation.y = -a + Math.PI / 2;
+      group.add(st);
+    }
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(2.8, 1.2, 4), toonMaterial(0x5a3a2a));
+    roof.position.set(0, 5.4, YZ);
+    roof.rotation.y = Math.PI / 4;
+    group.add(roof);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.4, 0.12), wood);
+      p.position.set(sx * 1.6, 3.6, YZ + sz * 1.6);
+      group.add(p);
+    }
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.7, 16).rotateZ(Math.PI / 2), toonMaterial(0xa86a3a));
+    drum.position.set(0, 3.0, YZ);
+    group.add(drum);
+    for (const sx of [-1, 1]) {
+      const face = new THREE.Mesh(new THREE.CircleGeometry(0.5, 16).rotateY(sx * Math.PI / 2), toonMaterial(0xf4e8d0));
+      face.position.set(sx * 0.36, 3.0, YZ);
+      group.add(face);
+    }
+    // やぐらの てっぺんから 四方へ ちょうちんの ひも
+    for (const [ex, ez] of [[-14, -9], [14, -9], [-14, -26], [14, -26], [0, -6]]) {
+      const n = 9;
+      const from = new THREE.Vector3(0, 5.8, YZ), to = new THREE.Vector3(ex, 3.2, ez);
+      const pts = [];
+      for (let k = 0; k <= n; k++) { const u = k / n; pts.push(new THREE.Vector3().lerpVectors(from, to, u).add(new THREE.Vector3(0, -Math.sin(u * Math.PI) * 0.8, 0))); }
+      group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 0.02, 4), toonMaterial(0x2a2a2a)));
+      for (let k = 1; k < n; k++) {
+        const l = lantern(k % 2 ? 0xff5a3a : 0xffd06a);
+        l.scale.setScalar(0.8);
+        l.position.copy(pts[k]).add(new THREE.Vector3(0, -0.35, 0));
+        group.add(l);
+      }
+    }
+  }
+  // 鳥居(左おく)と 石どうろう
+  {
+    const red = toonMaterial(0xd8402a), black = toonMaterial(0x2a2a2a);
+    const tx = -12, tz = -21;
+    for (const sx of [-1, 1]) {
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 6, 12), red);
+      pillar.position.set(tx + sx * 2.2, 3, tz);
+      group.add(pillar);
+    }
+    const kasagi = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.4, 0.6), black);
+    kasagi.position.set(tx, 6.2, tz);
+    const nuki = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.3, 0.4), red);
+    nuki.position.set(tx, 5.2, tz);
+    group.add(kasagi, nuki);
+    const stoneM = toonMaterial(0x9a948a);
+    for (const [x, z] of [[-9.5, -12], [9.5, -12], [-9.5, -3.5], [9.5, -3.5]]) {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.6), stoneM);
+      base.position.set(x, 0.45, z);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.6, 0.75), stoneM);
+      box.position.set(x, 1.2, z);
+      const top = new THREE.Mesh(new THREE.ConeGeometry(0.75, 0.5, 4), stoneM);
+      top.position.set(x, 1.75, z);
+      top.rotation.y = Math.PI / 4;
+      const fire = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffb060, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+      fire.scale.setScalar(0.8);
+      fire.position.set(x, 1.2, z);
+      fire.userData.noMerge = true;
+      group.add(base, box, top, fire);
+    }
+  }
+  // おくの 森(くらい シルエット)
+  {
+    const dark = toonMaterial(0x1e2a24), dark2 = toonMaterial(0x24342a);
+    for (let k = 0; k < 40; k++) {
+      const a = Math.PI * (0.05 + 0.9 * (k / 39));
+      const r = 26 + rand() * 8;
+      const h = 6 + rand() * 6;
+      const c = new THREE.Mesh(new THREE.ConeGeometry(2 + rand() * 1.5, h, 7), k % 2 ? dark : dark2);
+      c.position.set(Math.cos(a) * r * -1, h / 2, -Math.sin(a) * r - 4);
+      group.add(c);
+    }
+  }
+  // 屋台の 小もの: わたあめの ふくろ・かきごおりの カップ・うちわ
+  {
+    const bagCols = [0xff9ac8, 0x9ad8ff, 0xffe07a, 0xb8f08a];
+    for (let k = 0; k < 6; k++) {
+      const bag = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), toonMaterial(bagCols[k % 4]));
+      bag.scale.set(1, 1.25, 0.8);
+      bag.position.set(-3.5 + k * 0.52, 2.15, -7.1);
+      group.add(bag);
+    }
+    const syrup = [0xe8443a, 0x3aa0f0, 0x8ad04a, 0xffd23a];
+    for (let k = 0; k < 5; k++) {
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.08, 0.18, 10), toonMaterial(0xffffff));
+      cup.position.set(5.6 + k * 0.45, 1.0, -5.8);
+      const ice = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), toonMaterial(syrup[k % 4]));
+      ice.position.set(5.6 + k * 0.45, 1.09, -5.8);
+      group.add(cup, ice);
+    }
+    // ラムネ屋の カウンターの うちわ
+    for (const [x, rot, col] of [[-2.9, 0.4, 0x3aa0f0], [2.9, -0.3, 0xff8ab0]]) {
+      const fan = new THREE.Mesh(new THREE.CircleGeometry(0.22, 14), new THREE.MeshToonMaterial({ color: col, side: THREE.DoubleSide }));
+      fan.position.set(x, COUNTER_Y + 0.35, -0.25);
+      fan.rotation.set(-0.3, 0, rot);
+      const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 5), toonMaterial(0xc89a62));
+      handle.position.set(x - Math.sin(rot) * -0.2, COUNTER_Y + 0.12, -0.2);
+      handle.rotation.z = rot;
+      group.add(fan, handle);
+    }
+  }
+
   mergeStatic(group, (o) => o.userData.noMerge);
   group.traverse((o) => { if (o.name === 'merged') o.castShadow = o.receiveShadow = true; });
   scene.add(group);
@@ -222,8 +345,89 @@ export function buildStage(scene) {
     scene.add(m);
     return m;
   })();
+  // 金魚すくいの 水そう(金魚が およぐ)
+  const tank = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.06, 0.8), new THREE.MeshBasicMaterial({ color: 0x5ab8e8, transparent: true, opacity: 0.85 }));
+  tank.position.set(-6.5, 0.93, -5.8);
+  scene.add(tank);
+  const fishes = [];
+  for (let k = 0; k < 8; k++) {
+    const f = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), toonMaterial(k % 3 ? 0xff6a2a : 0xf4f4f4));
+    body.scale.set(1.6, 0.8, 0.9);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.1, 4).rotateZ(Math.PI / 2), toonMaterial(k % 3 ? 0xff8a4a : 0xff6a2a));
+    tail.position.x = -0.13;
+    f.add(body, tail);
+    f.userData = { r: 0.2 + rand() * 0.8, sp: 0.6 + rand() * 0.8, ph: rand() * 6 };
+    scene.add(f);
+    fishes.push(f);
+  }
+  // やきそばの ゆげ
+  const steam = [];
+  for (let k = 0; k < 10; k++) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+    m.userData = { ph: k / 10 };
+    scene.add(m);
+    steam.push(m);
+  }
+  // ホタル(森の ほう)
+  const flies = (() => {
+    const n = 40, pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 40; pos[i * 3 + 1] = 0.5 + Math.random() * 4; pos[i * 3 + 2] = -14 - Math.random() * 14; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.Points(geo, new THREE.PointsMaterial({ map: glowTex, color: 0xd8ff7a, size: 0.5, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    scene.add(m);
+    return m;
+  })();
+  const flyBase = Float32Array.from(flies.geometry.attributes.position.array);
+  // 遠くの 花火(ときどき 夜空に ひらく)
+  const farWorks = [];
+  let nextWork = 2;
+  function farFirework(t) {
+    const cols = [0xff6a9a, 0xffd24a, 0x7ad8ff, 0xb48cff, 0x8ad04a];
+    const c = cols[Math.floor(Math.random() * cols.length)];
+    const at = new THREE.Vector3((Math.random() - 0.5) * 50, 22 + Math.random() * 14, -55);
+    const n = 36, pos = new Float32Array(n * 3), dir = [];
+    for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; dir.push([Math.cos(a), Math.sin(a), (Math.random() - 0.5) * 0.3]); pos.set([at.x, at.y, at.z], i * 3); }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.Points(geo, new THREE.PointsMaterial({ map: glowTex, color: c, size: 1.6, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    scene.add(m);
+    farWorks.push({ m, at, dir, t0: t });
+  }
   function update(t) {
     for (const l of lanterns) l.rotation.z = Math.sin(t * 1.3 + l.userData.ph) * 0.08;
+    for (const f of fishes) {
+      const u = f.userData;
+      const a = t * u.sp + u.ph;
+      f.position.set(-6.5 + Math.cos(a) * u.r, 0.97, -5.8 + Math.sin(a) * u.r * 0.3);
+      f.rotation.y = -a - Math.PI / 2;
+      f.children[1].rotation.y = Math.sin(t * 12 + u.ph) * 0.5;
+    }
+    for (const m of steam) {
+      const k = (t * 0.4 + m.userData.ph) % 1;
+      m.position.set(2.4 + Math.sin(k * 6 + m.userData.ph * 9) * 0.4, 1.1 + k * 1.6, -7.2);
+      m.scale.setScalar(0.4 + k * 0.8);
+      m.material.opacity = Math.sin(k * Math.PI) * 0.35;
+    }
+    const fp = flies.geometry.attributes.position;
+    for (let i = 0; i < fp.count; i++) {
+      fp.setX(i, flyBase[i * 3] + Math.sin(t * 0.7 + i) * 0.8);
+      fp.setY(i, flyBase[i * 3 + 1] + Math.sin(t * 1.1 + i * 2) * 0.5);
+    }
+    fp.needsUpdate = true;
+    flies.material.opacity = 0.6 + Math.sin(t * 3) * 0.3;
+    if (t > nextWork) { nextWork = t + 2.5 + Math.random() * 3; farFirework(t); }
+    for (let i = farWorks.length - 1; i >= 0; i--) {
+      const w = farWorks[i];
+      const k = (t - w.t0) / 1.8;
+      const pa = w.m.geometry.attributes.position;
+      const r = (1 - (1 - Math.min(1, k)) ** 3) * 6;
+      for (let j = 0; j < pa.count; j++) pa.setXYZ(j, w.at.x + w.dir[j][0] * r, w.at.y + w.dir[j][1] * r - k * k * 2, w.at.z + w.dir[j][2] * r);
+      pa.needsUpdate = true;
+      w.m.material.opacity = Math.max(0, 1 - k);
+      if (k >= 1) { scene.remove(w.m); w.m.geometry.dispose(); farWorks.splice(i, 1); }
+    }
   }
   return { group, update, marks };
 }
