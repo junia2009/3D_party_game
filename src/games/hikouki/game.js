@@ -486,7 +486,8 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       // 向き: コースの 向き + よこの うごき、かたむき(ロール)と 上下(ピッチ)
       const yaw = -pa.a + Math.PI + Math.atan2(-p.vx, p.v) * 0.6;
       const pitch = Math.atan2(p.vy, p.v);
-      const roll = -p.roll * 0.7 + (1 - u.spin) * 0 + u.spin * Math.PI * 4;
+      // ロール: 右へ まがる ときは 右の つばさを 下げる(機体の +x は 左の つばさ なので +回転で 左が 上がる)
+      const roll = p.roll * 0.7 + u.spin * Math.PI * 4;
       e3.set(-pitch, yaw, roll, 'YXZ');
       u.holder.quaternion.setFromEuler(e3);
       // ゆらゆら
