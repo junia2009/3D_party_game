@@ -487,6 +487,12 @@
   #hudA .wind { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 96px); transform: translateX(-50%); padding: 4px 14px; border-radius: 999px; background: rgba(255,255,255,.85); font: 800 15px var(--font-body); color: #2a6ad0; box-shadow: 0 3px 0 rgba(31,42,51,.18); }
   #hudA .wind[hidden] { display: none; }
   #hudA .wind.soon { background: #ffe07a; color: #8a4a00; animation: tamefull .4s infinite; }
+  #hudA .ringarrow { position: absolute; width: 0; height: 0; border-top: 14px solid transparent; border-bottom: 14px solid transparent; border-left: 24px solid #6ad04a; filter: drop-shadow(0 2px 0 rgba(31,42,51,.35)); animation: tamefull .5s infinite; }
+  #hudA .ringarrow.gold { border-left-color: #ffd24a; }
+  #hudA .ringarrow[hidden] { display: none; }
+  #hudA .speedlines { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .25s; background: repeating-conic-gradient(from 0deg at 50% 45%, rgba(255,255,255,.0) 0deg 5deg, rgba(255,255,255,.35) 5deg 6deg); -webkit-mask: radial-gradient(circle at 50% 45%, transparent 0 32%, #000 70%); mask: radial-gradient(circle at 50% 45%, transparent 0 32%, #000 70%); }
+  #hudA.fast .speedlines { opacity: 1; animation: speedspin .3s linear infinite; }
+  @keyframes speedspin { 0% { transform: rotate(0deg); } 100% { transform: rotate(3deg); } }
   #hudA .tiltask { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(31,42,51,.45); pointer-events: auto; }
   #hudA .tiltask[hidden] { display: none; }
   #hudA .tiltask .card2 { width: min(84vw, 340px); padding: 18px 16px; border-radius: 22px; background: #fffaf0; text-align: center; box-shadow: 0 8px 0 rgba(31,42,51,.25); font: 700 15px/1.6 var(--font-body); color: var(--hud-ink); }
@@ -1634,6 +1640,8 @@
   <p class="howto" id="howtoA">スマホを かたむけて とぶ!<br>むこうへ たおすと 下がる・てまえへ おこすと 上がる<br>光る 風の 柱で ふわっと 上がって 金の わっかへ</p>
   <div class="stick" id="stickA" hidden><i></i></div>
   <div class="prog" id="progA" aria-label="のこりの きょり"></div>
+  <div class="ringarrow" id="arrowA" hidden></div>
+  <div class="speedlines" aria-hidden="true"></div>
   <div class="tiltpad" aria-hidden="true"><i id="tiltDotA"></i></div>
   <button class="recenter" id="recenterA" type="button" hidden>まっすぐ に する</button>
   <div class="tiltask" id="tiltA" hidden>

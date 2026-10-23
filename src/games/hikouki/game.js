@@ -127,10 +127,75 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
       if (f.kind === 'drop') f.vel.y -= 12 * dt;
+      if (f.kind === 'bit') { f.vel.multiplyScalar(1 - dt * 1.5); f.vel.y -= 1.5 * dt; f.obj.rotation.x += f.spin * dt; f.obj.rotation.z += f.spin * dt * 0.7; }
       f.obj.material.opacity = 1 - k;
       f.obj.rotation.y += dt * 5;
       if (k >= 1) { scene.remove(f.obj); f.obj.material.dispose(); fx.splice(i, 1); }
     }
+  }
+  // 飛行機雲: つばさの 先から 2本の 帯(自分の 色が まざった 白)
+  const TRAIL = 28;
+  function makeTrail(color) {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(TRAIL * 2 * 3), alpha = new Float32Array(TRAIL * 2);
+    const idx = [];
+    for (let k = 0; k < TRAIL - 1; k++) { const a = k * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    for (let k = 0; k < TRAIL; k++) alpha[k * 2] = alpha[k * 2 + 1] = 1 - k / (TRAIL - 1);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(alpha, 1));
+    geo.setIndex(idx);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { color: { value: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55) }, k: { value: 1 } },
+      vertexShader: 'attribute float alpha; varying float va; void main(){ va = alpha; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 color; uniform float k; varying float va; void main(){ gl_FragColor = vec4(color, va * va * 0.75 * k); }',
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.frustumCulled = false;
+    scene.add(m);
+    return { m, pts: [], filled: false };
+  }
+  const tipL = new THREE.Vector3(), tipR = new THREE.Vector3(), up = new THREE.Vector3();
+  function pushTrail(tr, a, b) {
+    // とびすぎた(ワープ・はじめ)ときは ひきなおす
+    if (tr.pts.length && tr.pts[0][0].distanceTo(a) > 3) tr.pts.length = 0;
+    tr.pts.unshift([a.clone(), b.clone()]);
+    if (tr.pts.length > TRAIL) tr.pts.length = TRAIL;
+    const pos = tr.m.geometry.attributes.position;
+    for (let k = 0; k < TRAIL; k++) {
+      const p = tr.pts[Math.min(k, tr.pts.length - 1)];
+      pos.setXYZ(k * 2, p[0].x, p[0].y, p[0].z);
+      pos.setXYZ(k * 2 + 1, p[1].x, p[1].y, p[1].z);
+    }
+    pos.needsUpdate = true;
+  }
+  // くるくるの 星(ぶつかった あと 頭の 上)
+  function dizzyStars() {
+    const g = new THREE.Group();
+    for (let k = 0; k < 3; k++) {
+      const st = new THREE.Mesh(new THREE.OctahedronGeometry(0.09), new THREE.MeshBasicMaterial({ color: 0xffe07a }));
+      st.position.set(Math.cos((k / 3) * 6.28) * 0.28, 0, Math.sin((k / 3) * 6.28) * 0.28);
+      g.add(st);
+    }
+    g.visible = false;
+    return g;
+  }
+  // 羽・葉っぱが ちる
+  function burstBits(at, color, n = 14) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.08), new THREE.MeshBasicMaterial({ color, transparent: true, side: THREE.DoubleSide }));
+      m.position.copy(at);
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 1.1, vel: new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 2.5, (Math.random() - 0.5) * 4), kind: 'bit', spin: Math.random() * 10 });
+    }
+  }
+  // 上昇気流の 中: まわりで 葉っぱが まいあがる
+  function liftLeaf(at) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.09), new THREE.MeshBasicMaterial({ color: Math.random() < 0.5 ? 0xbaff8a : 0xfff2a0, transparent: true, side: THREE.DoubleSide }));
+    const a = Math.random() * 6.28;
+    m.position.copy(at).add(new THREE.Vector3(Math.cos(a) * 1.4, -1.2, Math.sin(a) * 1.4));
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 1.0, vel: new THREE.Vector3(-Math.sin(a) * 1.5, 5, Math.cos(a) * 1.5), kind: 'bit', spin: 8 });
   }
   // 風の すじ(自分の まわり)
   const streaks = [];
@@ -152,7 +217,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
   async function startGame({ fromSky = false } = {}) {
     const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
     const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
-    if (game) for (const u of game.units) scene.remove(u.holder);
+    if (game) for (const u of game.units) { scene.remove(u.holder); for (const t of u.trails) scene.remove(t.m); }
     for (const f of fx.splice(0)) scene.remove(f.obj);
     course?.dispose();
     const state = createGame(players, seed);
@@ -172,7 +237,9 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       model.root.position.set(0, 0.12, -0.15);
       plane.add(model.root);
       scene.add(holder);
-      return { model, holder, plane, spin: 0, wob: 0 };
+      const stars = dizzyStars();
+      plane.add(stars);
+      return { model, holder, plane, spin: 0, wob: 0, stars, trails: [makeTrail(PLAYER_COLORS[slot].hex), makeTrail(PLAYER_COLORS[slot].hex)], arms: [model.node('arm_L'), model.node('arm_R')], trailT: 0 };
     }));
     // 自分の 目じるし
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.32, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
@@ -414,6 +481,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
         case 'hit': {
           const u = game.units[e.slot];
           u.spin = 1;
+          burstBits(u.holder.position, e.what === 'bird' ? 0xf4f0e8 : 0x6ab84a, e.slot === 0 ? 18 : 8);
           if (e.slot === 0) {
             sfx.hit();
             game.shake = 0.35;
@@ -490,10 +558,35 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       const roll = p.roll * 0.7 + u.spin * Math.PI * 4;
       e3.set(-pitch, yaw, roll, 'YXZ');
       u.holder.quaternion.setFromEuler(e3);
-      // ゆらゆら
-      u.plane.position.y = Math.sin(time * 2.4 + slot) * 0.06;
-      u.model.setFace(u.spin > 0 || p.bump > 0 ? 'surprised' : 'happy');
+      // ゆらゆら(よこかぜの ときは ぶるぶる)
+      const windy = Math.abs(s.wind.x) > 0 ? 1 : 0;
+      u.plane.position.y = Math.sin(time * 2.4 + slot) * 0.06 + windy * Math.sin(time * 31 + slot) * 0.03;
+      u.plane.rotation.z = windy * Math.sin(time * 23 + slot) * 0.05;
+      const fast = p.v > RULES.speed + 1.6 && p.stun <= 0;
+      u.model.setFace(u.spin > 0 || p.bump > 0 ? 'surprised' : fast ? 'happy' : 'normal');
+      u.model.play(fast ? 'cheer' : 'idle');
       u.model.update(dt);
+      // 急降下で ばんざい / ふだんは 紙の ふちを つかむ
+      const [aL, aR] = u.arms;
+      if (aL && aR && !fast) { aL.rotation.x = aR.rotation.x = -0.6; }
+      // くるくるの 星
+      u.stars.visible = u.spin > 0;
+      if (u.spin > 0) { u.stars.position.set(0, 0.95, -0.15); u.stars.rotation.y = time * 8; }
+      // 飛行機雲: つばさの 先(機体の よこ はば ±1.15)
+      if (u.holder.visible && dt > 0) {
+        u.holder.updateMatrixWorld();
+        up.set(0, 0.13, 0);
+        for (const [k, sx] of [[0, 1.15], [1, -1.15]]) {
+          tipL.set(sx, 0.15, -1.1).applyMatrix4(u.holder.matrixWorld);
+          tipR.copy(tipL).add(up);
+          tipL.sub(up);
+          pushTrail(u.trails[k], tipL, tipR);
+          u.trails[k].m.material.uniforms.k.value = (fast ? 1.25 : 0.85) * (slot === 0 ? 1 : 0.6);
+          u.trails[k].m.visible = u.holder.visible;
+        }
+      } else for (const t of u.trails) t.m.visible = u.holder.visible;
+      // 上昇気流の 中: まわりで 葉っぱが まいあがる(自分だけ)
+      if (slot === 0 && p.lifting && Math.random() < dt * 14) liftLeaf(u.holder.position);
       if (u.marker) u.marker.position.set(0, 1.25 + Math.sin(time * 5) * 0.08, 0);
       // ほかの 子が カメラの すぐ 前に いると じゃまなので、近いほど 小さく(みんな おなじ ところを とぶ)
       if (slot !== 0) {
@@ -506,6 +599,27 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       }
     });
     course.update(s, time);
+    // つぎに くぐる わっか(自分の)を 光らせて、画面の 外なら はしに 矢じるし
+    const nx = course.rings[s.planes[0].next];
+    for (const r of course.rings) if (!r.done) r.m.scale.setScalar(r === nx ? 1 + Math.sin(time * 6) * 0.06 : 1);
+    const arrow = $('arrowA');
+    if (nx && s.phase === 'play') {
+      tmpV.copy(nx.m.position).project(camera);
+      const off = tmpV.z > 1 || Math.abs(tmpV.x) > 0.92 || Math.abs(tmpV.y) > 0.9;
+      arrow.hidden = !off;
+      if (off) {
+        let ax = tmpV.x, ay = tmpV.y;
+        if (tmpV.z > 1) { ax = -ax; ay = -ay; }
+        const a = Math.atan2(ay, ax);
+        const r = Math.min(0.88 / Math.abs(Math.cos(a) || 1e-6), 0.85 / Math.abs(Math.sin(a) || 1e-6));
+        arrow.style.left = `${((Math.cos(a) * r + 1) / 2) * 100}%`;
+        arrow.style.top = `${((1 - Math.sin(a) * r) / 2) * 100}%`;
+        arrow.style.transform = `translate(-50%, -50%) rotate(${-a}rad)`;
+        arrow.classList.toggle('gold', nx.r.gold);
+      }
+    } else arrow.hidden = true;
+    // スピード線(急降下)
+    $('hudA').classList.toggle('fast', s.planes[0].v > RULES.speed + 2 && s.phase === 'play');
     stage.update(time, camera);
     // 風の すじ: よこかぜの とき、自分の まわりを よこへ ながれる
     const me = s.planes[0];
