@@ -121,7 +121,7 @@ export function buildStage(scene) {
     c.fillStyle = '#2a6ad0'; c.fillRect(0, 0, w, h);
     c.fillStyle = '#ffffff'; c.font = 'bold 54px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('ラムネ', w / 2, h / 2 + 3);
   }), side: THREE.DoubleSide }));
-  noren.position.set(0, 3.0, -0.25);
+  noren.position.set(0, 2.85, 0.15); // ひさしの しまに かからない ように 手前へ
   noren.userData.noMerge = true;
   group.add(noren);
   // 氷水の たらい(カウンターの はし)と ひえた ラムネ
@@ -250,6 +250,17 @@ export function ramuneBottle(withFoam = true) {
     foam = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.105, 1, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }));
     g.add(liquid, foam);
   }
-  g.userData = { cap, foam, liquid };
+  // 中を のぼる あわの つぶ(アップの ときに よく 見える)
+  const bubbles = [];
+  if (withFoam) {
+    const bm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    for (let k = 0; k < 14; k++) {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.012 + Math.random() * 0.012, 6, 4), bm);
+      b.userData = { a: Math.random() * 6.28, r: Math.random() * 0.08, y: Math.random() * 0.42, sp: 0.6 + Math.random() * 0.8 };
+      g.add(b);
+      bubbles.push(b);
+    }
+  }
+  g.userData = { cap, foam, liquid, bubbles };
   return g;
 }

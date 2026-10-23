@@ -154,7 +154,8 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       const box = new THREE.Box3().setFromObject(model.root);
       const front = box.max.z + 0.13 * BS + 0.03; // 体の いちばん 前 + びんの 太さ + すきま
       const handY = box.min.y + (box.max.y - box.min.y) * 0.32; // おなかの 高さ(びんの そこ)
-      return { model, holder, bottle, capFly, size: def?.size || 1, arms: [model.node('arm_L'), model.node('arm_R')], shakeT: 0, lift: 0, front, handY, bs: BS };
+      const headY = box.max.y;
+      return { model, holder, bottle, capFly, size: def?.size || 1, arms: [model.node('arm_L'), model.node('arm_R')], shakeT: 0, lift: 0, front, handY, headY, bs: BS };
     }));
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
@@ -334,6 +335,12 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       switch (e.type) {
         case 'round':
           splash(`${e.round + 1}かいめ`, e.round === RULES.rounds - 1 ? 'gold' : '');
+          // かまえ: びんを もちあげて「よーし!」
+          setTimeout(() => {
+            if (game?.state !== s || s.phase !== 'prep') return;
+            const u0 = game.units[0];
+            pop('よーし!', u0.holder.position.clone().add(new THREE.Vector3(0, u0.headY + 0.7, 0)), 'gold', 700);
+          }, 800);
           sfx.ready();
           for (const u of game.units) { u.capFly.visible = false; u.flyH = 0; u.burst = 0; }
           game.showFrom = null;
@@ -416,9 +423,25 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       u.shakeT += dt * (8 + power * 14);
       const amp = power * 0.16;
       const rk = active ? rattleK(s, b) : 0;
+      // かまえ(「びんを もって!」の あいだ): びんを 頭の 上へ もちあげて「よーし!」。ふりはじめで おなかの 前へ
+      const prep = s.phase === 'prep' ? 1 - s.phaseT / RULES.prepTime : -1;
+      const liftTo = prep >= 0 ? Math.sin(Math.min(1, prep * 1.8) * Math.PI / 2) : 0;
+      u.lift += (liftTo - u.lift) * Math.min(1, dt * (liftTo > u.lift ? 10 : 14));
+      const topY = u.headY - 0.1; // 頭の 高さ(手が とどく ところ)
       // びん: 手の 前で 上下に ふる。がたがたは こまかく ふるえる
-      u.bottle.position.set(x + Math.sin(time * 60) * rk * 0.03, u.handY + Math.sin(u.shakeT) * amp, UNIT_Z + u.front);
+      const pump = prep > 0.6 ? Math.abs(Math.sin(prep * 22)) * 0.08 : 0; // かまえの さいごに ぐっ ぐっ
+      u.bottle.position.set(x + Math.sin(time * 60) * rk * 0.03, u.handY + (topY - u.handY) * u.lift + pump + Math.sin(u.shakeT) * amp, UNIT_Z + u.front * (1 - u.lift * 0.25));
       u.bottle.rotation.z = Math.sin(u.shakeT * 0.5) * amp * 1.5 + Math.sin(time * 47) * rk * 0.12;
+      // 中を のぼる あわの つぶ(ふるほど はやく、たくさん)
+      const bub = u.bottle.userData.bubbles;
+      const lvl = clamp(b.fizz / 100, 0, 1);
+      bub.forEach((m, k) => {
+        const d = m.userData;
+        d.y += dt * d.sp * (0.15 + power * 1.2 + rk * 0.8);
+        if (d.y > 0.44) d.y -= 0.42;
+        m.visible = !b.popped && !b.burst && k < 3 + lvl * 11;
+        m.position.set(Math.cos(d.a + d.y * 6) * d.r, 0.02 + d.y, Math.sin(d.a + d.y * 6) * d.r);
+      });
       // 中の あわ(びんの 高さ 0.5 まで)。ふきこぼれたら ぜんぶ あわ
       const { foam, liquid, cap } = u.bottle.userData;
       const level = b.burst ? 1 : clamp(b.fizz / 100, 0, 1);
@@ -429,15 +452,17 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       foam.material.color.setHex(b.burst ? 0xffffff : 0xf4fbff);
       cap.visible = !b.popped && !b.burst;
       // キャラ: びんを もつ 手。ふきこぼれたら びっくり、高く とんだら にっこり
-      u.holder.position.set(x, 0, UNIT_Z);
+      u.holder.position.set(x, u.holder.position.y, UNIT_Z);
       u.holder.rotation.y = 0;
-      u.model.setFace(b.burst ? 'surprised' : rk > 0.4 ? 'surprised' : b.popped && b.height > 20 ? 'happy' : 'normal');
+      u.model.setFace(b.burst ? 'surprised' : rk > 0.4 ? 'surprised' : (b.popped && b.height > 20) || u.lift > 0.5 ? 'happy' : 'normal');
       u.model.play(b.popped && b.height > 18 && s.phase === 'show' ? 'cheer' : 'idle');
       u.model.update(dt);
+      // かまえで ちょっと せのび
+      u.holder.position.y = u.lift * 0.08 + pump * 0.5;
       const [aL, aR] = u.arms;
       if (aL && aR && !(b.popped && s.phase === 'show')) {
-        aL.rotation.x = aR.rotation.x = -1.3 + Math.sin(u.shakeT) * amp * 3;
-        aL.rotation.z = 0.25; aR.rotation.z = -0.25;
+        aL.rotation.x = aR.rotation.x = -1.3 - u.lift * 1.6 + Math.sin(u.shakeT) * amp * 3;
+        aL.rotation.z = 0.25 - u.lift * 0.1; aR.rotation.z = -0.25 + u.lift * 0.1;
       }
       if (u.marker) u.marker.position.set(0, 2.05 * u.size + Math.sin(time * 5) * 0.06, 0);
       // とんで いく ふた: すうっと 上へ、てっぺんで ふわっと とまる
@@ -476,6 +501,20 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     game.camY += (target - game.camY) * Math.min(1, dt * 3);
     camPos.set(portrait ? 0.3 : 0, (portrait ? 2.1 : 1.9) + game.camY, portrait ? 8.6 : 5.6);
     camLook.set(portrait ? 0.3 : 0, 1.0 + game.camY * 1.02, -0.4);
+    // ふる あいだは 自分の びんを アップ(ポンしたら ひく)
+    const mb = s.bottles[0], mu = game.units[0];
+    const close = s.phase === 'shake' && !mb.popped && !mb.burst ? 1 : s.phase === 'shake' && (mb.popped || mb.burst) && s.t - (mb.popAt ?? s.t) < 0.25 ? 1 : 0;
+    game.zoom = (game.zoom ?? 0) + (close - (game.zoom ?? 0)) * Math.min(1, dt * (close ? 3.5 : 2.5));
+    if (game.zoom > 0.001) {
+      const bp = mu.bottle.position;
+      const z = game.zoom * game.zoom * (3 - 2 * game.zoom);
+      const cx = bp.x + 0.28, cy = mu.handY + 0.5, cz = bp.z + (portrait ? 1.55 : 1.25);
+      camPos.set(camPos.x + (cx - camPos.x) * z, camPos.y + (cy - camPos.y) * z, camPos.z + (cz - camPos.z) * z);
+      camLook.set(camLook.x + (bp.x - camLook.x) * z, camLook.y + (mu.handY + 0.32 - camLook.y) * z, camLook.z + (bp.z - camLook.z) * z);
+      // がたがたで 画面も ふるえる
+      const rk = s.phase === 'shake' && !mb.popped && !mb.burst ? rattleK(s, mb) : 0;
+      if (rk > 0) { camPos.x += (Math.random() - 0.5) * rk * 0.05 * z; camPos.y += (Math.random() - 0.5) * rk * 0.05 * z; }
+    }
     // ふたを おう ときは すこし ひいて、竹ざおの 目もりも 入れる
     if (s.phase === 'show' && game.camY > 1) { const k = Math.min(1, game.camY / 6); camPos.z += k * 3; camPos.x += k * 1.2; camLook.x += k * 1.2; }
     camera.fov = portrait ? 56 : 46;

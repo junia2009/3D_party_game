@@ -106,6 +106,7 @@ export function step(s, inputs) {
       b.rattle = rattle;
       if (b.fizz > L) {
         b.burst = true;
+        b.popAt = s.t; // おわった 時(見た目で つかう)
         b.height = 0;
         b.heights.push(0);
         ev.push({ type: 'burst', slot });
