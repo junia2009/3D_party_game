@@ -69,6 +69,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
   const sfx = {
     fizz(k) { noise({ len: 0.12, gain: 0.02 + k * 0.03, freq: [4000, 7000], type: 'highpass', q: 0.5 }); },
     rattle() { noise({ len: 0.06, gain: 0.06, freq: [900, 1400], q: 4 }); },
+    drumroll() { for (let k = 0; k < 14; k++) noise({ len: 0.08, gain: 0.05 + k * 0.004, freq: [180, 90], type: 'lowpass', at: k * 0.07 }); },
     clink() { voice({ type: 'triangle', pts: [[0, 2400 + Math.random() * 600]], len: 0.05, gain: 0.03 }); },
     pop() { voice({ pts: [[0, 180], [0.05, 900]], len: 0.12, gain: 0.14 }); noise({ len: 0.25, gain: 0.1, freq: [6000, 2000], type: 'highpass' }); },
     burst() { noise({ len: 0.9, gain: 0.16, freq: [3000, 500], q: 0.6, attack: 0.02 }); voice({ type: 'square', pts: [[0, 400], [0.5, 150]], len: 0.55, gain: 0.04 }); },
@@ -369,8 +370,12 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     const s = game.state;
     for (const e of events) {
       switch (e.type) {
-        case 'round':
-          splash(`${e.round + 1}かいめ`, e.round === RULES.rounds - 1 ? 'gold' : '');
+        case 'round': {
+          const last = e.round === RULES.rounds - 1;
+          splash(last ? 'さいごの 1本!' : `${e.round + 1}かいめ`, last ? 'gold' : '');
+          // さいごの 回は 金の ラムネ(たいこの ドロドロ)
+          for (const u of game.units) u.bottle.userData.glass.color.setHex(last ? 0xffd86a : 0x7ad8e8);
+          if (last) sfx.drumroll();
           // かまえ: びんを もちあげて「よーし!」
           setTimeout(() => {
             if (game?.state !== s || s.phase !== 'prep') return;
@@ -378,6 +383,8 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
             pop('よーし!', u0.holder.position.clone().add(new THREE.Vector3(0, u0.headY + 0.7, 0)), 'gold', 700);
           }, 800);
           sfx.ready();
+          break;
+        }
           for (const u of game.units) { u.capFly.visible = false; u.flyH = 0; u.burst = 0; }
           game.showFrom = null;
           break;
@@ -415,13 +422,45 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
           else if ((game.zoom ?? 0) > 0.5) toast(e.slot, 'ふきこぼれ!');
           break;
         }
-        case 'show':
+        case 'show': {
           game.showFrom = s.t;
+          // この回の 1ばんを 発表(ふたが てっぺんに ついた ころ)
+          const hs = e.heights;
+          const top = Math.max(...hs);
+          const who = hs.indexOf(top);
+          const me = s.bottles[0];
+          const best = me.height > 0 && me.height >= me.best && s.round > 0 && me.heights.slice(0, -1).every((h) => h < me.height);
+          setTimeout(() => {
+            if (game?.state !== s) return;
+            if (top > 0) {
+              const name = who === 0 ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[who].character)?.name;
+              splash(`この回 1ばん ${name} ${top}m!`, who === 0 ? 'gold small' : 'small');
+              if (who === 0) sfx.fanfare();
+            }
+            if (best && who !== 0) setTimeout(() => game?.state === s && splash(`じこベスト ${me.height}m!`, 'gold small'), 1000);
+          }, 1500);
           break;
+        }
         case 'finished': {
-          game.endTimer = 4;
+          game.endTimer = 5.5;
           const win = e.winner === 0;
           if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
+          // フィナーレ: 夜空に 大きな 花火を つぎつぎ。勝った 子に 王冠
+          game.finale = 0;
+          const w = game.units[e.winner];
+          const crown = new THREE.Group();
+          const gold = new THREE.MeshToonMaterial({ color: 0xffcf3a, emissive: 0x5a3a00 });
+          const band = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.13, 12, 1, true), gold);
+          band.material.side = THREE.DoubleSide;
+          crown.add(band);
+          for (let k = 0; k < 5; k++) {
+            const sp = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.15, 4), gold);
+            sp.position.set(Math.cos((k / 5) * 6.28) * 0.22, 0.13, Math.sin((k / 5) * 6.28) * 0.22);
+            crown.add(sp);
+          }
+          crown.position.set(0, w.headY + 0.25, 0);
+          w.holder.add(crown);
+          w.crown = crown;
           break;
         }
       }
@@ -527,7 +566,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       u.holder.position.set(x, u.holder.position.y, UNIT_Z);
       u.holder.rotation.y = 0;
       u.model.setFace(b.burst ? 'surprised' : rk > 0.4 ? 'surprised' : (b.popped && b.height > 20) || u.lift > 0.5 ? 'happy' : 'normal');
-      u.model.play(b.popped && b.height > 18 && s.phase === 'show' ? 'cheer' : 'idle');
+      u.model.play(u.crown || (b.popped && b.height > 18 && s.phase === 'show') ? 'cheer' : 'idle');
       u.model.update(dt);
       // かまえで ちょっと せのび
       u.holder.position.y = u.lift * 0.08 + pump * 0.5;
@@ -555,6 +594,22 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       }
     });
     stage.update(time);
+    if (s.phase === 'finished' && game.finale !== undefined) {
+      game.finale -= dt;
+      if (game.finale <= 0) {
+        game.finale = 0.35 + Math.random() * 0.25;
+        const cols = [0xff6a9a, 0xffd24a, 0x7ad8ff, 0xb48cff, 0x8ad04a, 0xff8a3a];
+        firework(new THREE.Vector3((Math.random() - 0.5) * 7, 4.5 + Math.random() * 3, -2 - Math.random() * 3), cols[Math.floor(Math.random() * cols.length)]);
+        sfx.boom();
+      }
+    }
+    for (const [i, u] of game.units.entries()) {
+      if (!u.crown) continue;
+      u.crown.rotation.y = time * 2;
+      u.crown.position.y = u.headY + 0.25 + Math.sin(time * 4) * 0.05;
+      u.holder.position.y = Math.abs(Math.sin(time * 6 + i)) * 0.25;
+      u.model.setFace('happy');
+    }
   }
 
   let freeCamera = false;
@@ -589,6 +644,15 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     }
     // ふたを おう ときは すこし ひいて、竹ざおの 目もりも 入れる
     if (s.phase === 'show' && game.camY > 1) { const k = Math.min(1, game.camY / 6); camPos.z += k * 3; camPos.x += k * 1.2; camLook.x += k * 1.2; }
+    // 決着: 勝った 子へ ゆっくり 寄って、うしろの 夜空の 花火も 入れる
+    game.winCam = s.phase === 'finished' ? Math.min(1, (game.winCam ?? 0) + dt * 0.8) : 0;
+    if (game.winCam > 0 && s.winner !== null) {
+      const wu = game.units[s.winner];
+      const z = game.winCam * game.winCam * (3 - 2 * game.winCam);
+      const wx = wu.holder.position.x;
+      camPos.lerp(new THREE.Vector3(wx, 1.5, portrait ? 5.4 : 4.0), z);
+      camLook.lerp(new THREE.Vector3(wx, wu.headY + 1.1, -1.5), z);
+    }
     camera.fov = portrait ? 56 : 46;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();

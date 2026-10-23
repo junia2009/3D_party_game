@@ -477,6 +477,6 @@ export function ramuneBottle(withFoam = true) {
       drops.push(d);
     }
   }
-  g.userData = { cap, foam, liquid, bubbles, marble, drops };
+  g.userData = { cap, foam, liquid, bubbles, marble, drops, glass };
   return g;
 }
