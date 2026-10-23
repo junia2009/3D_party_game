@@ -20,7 +20,6 @@ const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const SLOTS = 5;
 const params = new URLSearchParams(location.search);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const BOTTLE_Y = 0.62; // もった びんの 高さ(おなかの 前)
 const UNIT_Z = 0.55; // キャラは カウンターの 前(お客さん)に 立つ
 
 export async function createRamune({ renderer, settings, getAudio, onExit }) {
@@ -139,7 +138,8 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       holder.position.set(SEAT_X(slot), 0, UNIT_Z);
       // 自分の びんは すこし 大きく
       const bottle = ramuneBottle(true);
-      bottle.scale.setScalar(slot === 0 ? 1.3 : 1.1);
+      const BS = slot === 0 ? 0.95 : 0.85;
+      bottle.scale.setScalar(BS);
       scene.add(holder, bottle);
       // とんで いく ふた(と すじ)
       const capFly = new THREE.Group();
@@ -149,7 +149,12 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       capFly.visible = false;
       scene.add(capFly);
       const def = CHARACTERS.find((c) => c.key === p.character);
-      return { model, holder, bottle, capFly, size: def?.size || 1, arms: [model.node('arm_L'), model.node('arm_R')], shakeT: 0, lift: 0 };
+      // 体の 大きさを はかって、びんを おなかの 前(体に めりこまない ところ)に もつ
+      holder.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(model.root);
+      const front = box.max.z + 0.13 * BS + 0.03; // 体の いちばん 前 + びんの 太さ + すきま
+      const handY = box.min.y + (box.max.y - box.min.y) * 0.32; // おなかの 高さ(びんの そこ)
+      return { model, holder, bottle, capFly, size: def?.size || 1, arms: [model.node('arm_L'), model.node('arm_R')], shakeT: 0, lift: 0, front, handY, bs: BS };
     }));
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
@@ -412,7 +417,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       const amp = power * 0.16;
       const rk = active ? rattleK(s, b) : 0;
       // びん: 手の 前で 上下に ふる。がたがたは こまかく ふるえる
-      u.bottle.position.set(x + Math.sin(time * 60) * rk * 0.03, BOTTLE_Y + Math.sin(u.shakeT) * amp, UNIT_Z + 0.42);
+      u.bottle.position.set(x + Math.sin(time * 60) * rk * 0.03, u.handY + Math.sin(u.shakeT) * amp, UNIT_Z + u.front);
       u.bottle.rotation.z = Math.sin(u.shakeT * 0.5) * amp * 1.5 + Math.sin(time * 47) * rk * 0.12;
       // 中の あわ(びんの 高さ 0.5 まで)。ふきこぼれたら ぜんぶ あわ
       const { foam, liquid, cap } = u.bottle.userData;
@@ -439,7 +444,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       if (u.capFly.visible && u.flyFrom !== undefined) {
         const tt = Math.min(1, (s.t - u.flyFrom) / 1.4);
         const e = 1 - (1 - tt) ** 3;
-        u.capFly.position.set(x, BOTTLE_Y + 0.9 + u.flyH * e, UNIT_Z + 0.42);
+        u.capFly.position.set(x, u.handY + 0.75 * u.bs + u.flyH * e, UNIT_Z + u.front);
         u.capFly.rotation.x += dt * 14 * (1 - tt);
         if (tt >= 1 && !u.peak) {
           u.peak = true;
@@ -465,7 +470,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     // ふつう: 屋台の 正面。ふたが とぶ ときは 上へ ついていく(いちばん 高い ふたまで)
     let target = 0;
     if (s.phase === 'show' && game.showFrom !== null) {
-      const top = Math.max(...game.units.map((u) => (u.capFly.visible ? u.capFly.position.y - BOTTLE_Y : 0)));
+      const top = Math.max(...game.units.map((u) => (u.capFly.visible ? u.capFly.position.y - u.handY : 0)));
       target = Math.max(0, top - 2);
     }
     game.camY += (target - game.camY) * Math.min(1, dt * 3);
