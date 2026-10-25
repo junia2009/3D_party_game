@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { makePlayers } from '../lineup.js';
 import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
-import { createModel, preload } from '../../runtime/models.js';
+import { createModel, preload, toonGradient } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, bandOf, chanceNow, createGame, ranking, spinLeft, step } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
@@ -22,6 +22,7 @@ const params = new URLSearchParams(location.search);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const GAUGE_MAX = 4; // はやさの メーターの いちばん 右(回/秒)
 const BOWL_Y = TABLE_Y + 0.16; // わたあめが できはじめる 高さ(ボウルの 中)
+const STRAND_N = 14; // 糸 1本の 点の 数
 
 export async function createWataame({ renderer, settings, getAudio, onExit }) {
   const scene = new THREE.Scene();
@@ -101,6 +102,32 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
     const dir = m.position.clone().sub(from).normalize();
     fx.push({ obj: m, t: 0, life: 1.2, vel: dir.multiplyScalar(1.4 + Math.random()).add(new THREE.Vector3(0, 0.8, 0)), kind: 'puff', spin: Math.random() - 0.5 });
   }
+  // ざらめ: 色の つぶが 上から さらさら ふりかかる
+  function sugarRain(at, color, n = 40) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.012 + Math.random() * 0.01), new THREE.MeshBasicMaterial({ color: i % 5 ? color : 0xffffff, transparent: true }));
+      const a = Math.random() * 6.28, rr = Math.random() * 0.12;
+      m.position.set(at.x + Math.cos(a) * rr, at.y + 0.5 + Math.random() * 0.5, at.z + Math.sin(a) * rr);
+      scene.add(m);
+      fx.push({ obj: m, t: -Math.random() * 0.25, life: 0.7, vel: new THREE.Vector3(0, -1.6 - Math.random(), 0), kind: 'sugar' });
+    }
+  }
+  // ちぎれた ときの 糸くず(白い みじかい すじが はじける)
+  function snap(at, n = 14) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.12 + Math.random() * 0.1, 3), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }));
+      m.position.copy(at);
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).normalize().multiplyScalar(1.5 + Math.random() * 1.5);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.clone().normalize());
+      scene.add(m);
+      fx.push({ obj: m, t: 0, life: 0.5, vel: v, kind: 'drop' });
+    }
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.085, 24), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+    ring.position.copy(at);
+    ring.lookAt(camera.position);
+    scene.add(ring);
+    fx.push({ obj: ring, t: 0, life: 0.4, vel: new THREE.Vector3(), kind: 'ring' });
+  }
   function confetti(at, n = 40) {
     const cols = [0xff6a9a, 0xffd24a, 0x7ad8ff, 0x8ad04a, 0xff8a3a];
     for (let i = 0; i < n; i++) {
@@ -116,8 +143,12 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       const f = fx[i];
       f.t += dt;
       const k = f.t / f.life;
-      f.obj.position.addScaledVector(f.vel, dt);
+      if (f.t >= 0) f.obj.position.addScaledVector(f.vel, dt);
+      if (f.t < 0) { f.obj.visible = false; continue; }
+      f.obj.visible = true;
       if (f.kind === 'drop') f.vel.y -= 6 * dt;
+      if (f.kind === 'sugar') { f.vel.y -= 4 * dt; f.obj.rotation.x += dt * 8; }
+      if (f.kind === 'ring') f.obj.scale.setScalar(1 + k * 3);
       if (f.kind === 'puff') { f.vel.multiplyScalar(1 - dt * 1.5); f.vel.y -= 0.6 * dt; f.obj.rotation.y += f.spin * dt * 4; f.obj.scale.multiplyScalar(1 + dt * 0.3); }
       if (f.kind === 'paper') { f.vel.multiplyScalar(1 - dt * 1.2); f.vel.y -= 4 * dt; f.obj.rotation.x += f.spin * dt; f.obj.rotation.y += f.spin * 0.7 * dt; }
       f.obj.material.opacity = 1 - k * k;
@@ -137,7 +168,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
   async function startGame({ fromSky = false } = {}) {
     const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
     const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
-    if (game) for (const u of game.units) scene.remove(u.holder, u.candy);
+    if (game) for (const u of game.units) scene.remove(u.holder, u.candy, u.stick, ...u.strands);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
     const units = await Promise.all(players.map(async (p, slot) => {
@@ -153,7 +184,20 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       const def = CHARACTERS.find((c) => c.key === p.character);
       holder.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(model.root);
-      return { model, holder, candy, size: def?.size || 1, arms: [model.node('arm_L'), model.node('arm_R')], headY: box.max.y, ang: Math.random() * 6, shown: 0, strainT: 0 };
+      const arms = [model.node('arm_L'), model.node('arm_R')];
+      // わりばし(わたあめから 手まで。毎フレーム のばす)と、ボウルから まきつく 糸
+      candy.userData.stick.visible = false;
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1, 6), new THREE.MeshToonMaterial({ color: 0xf0dcb0, gradientMap: toonGradient }));
+      const strands = Array.from({ length: slot === 0 ? 5 : 3 }, (_, k) => {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(STRAND_N * 3), 3));
+        const l = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffe0f0, transparent: true, opacity: 0, depthWrite: false }));
+        l.frustumCulled = false;
+        l.userData.ph = k / 5 * Math.PI * 2;
+        return l;
+      });
+      scene.add(stick, ...strands);
+      return { model, holder, candy, stick, strands, size: def?.size || 1, arms, tips: arms.map(armTip), headY: box.max.y, front: box.max.z, midY: box.min.y + (box.max.y - box.min.y) * 0.42, ang: Math.random() * 6, shown: 0, strainT: 0 };
     }));
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
@@ -349,6 +393,32 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
     }
   }
   const tmpV = new THREE.Vector3();
+  // 腕の ノードの 中で、つけねから いちばん とおい ところ(手の 先)を 腕の 座標で
+  function armTip(arm) {
+    if (!arm) return null;
+    arm.updateMatrixWorld(true);
+    const inv = arm.matrixWorld.clone().invert();
+    let best = null, bd = -1;
+    const v = new THREE.Vector3();
+    arm.traverse((o) => {
+      if (!o.isMesh) return;
+      const p = o.geometry.attributes.position;
+      for (let i = 0; i < p.count; i += 3) {
+        v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv);
+        const d = v.lengthSq();
+        if (d > bd) { bd = d; best = v.clone(); }
+      }
+    });
+    return best ? best.multiplyScalar(0.85) : null; // 先から すこし もどった ところで にぎる
+  }
+  // 2点の あいだに わりばしを わたす
+  const UP = new THREE.Vector3(0, 1, 0);
+  function stretch(mesh, a, b) {
+    mesh.position.copy(a).add(b).multiplyScalar(0.5);
+    const d = tmpV.copy(b).sub(a);
+    mesh.scale.set(1, d.length(), 1);
+    mesh.quaternion.setFromUnitVectors(UP, d.normalize());
+  }
   function pop(text, at, cls = '', life = 900) {
     tmpV.copy(at).project(camera);
     const el = document.createElement('div');
@@ -383,7 +453,8 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
           if (good) {
             u.candy.userData.setColor(e.i + 1);
             u.colorUntil = s.units[e.slot].size + 5; // 色の しまは すこしの あいだ だけ(また ピンクに もどる)
-            sprinkle(u.candy.position.clone().add(new THREE.Vector3(0, 0.1, 0)), WOOL_COLORS[e.i + 1], e.slot === 0 ? 30 : 12);
+            sugarRain(u.candy.position, WOOL_COLORS[e.i + 1], e.slot === 0 ? (e.q === 'perfect' ? 70 : 40) : 16);
+            u.flash = 1; // わたあめが ぱっと 光って ふくらむ
             stage.machines[e.slot].userData.glow.material.color.setHex(WOOL_COLORS[e.i + 1]);
           }
           if (e.slot === 0) {
@@ -396,6 +467,8 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
           const u = game.units[e.slot];
           const from = u.candy.position.clone();
           for (const m of u.candy.userData.tear(s.units[e.slot].size)) flyPuff(m, from);
+          snap(from.clone().add(new THREE.Vector3(0, u.candy.userData.r * 0.6, 0)), e.slot === 0 ? 18 : 8);
+          sprinkle(from, 0xffffff, e.slot === 0 ? 24 : 10, 1.4, 1.2);
           u.candy.userData.setSize(s.units[e.slot].size);
           u.shown = s.units[e.slot].size;
           if (e.slot === 0) { sfx.tear(); game.shake = 0.35; pop(`ちぎれた! -${e.lost}cm`, woolTop(u), 'red', 1100); }
@@ -467,7 +540,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       // はり: 糸が ぴんと はると、たてに のびて ふるえる
       const st = clamp(su.strain, 0, 1);
       const wob = st > 0.3 ? Math.sin(time * 40) * st * 0.04 : 0;
-      u.candy.userData.wool.scale.set(1 - st * 0.12 + wob, 1 + st * 0.3, 1 - st * 0.12 - wob);
+      u.candy.userData.wool.scale.set(1 - st * 0.08 + wob, 1 + st * 0.15, 1 - st * 0.08 - wob);
       // 大きさは じわっと おいつく
       if (Math.abs(u.shown - su.size) > 0.05) { u.shown += (su.size - u.shown) * Math.min(1, dt * 6); u.candy.userData.setSize(u.shown); }
       if (u.colorUntil && u.shown > u.colorUntil) { u.colorUntil = 0; u.candy.userData.setColor(0); }
@@ -481,17 +554,70 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       u.model.setFace(torn ? 'surprised' : u.win ? 'happy' : st > 0.5 ? 'surprised' : 'normal');
       u.model.play(u.win ? 'cheer' : 'idle');
       u.model.update(dt);
+      // 両手で わりばしを にぎって、手ごと 小さく 円を かく(体も すこし ゆれる)
       const [aL, aR] = u.arms;
+      const c = Math.cos(u.ang), sn = Math.sin(u.ang);
+      const pw = clamp(su.w / 2.5, 0, 1);
       if (aL && aR && !u.win) {
-        const c = Math.cos(u.ang), sn = Math.sin(u.ang);
-        aL.rotation.x = aR.rotation.x = -1.15 + sn * 0.12;
-        aL.rotation.z = 0.35 + c * 0.1; aR.rotation.z = -0.35 + c * 0.1;
+        aL.rotation.x = aR.rotation.x = -0.95 + sn * 0.16 * pw - (torn ? 0.5 : 0);
+        aL.rotation.z = -0.5 + c * 0.12 * pw; aR.rotation.z = 0.5 + c * 0.12 * pw; // 手を まえで あわせる
       }
       u.holder.position.y = u.win ? Math.abs(Math.sin(time * 6 + slot)) * 0.25 : 0;
+      u.holder.rotation.z = u.win ? 0 : c * 0.04 * pw;
+      u.holder.rotation.x = u.win ? 0 : 0.06 + sn * 0.03 * pw; // すこし まえかがみ
+      u.holder.updateMatrixWorld(true);
+      // わりばし: わたあめの しんから 両手の まんなかへ
+      const hand = new THREE.Vector3();
+      if (!u.win && u.tips[0] && u.tips[1]) {
+        hand.copy(u.tips[0]).applyMatrix4(aL.matrixWorld).add(tmpV.copy(u.tips[1]).applyMatrix4(aR.matrixWorld)).multiplyScalar(0.5);
+      } else hand.set(x, u.midY + 0.3, u.front + 0.1);
+      const top = hand.clone().add(new THREE.Vector3(0, -0.02, 0.1)); // 手の まえ(口に ささらない ように)
+      stretch(u.stick, u.candy.position, top);
+      u.stick.visible = !u.win;
+      // 糸: ボウルの ふちから ぐるっと うずを まいて わたあめへ。はりが あると ぴんと まっすぐ、赤く 光る
+      const gain = spinning && su.stun <= 0 ? clamp(su.w / 1.2, 0, 1) : 0;
+      u.strands.forEach((l, k) => {
+        const pa = l.geometry.attributes.position;
+        const a0 = -time * (6 + su.w * 2) + l.userData.ph;
+        const rim = 0.33;
+        const curl = (1 - st) * 2.2 + 0.3;
+        for (let i = 0; i < STRAND_N; i++) {
+          const f = i / (STRAND_N - 1);
+          const rr = rim + (r * 0.8 - rim) * f;
+          const aa = a0 + f * curl;
+          const yy = TABLE_Y + 0.12 + (u.candy.position.y - TABLE_Y - 0.12) * f + Math.sin(f * Math.PI) * 0.05 * (1 - st);
+          const cx = x + (u.candy.position.x - x) * f, cz = TABLE_Z + (u.candy.position.z - TABLE_Z) * f;
+          pa.setXYZ(i, cx + Math.cos(aa) * rr, yy, cz + Math.sin(aa) * rr * 0.9);
+        }
+        pa.needsUpdate = true;
+        l.material.opacity = gain * (0.35 + 0.5 * Math.abs(Math.sin(time * 9 + k)));
+        l.material.color.setHex(st > 0.5 ? (Math.sin(time * 30) > 0 ? 0xff3a2a : 0xffffff) : 0xffd0e8);
+      });
+      if (u.flash > 0) {
+        u.flash = Math.max(0, u.flash - dt * 2.2);
+        u.candy.userData.wool.scale.multiplyScalar(1 + Math.sin(u.flash * Math.PI) * 0.12);
+      }
+      // はりが つよいと、わたあめも 赤っぽく 光る
+      u.candy.userData.wool.children.forEach((m) => { if (m.material.emissive) m.material.emissiveIntensity = 0.35 + (u.flash || 0) * 0.8 + (st > 0.5 ? Math.abs(Math.sin(time * 20)) * st * 0.5 : 0); });
       if (u.marker) u.marker.position.set(0, u.headY + 0.35 + Math.sin(time * 5) * 0.06, 0);
     });
+    // ざらめ チャンス: 自分の ボウルの まわりの わが ちぢんで、ふちに かさなった ときが ぴったり(ボタンの わと おなじ)
+    const ch = chanceNow(s);
+    const open = ch.i >= 0 && s.units[0].zarame[ch.i] === undefined;
+    chanceRing.visible = open;
+    if (open) {
+      const k = clamp(ch.left / RULES.ring, 0, 1);
+      chanceRing.position.set(SEAT_X(0), TABLE_Y + 0.21, TABLE_Z);
+      chanceRing.scale.setScalar(1 + k * 2.2);
+      chanceRing.material.color.setHex(Math.abs(ch.left) <= RULES.perfect ? 0xffe066 : WOOL_COLORS[ch.i + 1]);
+      chanceRing.material.opacity = 0.5 + (1 - k) * 0.5;
+      stage.machines[0].userData.glow.material.color.setHex(WOOL_COLORS[ch.i + 1]);
+    }
     stage.update(time);
   }
+  const chanceRing = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.42, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  chanceRing.visible = false;
+  scene.add(chanceRing);
 
   let freeCamera = false;
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
@@ -512,8 +638,8 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       const r = mu.candy.userData.r || 0.05;
       const z = game.zoom * game.zoom * (3 - 2 * game.zoom);
       // ななめ上から ボウルを のぞきこむ(顔は おくに 入る)
-      camPos.lerp(new THREE.Vector3(bx + 0.2, BOWL_Y + 1.35 + r * 1.4, TABLE_Z + (portrait ? 1.9 : 1.5) + r * 2.2), z);
-      camLook.lerp(new THREE.Vector3(bx, BOWL_Y + r * 0.5 + 0.1, TABLE_Z - 0.15), z);
+      camPos.lerp(new THREE.Vector3(bx + 0.35, BOWL_Y + 1.5 + r * 1.2, TABLE_Z + (portrait ? 2.3 : 1.8) + r * 2), z);
+      camLook.lerp(new THREE.Vector3(bx, BOWL_Y + r * 0.6 + 0.25, TABLE_Z - 0.1), z);
     }
     // 決着: 勝った 子へ 寄る
     game.winCam = s.phase === 'finished' ? Math.min(1, (game.winCam ?? 0) + dt * 0.8) : 0;

@@ -66,7 +66,7 @@ function stump(r, h, top = true) {
 export function woolMachine() {
   const g = new THREE.Group();
   g.add(stump(0.42, TABLE_Y));
-  const metal = new THREE.MeshToonMaterial({ color: 0xd8dde4, gradientMap: toonGradient, side: THREE.DoubleSide });
+  const metal = new THREE.MeshToonMaterial({ color: 0x9aa4b2, gradientMap: toonGradient, side: THREE.DoubleSide });
   const pts = [];
   for (let k = 0; k <= 8; k++) { const t = k / 8; pts.push(new THREE.Vector2(0.12 + t * 0.24 + Math.sin(t * 3) * 0.02, t * 0.2)); }
   const bowl = new THREE.Mesh(new THREE.LatheGeometry(pts, 24), metal);
@@ -90,7 +90,7 @@ export function woolMachine() {
   // ボウルの 中を 回る 糸(ふわふわの すじ)
   const threads = [];
   for (let k = 0; k < 3; k++) {
-    const m = new THREE.Mesh(new THREE.TorusGeometry(0.2 + k * 0.05, 0.006, 3, 24, Math.PI * 1.2).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }));
+    const m = new THREE.Mesh(new THREE.TorusGeometry(0.2 + k * 0.05, 0.006, 3, 24, Math.PI * 1.2).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffd8ea, transparent: true, opacity: 0.6, depthWrite: false }));
     m.position.y = TABLE_Y + 0.08 + k * 0.03;
     m.userData.noMerge = true;
     threads.push(m);
@@ -120,9 +120,10 @@ const puffGeo = (() => {
   g.computeVertexNormals();
   return g;
 })();
-const woolMats = WOOL_COLORS.map((c) => new THREE.MeshToonMaterial({ color: c, gradientMap: toonGradient, emissive: c, emissiveIntensity: 0.35 }));
+const WOOL_SRC = WOOL_COLORS.map((c) => new THREE.MeshToonMaterial({ color: c, gradientMap: toonGradient, emissive: c, emissiveIntensity: 0.35 }));
 export function cottonCandy() {
   const g = new THREE.Group();
+  const woolMats = WOOL_SRC.map((m) => m.clone()); // わたあめごとに 素材を もつ(はりで 光らせる ため)
   const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.5, 6), toonMaterial(0xf0dcb0));
   stick.position.y = 0.22; // わたあめから 上へ(手で もつ ところ)
   g.add(stick);
