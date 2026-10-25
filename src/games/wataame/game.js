@@ -452,7 +452,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
           const good = e.q === 'perfect' || e.q === 'good';
           if (good) {
             u.candy.userData.setColor(e.i + 1);
-            u.colorUntil = s.units[e.slot].size + 5; // 色の しまは すこしの あいだ だけ(また ピンクに もどる)
+            u.colorUntil = s.units[e.slot].size + 3.5; // 色の しまは すこしの あいだ だけ(また ピンクに もどる)
             sugarRain(u.candy.position, WOOL_COLORS[e.i + 1], e.slot === 0 ? (e.q === 'perfect' ? 70 : 40) : 16);
             u.flash = 1; // わたあめが ぱっと 光って ふくらむ
             stage.machines[e.slot].userData.glow.material.color.setHex(WOOL_COLORS[e.i + 1]);
@@ -485,12 +485,26 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
           break;
         }
         case 'finished': {
-          game.endTimer = 4;
+          game.endTimer = 5;
           const win = e.winner === 0;
           if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
           const w = game.units[e.winner];
           confetti(new THREE.Vector3(w.holder.position.x, 2.6, 0.4), 60);
           w.win = true;
+          game.finale = 0.4;
+          const crown = new THREE.Group();
+          const gold = new THREE.MeshToonMaterial({ color: 0xffcf3a, emissive: 0x5a3a00, gradientMap: toonGradient });
+          const band = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 12, 1, true), gold);
+          band.material.side = THREE.DoubleSide;
+          crown.add(band);
+          for (let k = 0; k < 5; k++) {
+            const sp = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.14, 4), gold);
+            sp.position.set(Math.cos((k / 5) * 6.28) * 0.2, 0.12, Math.sin((k / 5) * 6.28) * 0.2);
+            crown.add(sp);
+          }
+          crown.position.set(0, w.headY + 0.05, 0);
+          w.holder.add(crown);
+          w.crown = crown;
           break;
         }
       }
@@ -558,22 +572,31 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       const [aL, aR] = u.arms;
       const c = Math.cos(u.ang), sn = Math.sin(u.ang);
       const pw = clamp(su.w / 2.5, 0, 1);
-      if (aL && aR && !u.win) {
-        aL.rotation.x = aR.rotation.x = -0.95 + sn * 0.16 * pw - (torn ? 0.5 : 0);
-        aL.rotation.z = -0.5 + c * 0.12 * pw; aR.rotation.z = 0.5 + c * 0.12 * pw; // 手を まえで あわせる
+      // 「そこまで!」の あとは わたあめを 高く かかげて 見せあう
+      const done = s.phase === 'show' || s.phase === 'finished';
+      u.raise = (u.raise || 0) + ((done ? 1 : 0) - (u.raise || 0)) * Math.min(1, dt * 4);
+      const rs = u.raise * u.raise * (3 - 2 * u.raise);
+      if (aL && aR) {
+        aL.rotation.x = aR.rotation.x = (-0.95 + sn * 0.16 * pw - (torn ? 0.5 : 0)) * (1 - rs) + (-2.75 + (u.win ? Math.sin(time * 8) * 0.15 : 0)) * rs;
+        aL.rotation.z = (-0.5 + c * 0.12 * pw) * (1 - rs) - 0.25 * rs; aR.rotation.z = (0.5 + c * 0.12 * pw) * (1 - rs) + 0.25 * rs; // 手を まえで あわせる
       }
       u.holder.position.y = u.win ? Math.abs(Math.sin(time * 6 + slot)) * 0.25 : 0;
-      u.holder.rotation.z = u.win ? 0 : c * 0.04 * pw;
-      u.holder.rotation.x = u.win ? 0 : 0.06 + sn * 0.03 * pw; // すこし まえかがみ
+      u.holder.rotation.z = c * 0.04 * pw * (1 - rs);
+      u.holder.rotation.x = (0.06 + sn * 0.03 * pw) * (1 - rs); // すこし まえかがみ
       u.holder.updateMatrixWorld(true);
       // わりばし: わたあめの しんから 両手の まんなかへ
       const hand = new THREE.Vector3();
-      if (!u.win && u.tips[0] && u.tips[1]) {
+      if (u.tips[0] && u.tips[1]) {
         hand.copy(u.tips[0]).applyMatrix4(aL.matrixWorld).add(tmpV.copy(u.tips[1]).applyMatrix4(aR.matrixWorld)).multiplyScalar(0.5);
       } else hand.set(x, u.midY + 0.3, u.front + 0.1);
-      const top = hand.clone().add(new THREE.Vector3(0, -0.02, 0.1)); // 手の まえ(口に ささらない ように)
-      stretch(u.stick, u.candy.position, top);
-      u.stick.visible = !u.win;
+      const top = hand.clone().add(new THREE.Vector3(0, -0.02, 0.1 * (1 - rs))); // 手の まえ(口に ささらない ように)
+      if (rs > 0.001) {
+        // かかげる: わたあめは 手の 上
+        const up = new THREE.Vector3(top.x, u.holder.position.y + u.headY + r + 0.12, top.z + 0.05); // 頭の 上(顔に かからない)
+        u.candy.position.lerp(up, rs);
+        u.candy.rotation.y += dt * 1.5;
+      }
+      stretch(u.stick, u.candy.position, rs > 0.5 ? top.clone().add(new THREE.Vector3(0, -0.12, 0)) : top);
       // 糸: ボウルの ふちから ぐるっと うずを まいて わたあめへ。はりが あると ぴんと まっすぐ、赤く 光る
       const gain = spinning && su.stun <= 0 ? clamp(su.w / 1.2, 0, 1) : 0;
       u.strands.forEach((l, k) => {
@@ -601,6 +624,29 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       u.candy.userData.wool.children.forEach((m) => { if (m.material.emissive) m.material.emissiveIntensity = 0.35 + (u.flash || 0) * 0.8 + (st > 0.5 ? Math.abs(Math.sin(time * 20)) * st * 0.5 : 0); });
       if (u.marker) u.marker.position.set(0, u.headY + 0.35 + Math.sin(time * 5) * 0.06, 0);
     });
+    // いちばんの しるし(回して いる あいだと 見せあう とき)
+    const lead = ranking(s)[0];
+    const lu = game.units[lead];
+    leadStar.visible = (s.phase === 'spin' || s.phase === 'show') && s.units[lead].size > 3;
+    if (leadStar.visible) {
+      leadStar.position.copy(lu.candy.position).add(new THREE.Vector3(0, (lu.candy.userData.r || 0.05) + 0.2 + Math.sin(time * 4) * 0.04, 0));
+      leadStar.material.rotation = Math.sin(time * 2) * 0.3;
+    }
+    // 自分が 1ばんに なった
+    if (s.phase === 'spin' && lead !== game.lastLead) {
+      if (lead === 0 && game.lastLead !== undefined && time - (game.topAt || -9) > 3) { game.topAt = time; pop('トップ!', woolTop(game.units[0]), 'gold', 900); sfx.chance(); }
+      game.lastLead = lead;
+    }
+    // 決着: 紙ふぶきを つづけて
+    if (s.phase === 'finished' && game.finale !== undefined) {
+      game.finale -= dt;
+      if (game.finale <= 0) {
+        game.finale = 0.5;
+        const wx = game.units[s.winner].holder.position.x;
+        confetti(new THREE.Vector3(wx + (Math.random() - 0.5) * 2, 3.2, 0.2), 24);
+      }
+    }
+    for (const u of game.units) if (u.crown) { u.crown.rotation.y = time * 2; u.crown.position.y = u.headY + 0.05 + Math.sin(time * 4) * 0.03; }
     // ざらめ チャンス: 自分の ボウルの まわりの わが ちぢんで、ふちに かさなった ときが ぴったり(ボタンの わと おなじ)
     const ch = chanceNow(s);
     const open = ch.i >= 0 && s.units[0].zarame[ch.i] === undefined;
@@ -615,6 +661,23 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
     }
     stage.update(time);
   }
+  // いちばん 大きい 子の わたあめの 上に 光る 星
+  const leadStar = new THREE.Sprite(new THREE.SpriteMaterial({ map: (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.translate(32, 32);
+    g.fillStyle = '#ffd24a'; g.strokeStyle = '#fff6d0'; g.lineWidth = 4;
+    g.beginPath();
+    for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2 - Math.PI / 2, rr = k % 2 ? 12 : 28; g.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    g.closePath(); g.fill(); g.stroke();
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })(), transparent: true, depthWrite: false }));
+  leadStar.scale.setScalar(0.28);
+  leadStar.visible = false;
+  scene.add(leadStar);
   const chanceRing = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.42, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
   chanceRing.visible = false;
   scene.add(chanceRing);
@@ -711,6 +774,10 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
         onEvents(step(s, inputs));
         game.acc -= STEP;
       }
+      const left = spinLeft(s);
+      if (s.phase === 'spin' && left <= 10 && !game.spurt) { game.spurt = true; splash('ラスト 10びょう!', 'gold small'); sfx.chance(); }
+      if (s.phase === 'spin' && left <= 5 && Math.ceil(left) !== game.tick) { game.tick = Math.ceil(left); sfx.ready(); }
+      $('hudL').classList.toggle('spurt', s.phase === 'spin' && left <= 10);
       // ぶーん の 音(自分の わりばし)
       const u = s.units[0];
       whirrT -= dt;

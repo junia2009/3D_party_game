@@ -528,6 +528,8 @@
   #hudL .gauge .hub { position: absolute; left: 63px; top: 63px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 2px 0 rgba(31,42,51,.25); }
   #hudL .gauge .lbl { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font: 900 12px var(--font-body); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
   #hudL .gauge.over .needle { background: #e8402f; }
+  #hudL.spurt::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,170,60,.4); animation: eruptglow .6s ease-in-out infinite alternate; }
+  #hudL.spurt .timer { background: #e8402f; color: #fff; }
   #hudL.danger::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,90,60,.4); animation: eruptglow .3s ease-in-out infinite alternate; }
   /* ざらめ ボタン: まわりの わが ちぢんで ボタンの ふちに かさなったら おす */
   .tame.sugarbtn { background: var(--zc, #9ad8ff); color: #2a2f3a; font-size: 22px; -webkit-tap-highlight-color: transparent; user-select: none; touch-action: none; --k: 1; overflow: visible; }
