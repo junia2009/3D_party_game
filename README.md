@@ -13,6 +13,7 @@
 | `models/penne.glb` | ペンネ | ペンギン | テクニック型 |
 | `models/konko.glb` | コンコ | きつね | ラッキー型 |
 | `models/kerosuke.glb` | ケロスケ | かえる | ジャンプ型 |
+| `models/kirin.glb` | キリコ | キリン | 見とおし型 |
 
 プロフィールと見分け方は `src/characters.js` に書いてある。
 

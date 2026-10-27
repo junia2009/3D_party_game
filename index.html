@@ -199,17 +199,17 @@
   .rules li { display: flex; gap: 8px; align-items: baseline; font: 700 13px/1.45 var(--font-body); color: #5a3c22; }
   .rules li::before { content: ''; flex: none; width: 10px; height: 12px; border-radius: 50% 50% 45% 45%; background: #c27a35; box-shadow: inset 0 4px 0 #7a4f2c; transform: translateY(1px); }
   .rules b { color: var(--red); }
-  /* 6人 + ゲスト(ほかのゲームから来た なかま)を横1列に(縦長でも島が見えるように、低くおさめる)。ゲストは少しはなす */
-  .chars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding-top: 6px; padding-bottom: 6px; }
-  .chars:has(.guest) { grid-template-columns: repeat(6, 1fr) 1.05fr; }
+  /* 7人 + ゲスト(ほかのゲームから来た なかま)を 4人ずつ 2段に。ゲストは 2段目の いちばん右。
+     段の あいだは「あなた」(上)と「ゲスト」(下)の 札が 重ならない だけ あける */
+  .chars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px 6px; padding-top: 6px; padding-bottom: 6px; }
   .chars button {
     position: relative; display: grid; justify-items: center; gap: 0; padding: 2px 1px 4px; cursor: pointer; min-width: 0;
     border: 3px solid #d8bf93; border-radius: 14px; background: #fff3d9;
     transition: transform .12s cubic-bezier(.3, 1.6, .5, 1), border-color .12s, background .12s;
   }
-  .chars button .face { width: 100%; max-width: 72px; aspect-ratio: 1; border-radius: 50%; display: block; }
+  .chars button .face { width: 100%; max-width: 60px; aspect-ratio: 1; border-radius: 50%; display: block; }
   /* ゲスト(ほかのゲームから来た子): 星の飾りと「ゲスト」の札 */
-  .chars button.guest { position: relative; margin-left: 5px; background: linear-gradient(160deg, #fffbe8, #fff3c4); border-color: #e6b93a; }
+  .chars button.guest { position: relative; background: linear-gradient(160deg, #fffbe8, #fff3c4); border-color: #e6b93a; }
   /* 「ゲスト」の札は下に(上は えらんだときの「あなた」の札が出る) */
   .chars button .guest {
     position: absolute; bottom: -8px; left: 50%; translate: -50% 0; padding: 0 6px; border-radius: 999px; background: #ffb81f; color: #5a3a00;
@@ -235,8 +235,18 @@
     #play .opt h3 { display: none; }
     #play .back { min-height: 40px; }
     #play .rules li { font-size: 12px; line-height: 1.35; }
-    #play .chars button .face { max-width: 50px; }
+    #play .chars { row-gap: 11px; padding-top: 4px; padding-bottom: 2px; }
+    #play .chars button { padding: 1px 1px 2px; }
+    #play .chars button .face { max-width: 28px; }
+    #play .chars button span { font-size: 11px; line-height: 1.3; }
     #play .go { padding: 8px; font-size: 20px; }
+  }
+  /* 背の低い 縦長(小さいスマホ): キャラが 2段 なので、大会の ターンえらびまで 1画面に 収まるよう つめる */
+  @media (max-aspect-ratio: 1/1) and (max-height: 760px) {
+    #play { gap: 8px; }
+    #play .opt h3 { display: none; }
+    #play .chars { row-gap: 12px; padding-top: 8px; padding-bottom: 2px; }
+    #play .chars button .face { max-width: 40px; }
   }
 
   /* ── 葉っぱの幕(島から会場へ) ── */
@@ -1181,7 +1191,8 @@
   @media (min-aspect-ratio: 1/1) and (max-height: 560px) {
     .zukan { grid-auto-flow: column; gap: 22px; }
     .z-bar { order: -1; flex-direction: column; width: auto; }
-    .z-tabs { flex-direction: column; flex: none; }
+    /* しおりは 2列(8人 たてに ならべると 画面から はみ出す) */
+    .z-tabs { display: grid; grid-template-columns: repeat(2, auto); gap: 8px; flex: none; }
     .z-tabs button { width: clamp(30px, 9dvh, 42px); }
     .z-tabs button[aria-current="true"] { transform: translateX(5px) scale(1.12); }
     .book { width: min(calc(94vw - 110px), calc((100dvh - 44px) * 1.5)); }
@@ -1189,7 +1200,9 @@
 
   /* 縦長: 上下にひらく */
   @media (max-aspect-ratio: 1/1) {
-    .book { width: min(94vw, 520px, calc((100dvh - 150px) / 1.6)); aspect-ratio: 1 / 1.6; }
+    .book { width: min(94vw, 520px, calc((100dvh - 200px) / 1.6)); aspect-ratio: 1 / 1.6; }
+    /* しおりは 4人ずつ 2段(8人 横に ならべると 画面から はみ出す) */
+    .z-tabs { display: grid; grid-template-columns: repeat(4, auto); justify-content: center; gap: 8px clamp(8px, 3vw, 14px); }
     .book.closed { transform: translateY(-25%); }
     .book::before { inset: -12px -12px 50% -12px; border-radius: 16px 16px 0 0; }
     .book::after { inset: 50% -12px -12px -12px; border-radius: 0 0 16px 16px; }

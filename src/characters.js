@@ -399,6 +399,108 @@ export const CHARACTERS = [
       head.add(crown);
     },
   },
+  {
+    key: 'kirin',
+    name: 'キリコ',
+    species: 'キリン',
+    main: 0xf9d77c,
+    sub: 0xfff3dc,
+    dark: 0xb97a45,
+    accent: 0x8a5a36,
+    line: '上から見れば、ぜんぶ見えるよ',
+    role: '見とおし型',
+    personality: 'のんびり屋の物知り。高いところの木の実を取るのがとくい。',
+    stats: [2, 3, 4, 3],
+    marks: ['頭の上の2本のツノ', '体じゅうの茶色のまだら', '横に出た葉っぱ形の耳', '首のうしろのたてがみ'],
+    foot: 'accent', // ひづめ
+    eyeLift: 0.012,
+    mouthAt: () => onSphere(R, 0, -0.235, 0.075),
+    build(P) {
+      const { head, rig } = P;
+      // ツノ(先が丸い こぶ)
+      for (const s of [-1, 1]) {
+        const horn = new THREE.Group();
+        horn.position.copy(new V3(0.2 * s, 0.95, -0.1).normalize().multiplyScalar(R * 0.95));
+        horn.rotation.z = -0.22 * s;
+        const stalk = shape(new THREE.CylinderGeometry(0.04, 0.05, 0.16, 12), this.main, 1.25);
+        stalk.position.y = 0.08;
+        const knob = blob(this.accent, 0.065);
+        knob.position.y = 0.18;
+        horn.add(stalk, knob);
+        head.add(horn);
+        // 耳: 横へ出した 葉っぱ形。少し たれる
+        const ear = new THREE.Group();
+        ear.position.copy(new V3(0.8 * s, 0.45, -0.1).normalize().multiplyScalar(R * 0.95));
+        ear.rotation.set(0, 0, -0.35 * s);
+        const e = blob(this.main, 0.14, 0.055, 0.045);
+        e.position.x = 0.11 * s;
+        const inEar = blob(this.sub, 0.1 / 0.14, 0.03 / 0.055, 0.3, false);
+        inEar.position.z = 0.7;
+        e.add(inEar);
+        ear.add(e);
+        head.add(ear);
+      }
+      // 長めの口もとと 鼻のあな
+      anchor(head, onSphere(R, 0, -0.16, -0.06)).add(blob(this.sub, 0.21, 0.15, 0.17));
+      for (const s of [-1, 1]) {
+        const n = ink(0.016, 0.022, 0.006, 0x7a5236);
+        n.rotation.z = 0.4 * s;
+        anchor(head, onSphere(R, 0.06 * s, -0.11, 0.105)).add(n);
+      }
+      // まだら: 丸い パッチを 体の表面に ぴったり沿わせて しきつめる。
+      // 小さい丸を ふくらませて 散らすと ぶつぶつに見えるので、大きく 平らに。
+      // 球の いただき(+y)を けずった おわんの形を作り、dir の向きへ回して、
+      // 頭(半径 R の球)や 胴(だ円体)の大きさに のばす。大きさは 数種類に そろえて 形を 使い回す(glb を 軽く)
+      const patchMat = solid(this.dark);
+      const patch = (parent, center, size, list, lift) => {
+        for (const [x, y, z, ang] of list) {
+          const g = new THREE.Group();
+          g.position.copy(center);
+          g.scale.copy(size);
+          const geo = cached(`patch${lift}_${ang}`, () => new THREE.SphereGeometry(1 + lift, 16, 4, 0, TAU, 0, ang));
+          const m = new THREE.Mesh(geo, patchMat);
+          m.quaternion.setFromUnitVectors(new V3(0, 1, 0), new V3(x, y, z).normalize());
+          g.add(m);
+          parent.add(g);
+        }
+      };
+      // 頭: 横・上・うしろと、顔(おでこと こめかみ。目と ほっぺは よける)
+      patch(head, new V3(), new V3(R, R, R), [
+        [0.85, 0.35, -0.35, 0.27], [-0.85, 0.3, -0.4, 0.21],
+        [0.4, 0.55, -0.75, 0.21], [-0.42, 0.5, -0.78, 0.27],
+        [0, 0.05, -1, 0.27], [0.6, -0.35, -0.7, 0.21],
+        [-0.62, -0.3, -0.72, 0.21], [0.9, -0.25, 0.1, 0.17],
+        [-0.9, -0.2, 0.05, 0.21],
+        [0, 0.62, 0.78, 0.12], [0.24, 0.5, 0.83, 0.095], [-0.25, 0.47, 0.83, 0.095],
+        [0.62, 0.25, 0.74, 0.095], [-0.63, 0.2, 0.74, 0.095],
+      ], 0.014);
+      // 胴: おなか(正面)をよけて、横と せなか
+      patch(rig, new V3(0, 0.6, 0), new V3(0.37, 0.35, 0.32), [
+        [1, 0.4, -0.15, 0.31], [-1, 0.35, -0.2, 0.27],
+        [0.95, -0.45, -0.1, 0.27], [-0.95, -0.5, -0.05, 0.31],
+        [0.55, 0.45, -1, 0.31], [-0.55, 0.4, -1, 0.27],
+        [0.05, -0.5, -1, 0.31],
+      ], 0.04);
+      // 首のうしろの たてがみ: 頭の まんなかの線に沿った 輪の一部。ツノの すぐうしろから 首まで
+      const mane = new THREE.Group();
+      mane.rotation.y = Math.PI / 2; // 輪を 前後(yz)の面に立てる
+      const ridge = shape(new THREE.TorusGeometry(R + 0.005, 0.045, 8, 28, 1.95), this.accent, 1.12);
+      ridge.rotation.z = -0.7;
+      ridge.scale.set(1, 1, 0.75); // 左右に うすく
+      mane.add(ridge);
+      head.add(mane);
+      // しっぽ(細くて、先に こげ茶の ふさ)
+      const tail = new THREE.Group();
+      tail.position.set(0, 0.45, -0.28);
+      tail.rotation.x = -0.35;
+      const t = blob(this.main, 0.04, 0.04, 0.18);
+      t.position.z = -0.15;
+      const tuft = blob(this.accent, 0.065, 0.065, 0.1);
+      tuft.position.z = -0.36;
+      tail.add(t, tuft);
+      P.setTail(tail);
+    },
+  },
   // ── ゲスト ──────────────────────────────────────
   // ほかのゲームから来た子。形は もらった glb のまま(src/guests/)。CPU には出てこない
   {

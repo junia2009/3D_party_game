@@ -10,7 +10,7 @@
 // 版はファイルの中身から作るので、1つでも変われば sw.js が変わり、ブラウザが入れなおす。
 
 // <precache>
-const VERSION = 'ab2331cc6a7c';
+const VERSION = '2c37daacab14';
 const PRECACHE = [
   "./",
   "./assets/thumbs/bumper.jpg",
@@ -48,6 +48,7 @@ const PRECACHE = [
   "./models/harinezumi.glb",
   "./models/hoho.glb",
   "./models/kerosuke.glb",
+  "./models/kirin.glb",
   "./models/komadori.glb",
   "./models/konko.glb",
   "./models/mimi.glb",
