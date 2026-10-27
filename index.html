@@ -194,7 +194,10 @@
   #play {
     top: auto; gap: 10px; max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 24px); overflow-y: auto;
     bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    padding-bottom: 8px; /* スタートの 下の かげまで 入れる(はみ出すと 切れて 見える) */
   }
+  /* 入口が 画面に 入りきらない ときも、スタートは いつも 下に 見えて いる */
+  #play .go { position: sticky; bottom: 0; z-index: 1; }
   .rules { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
   .rules li { display: flex; gap: 8px; align-items: baseline; font: 700 13px/1.45 var(--font-body); color: #5a3c22; }
   .rules li::before { content: ''; flex: none; width: 10px; height: 12px; border-radius: 50% 50% 45% 45%; background: #c27a35; box-shadow: inset 0 4px 0 #7a4f2c; transform: translateY(1px); }
