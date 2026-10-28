@@ -14,9 +14,9 @@ import { nextRandom, seedFrom } from '../../rng.js';
 import { RULES, canFlick, halfDesk, launchSpeed } from './rules.js';
 
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', aim: 0.17, power: 0.2, think: [1.2, 2.6], safe: 0.9, extra: 0.9 },
-  normal: { label: 'ふつう', aim: 0.15, power: 0.2, think: [1.0, 2.2], safe: 0.6, extra: 1.1 },
-  bold: { label: 'つよき', aim: 0.14, power: 0.22, think: [0.8, 1.8], safe: 0.3, extra: 1.35 },
+  cautious: { label: 'しんちょう', aim: 0.09, power: 0.14, think: [0.6, 1.3], safe: 0.9, extra: 0.95 },
+  normal: { label: 'ふつう', aim: 0.08, power: 0.13, think: [0.45, 1.1], safe: 0.6, extra: 1.1 },
+  bold: { label: 'つよき', aim: 0.07, power: 0.15, think: [0.35, 0.9], safe: 0.35, extra: 1.3 },
 };
 
 export function createCpu(personality, seed, slot) {
