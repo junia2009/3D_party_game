@@ -605,6 +605,16 @@
   #hudO .gauge .kind { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); font: 900 13px var(--font-body); color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); white-space: nowrap; }
   #hudO .gauge .kind.hard { color: #d8d8e0; }
   #hudO .gauge .kind.slip { color: #9ae0ff; }
+  /* 森の いせきの どんぐり めいろ: 上に みんなの どんぐり(順位で ならぶ)と のこり時間。どこでも スティック */
+  #hudI .scores { display: flex; gap: 4px; flex-wrap: wrap; }
+  #hudI .chip { padding: 4px 8px 4px 4px; position: relative; }
+  #hudI .chip i { width: 18px; height: 18px; }
+  #hudI .chip b { font-size: 14px; }
+  #hudI .chip.lead { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
+  #hudI .chip.lead::after { content: '👑'; position: absolute; top: -12px; left: -2px; font-size: 13px; }
+  #hudI .timer:empty { visibility: hidden; }
+  #hudI .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 40px); font-size: 14px; }
+  #hudI .splash.small { font-size: clamp(24px, 8vw, 46px); }
   /* 森の谷まの かみひこうき: 上に みんなの 点(順位で ならぶ)と のこり時間。下に のこりの きょりと かたむきの めやす */
   #hudA .scores { display: flex; gap: 4px; flex-wrap: wrap; }
   #hudA .chip { padding: 4px 8px 4px 4px; position: relative; }
@@ -1592,6 +1602,11 @@
       <span class="name">お正月の だるまおとし</span>
       <span class="meta"><span>さいごの 1人まで</span><span>ためて たたく</span></span>
     </button>
+    <button class="card" type="button" data-open="meiro">
+      <span class="thumb"><img src="./assets/thumbs/meiro.jpg" alt="" width="640" height="360"><span class="ribbon">第26競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">森の いせきの どんぐり めいろ</span>
+      <span class="meta"><span>60びょう</span><span>あつめて</span></span>
+    </button>
   </div>
 </section>
 
@@ -1890,6 +1905,18 @@
   <div class="splash" id="splashO"></div>
   <p class="howto" id="howtoO">じぶんの ばんに 画面を <b>おして ためる</b>。<br>ゲージの <b>みどりの まんなか</b>で はなすと きれいに ぬける<br>ぐらぐらが おさまるのを まってもいいよ</p>
   <div class="gauge" id="gaugeO" hidden aria-label="つよさ"><div class="win"></div><div class="needle"></div><div class="kind" id="kindO"></div></div>
+</div>
+
+<div class="hud" id="hudI" hidden>
+  <div class="top">
+    <div class="scores" id="chipsI" aria-label="みんなの どんぐり"></div>
+    <div class="timer" id="timeI" aria-label="のこり時間"></div>
+    <button class="pausebtn" id="pauseBtnI" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsI"></div>
+  <div class="splash" id="splashI"></div>
+  <p class="howto" id="howtoI">ゆびを おいて ずらすと はしる。<br><b>どんぐり</b>は 1こ、<b>たからばこ</b>は 5こ!<br><b>おばけ</b>に ぶつかると おとすよ。ひかる <b>矢じるし</b>は ジャンプ</p>
+  <div class="stick" id="stickI" hidden><i></i></div>
 </div>
 
 <div class="hud" id="hudE" hidden>
