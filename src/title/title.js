@@ -575,6 +575,15 @@ const GAMES = {
     ],
     load: () => import('../games/wataame/game.js').then((m) => m.createWataame),
   },
+  keshigomu: {
+    name: '森の学校の けしごむ大戦',
+    rules: [
+      '画面を おして <b>ひっぱって はなす</b>と、自分の けしごむを はじく。<b>ながく おすほど つよい</b>。とまって いる ときなら いつでも。',
+      'ほかの けしごむに ぶつけて <b>つくえから おとそう</b>。ゆびを まげて ひくと <b>ひねり</b>で 回りながら すべる。',
+      'けしごむの かたちで おもさと すべりが ちがう。しばらく すると <b>つくえが はしから けずれて</b> いく。さいごまで のこった 子の 勝ち!',
+    ],
+    load: () => import('../games/keshigomu/game.js').then((m) => m.createKeshigomu),
+  },
   // 大会(すごろく)。入口はステージ選択から(ターンをえらぶ)
   taikai: {
     name: '大会',

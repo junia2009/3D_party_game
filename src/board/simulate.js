@@ -47,6 +47,8 @@ import * as ramune from '../games/ramune/rules.js';
 import * as ramuneCpu from '../games/ramune/cpu.js';
 import * as wataame from '../games/wataame/rules.js';
 import * as wataameCpu from '../games/wataame/cpu.js';
+import * as keshigomu from '../games/keshigomu/rules.js';
+import * as keshigomuCpu from '../games/keshigomu/cpu.js';
 
 export const GAMES = {
   daruma: { rules: daruma, createCpu: darumaCpu.createCpu, input: darumaCpu.cpuHold, picked: (s) => s.runners.map((r) => r.acorns) },
@@ -72,6 +74,7 @@ export const GAMES = {
   hikouki: { rules: hikouki, createCpu: hikoukiCpu.createCpu, input: hikoukiCpu.cpuInput, picked: () => null },
   ramune: { rules: ramune, createCpu: ramuneCpu.createCpu, input: ramuneCpu.cpuInput, picked: () => null },
   wataame: { rules: wataame, createCpu: wataameCpu.createCpu, input: wataameCpu.cpuInput, picked: () => null },
+  keshigomu: { rules: keshigomu, createCpu: keshigomuCpu.createCpu, input: keshigomuCpu.cpuInput, picked: () => null },
 };
 
 // lineup: [{ cpu: 性格 }]。返すのは { ranking(席の番号の順), picked }

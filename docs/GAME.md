@@ -75,3 +75,4 @@
 | 森の谷まの かみひこうき | 作成中 | [minigames/hikouki.md](minigames/hikouki.md) |
 | 夏祭りの ラムネ しゅわしゅわ | 作成中 | [minigames/ramune.md](minigames/ramune.md) |
 | 秋の森の わたあめ まき | 作成中 | [minigames/wataame.md](minigames/wataame.md) |
+| 森の学校の けしごむ大戦 | 作成中 | [minigames/keshigomu.md](minigames/keshigomu.md) |

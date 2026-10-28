@@ -557,6 +557,19 @@
   @keyframes spinphone { 0% { transform: translate(14px, 0); } 25% { transform: translate(0, 14px); } 50% { transform: translate(-14px, 0); } 75% { transform: translate(0, -14px); } 100% { transform: translate(14px, 0); } }
   #hudL .spinask button { display: block; width: 100%; margin-top: 10px; padding: 12px; border: 0; border-radius: 16px; font: 900 17px var(--font-body); color: #fff; background: #ff6a9a; box-shadow: 0 5px 0 rgba(31,42,51,.25); }
   #hudL .spinask button.sub { background: #8aa0b0; font-size: 14px; padding: 9px; }
+  /* 森の学校の けしごむ大戦: 上に みんな(おちた 子は うすく)・のこり時間・のこりの 数 */
+  #hudX .scores { display: flex; gap: 4px; flex-wrap: wrap; }
+  #hudX .chip { padding: 4px 8px 4px 4px; position: relative; }
+  #hudX .chip i { width: 18px; height: 18px; }
+  #hudX .chip b { font-size: 12px; }
+  #hudX .chip.out { opacity: .35; filter: grayscale(1); }
+  #hudX .chip.out::after { content: '✕'; position: absolute; left: 6px; top: 1px; font: 900 15px var(--font-body); color: #e8402f; }
+  #hudX .timer:empty { visibility: hidden; }
+  #hudX .left { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 66px); transform: translateX(-50%); padding: 3px 14px; border-radius: 999px; background: rgba(255,255,255,.85); font: 800 14px var(--font-body); color: var(--hud-ink); }
+  #hudX .left:empty { display: none; }
+  #hudX .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 40px); font-size: 14px; }
+  #hudX .splash.small { font-size: clamp(24px, 8vw, 46px); }
+  #hudX .splash.gold.small { color: #ffd24a; }
   /* 森の谷まの かみひこうき: 上に みんなの 点(順位で ならぶ)と のこり時間。下に のこりの きょりと かたむきの めやす */
   #hudA .scores { display: flex; gap: 4px; flex-wrap: wrap; }
   #hudA .chip { padding: 4px 8px 4px 4px; position: relative; }
@@ -1534,6 +1547,11 @@
       <span class="name">秋の森の わたあめ まき</span>
       <span class="meta"><span>30びょう</span><span>回して</span></span>
     </button>
+    <button class="card" type="button" data-open="keshigomu">
+      <span class="thumb"><img src="./assets/thumbs/keshigomu.jpg" alt="" width="640" height="360"><span class="ribbon">第24競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">森の学校の けしごむ大戦</span>
+      <span class="meta"><span>さいごの 1人まで</span><span>はじいて</span></span>
+    </button>
   </div>
 </section>
 
@@ -1806,6 +1824,18 @@
       <button class="sub" id="spinOffL" type="button">ゆびで あそぶ</button>
     </div>
   </div>
+</div>
+
+<div class="hud" id="hudX" hidden>
+  <div class="top">
+    <div class="scores" id="chipsX" aria-label="みんな"></div>
+    <div class="timer" id="timeX" aria-label="のこり時間"></div>
+    <button class="pausebtn" id="pauseBtnX" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="left" id="leftX"></div>
+  <div class="pops" id="popsX"></div>
+  <div class="splash" id="splashX"></div>
+  <p class="howto" id="howtoX">画面を おして <b>ひっぱる</b>。はなすと はじく!<br>ながく おすほど <b>つよい</b>。ゆびを まげて ひくと <b>ひねり</b><br>つくえから おとして、さいごまで のころう</p>
 </div>
 
 <div class="hud" id="hudE" hidden>
