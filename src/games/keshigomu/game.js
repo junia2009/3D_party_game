@@ -72,6 +72,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
     hit(k) { voice({ type: 'triangle', pts: [[0, 320 + Math.random() * 80], [0.1, 160]], len: 0.14, gain: 0.04 + k * 0.08 }); noise({ len: 0.06, gain: 0.03 + k * 0.05, freq: [1600, 600], q: 2 }); },
     charge(k) { voice({ type: 'sine', pts: [[0, 300 + k * 600]], len: 0.06, gain: 0.025 }); },
     fall() { voice({ pts: [[0, 700], [0.6, 120]], len: 0.65, gain: 0.05 }); noise({ len: 0.3, gain: 0.06, freq: [400, 120], type: 'lowpass', at: 0.6 }); },
+    duel() { [[0, 330], [0.18, 330], [0.36, 494]].forEach(([at, f]) => voice({ type: 'square', pts: [[0, f]], len: 0.15, gain: 0.05, at })); },
     crumble() { noise({ len: 0.5, gain: 0.05, freq: [300, 90], type: 'lowpass' }); },
     go() { voice({ type: 'square', pts: [[0, 880]], len: 0.18, gain: 0.05 }); },
     ready() { voice({ type: 'square', pts: [[0, 440]], len: 0.12, gain: 0.04 }); },
@@ -250,7 +251,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       const ring = chargeRing(PLAYER_COLORS[slot].hex);
       return { group, eraser, rider, model, ring, fall: null, face: 0 };
     }));
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, lastAim: 0 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, lastAim: 0, kos: players.map(() => 0) };
     atmosphere.apply(params.get('time') || 'day');
     atmosphere.setupShadows(units.map((u) => u.group), [stage.group]);
     input.hold = false;
@@ -393,9 +394,21 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       return d;
     }));
   }
+  // 「○○が △△を おとした!」
+  function toast(by, slot) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.innerHTML = `<i style="background:${css(PLAYER_COLORS[by].hex)}"></i>${nameOf(by)}が <i style="background:${css(PLAYER_COLORS[slot].hex)}"></i>${nameOf(slot)}を おとした!`;
+    $('toastX').append(el);
+    setTimeout(() => el.remove(), 2200);
+  }
   function renderHud() {
     const s = game.state;
-    [...$('chipsX').children].forEach((c, slot) => c.classList.toggle('out', s.bodies[slot].out));
+    [...$('chipsX').children].forEach((c, slot) => {
+      c.classList.toggle('out', s.bodies[slot].out);
+      c.dataset.ko = game.kos[slot] ? '★'.repeat(Math.min(4, game.kos[slot])) : '';
+    });
+    $('hudX').classList.toggle('duel', s.phase === 'battle' && aliveCount(s) === 2);
     $('timeX').textContent = s.phase === 'battle' ? String(Math.ceil(timeLeft(s))) : '';
     $('leftX').textContent = s.phase === 'battle' || s.phase === 'show' ? `のこり ${aliveCount(s)}` : '';
   }
@@ -447,6 +460,9 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
           sfx.fall();
           pop(e.slot === 0 ? 'おちた〜!' : `${nameOf(e.slot)} アウト!`, toWorld(e.x, e.y).add(new THREE.Vector3(0, 1.2, 0)), e.slot === 0 ? 'red' : '', 1300);
           if (e.by === 0) setTimeout(() => game?.state === s && splash('おとした!', 'gold small'), 300);
+          if (e.by !== null) { game.kos[e.by]++; toast(e.by, e.slot); }
+          // のこり 2人: いっきうち
+          if (aliveCount(s) === 2 && s.phase === 'battle') setTimeout(() => { if (game?.state === s && s.phase === 'battle') { splash('いっきうち!', 'red'); sfx.duel(); } }, 900);
           break;
         }
         case 'shrink':
@@ -464,6 +480,21 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
           const w = game.units[e.winner];
           w.win = true;
           confetti(w.group.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 60);
+          game.finale = 0.5;
+          // 王冠(のって いる 子の 頭の 上)
+          const crown = new THREE.Group();
+          const gold = new THREE.MeshToonMaterial({ color: 0xffcf3a, emissive: 0x5a3a00 });
+          const band = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.13, 12, 1, true), gold);
+          band.material.side = THREE.DoubleSide;
+          crown.add(band);
+          for (let k = 0; k < 5; k++) {
+            const sp = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.15, 4), gold);
+            sp.position.set(Math.cos((k / 5) * 6.28) * 0.22, 0.13, Math.sin((k / 5) * 6.28) * 0.22);
+            crown.add(sp);
+          }
+          crown.position.y = 2.4;
+          w.rider.add(crown);
+          w.crown = crown;
           break;
         }
       }
@@ -543,7 +574,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       u.model.play(u.win ? 'cheer' : 'idle');
       u.model.update(dt);
       // のる キャラは ふだんは カメラの ほう、ためて いる あいだは ねらう 向きを 見る
-      const camYaw = innerWidth < innerHeight ? -Math.PI / 2 : 0;
+      const camYaw = innerWidth < innerHeight && !u.win ? -Math.PI / 2 : 0;
       const aimNow = slot === 0 ? game.lastAim : game.cpus[slot]?.plan?.aim;
       const want = b.charge > 0 && aimNow !== undefined ? Math.atan2(Math.cos(aimNow), -Math.sin(aimNow)) : camYaw;
       u.yaw = u.yaw === undefined ? want : u.yaw + Math.atan2(Math.sin(want - u.yaw), Math.cos(want - u.yaw)) * Math.min(1, dt * 8);
@@ -552,6 +583,8 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       if (u.lean > 0) u.lean = Math.max(0, u.lean - dt * 1.5);
       u.rider.rotation.x = -u.lean * 0.6 + (b.charge >= 1 ? Math.sin(time * 40) * 0.05 : 0);
       u.rider.scale.setScalar(RIDER * (1 - b.charge * 0.12)); // ためると ちぢこまる
+      u.rider.position.y = ERASER_H + (u.win ? Math.abs(Math.sin(time * 6)) * 0.4 : 0);
+      if (u.crown) u.crown.rotation.y = time * 2;
       // ためる わ
       const ring = u.ring;
       ring.visible = !b.out && b.charge > 0;
@@ -597,6 +630,10 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
     const half = halfDesk(s);
     const kNext = clamp((RULES.battleTime - s.phaseT + 2 - RULES.shrinkFrom) / (RULES.shrinkTo - RULES.shrinkFrom), 0, 1);
     const sNext = s.phase === 'battle' ? 1 - (1 - RULES.shrinkMin) * kNext : s.shrink;
+    if (s.phase === 'finished' && game.finale !== undefined) {
+      game.finale -= dt;
+      if (game.finale <= 0) { game.finale = 0.6; confetti(game.units[s.winner].group.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 3, 3, (Math.random() - 0.5) * 2)), 20); }
+    }
     const dropped = stage.updateDesk(half, [RULES.desk[0] / 2 * sNext, RULES.desk[1] / 2 * sNext], dt, time);
     if (dropped.length && Math.random() < 0.3) sfx.crumble();
     for (const d of dropped) if (Math.random() < 0.25) woodChips(toWorld(d.x, d.y), 3);
@@ -624,10 +661,12 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
     // 決着: 勝った 子へ 寄る
     game.winCam = s.phase === 'finished' ? Math.min(1, (game.winCam ?? 0) + dt * 0.8) : 0;
     if (game.winCam > 0 && s.winner !== null && !s.bodies[s.winner].out) {
+      // 勝った 子の まえ(手前)から。うしろに 教室の 黒板が 入る
       const wp = game.units[s.winner].group.position;
       const k = game.winCam * game.winCam * (3 - 2 * game.winCam);
-      camPos.lerp(wp.clone().add(portrait ? new THREE.Vector3(-3, 5, 0) : new THREE.Vector3(0, 5, 3)), k);
-      camLook.lerp(wp.clone().add(new THREE.Vector3(0, 0.6, 0)), k);
+      camPos.lerp(wp.clone().add(new THREE.Vector3(0, 2.4, portrait ? 6 : 4.4)), k);
+      camLook.lerp(wp.clone().add(new THREE.Vector3(0, 1.4, -3)), k);
+      camera.up.lerp(new THREE.Vector3(0, 1, 0), k).normalize();
     }
     camera.fov = portrait ? 60 : 46;
     camera.aspect = aspect;
