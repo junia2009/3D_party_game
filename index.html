@@ -592,6 +592,8 @@
   #hudO .splash.small { font-size: clamp(24px, 8vw, 46px); }
   #hudO .splash.gold.small { color: #ffd24a; }
   #hudO .pop.big { font-size: 34px; }
+  #hudO.duel .turn { background: #e8402f; color: #fff; }
+  #hudO.duel .turn.mine { background: #ffd24a; color: var(--hud-ink); }
   #hudO.danger::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,90,60,.4); animation: eruptglow .3s ease-in-out infinite alternate; }
   /* つよさの ゲージ(よこ)。みどり = ちょうどいい、金の 線 = まんなか、はり = いまの つよさ */
   #hudO .gauge { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 46px); transform: translateX(-50%); width: min(78vw, 360px); height: 26px; border-radius: 13px; background: rgba(255,255,255,.55); border: 3px solid rgba(255,255,255,.9); --lo: .4; --hi: .6; --p: 0; opacity: .75; }

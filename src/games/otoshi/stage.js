@@ -234,7 +234,19 @@ function buildDecor(g, scene) {
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   const flakes = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.07 }));
   scene.add(flakes);
-  return { coals, flakes };
+  // はつひので(決着の とき): 空が あかるく なって、松の うしろから お日さま
+  const sun = new THREE.Mesh(new THREE.CircleGeometry(0.9, 24), new THREE.MeshBasicMaterial({ color: 0xffd24a }));
+  sun.position.set(outX - 1, -1, -15.3);
+  scene.add(sun);
+  const night = new THREE.Color(0x1a2a4a), dawn = new THREE.Color(0xffa060);
+  function sunrise(k) {
+    skyBack.material.color.copy(night).lerp(dawn, k);
+    snowGround.material.color.setHex(0xd8e4f4).lerp(new THREE.Color(0xffe8d0), k);
+    sun.position.y = -1 + k * 3.2;
+    moon.material.opacity = 1 - k;
+    moon.material.transparent = true;
+  }
+  return { coals, flakes, sunrise };
 }
 
 export function buildStage(scene) {
@@ -399,5 +411,5 @@ export function buildStage(scene) {
     }
     p.needsUpdate = true;
   }
-  return { group, update };
+  return { group, update, sunrise: decor.sunrise };
 }

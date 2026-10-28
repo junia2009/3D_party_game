@@ -73,6 +73,8 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
     tick(k) { voice({ type: 'sine', pts: [[0, 300 + k * 600]], len: 0.05, gain: 0.02 }); },
     wobble() { voice({ type: 'triangle', pts: [[0, 180], [0.2, 140]], len: 0.22, gain: 0.03 }); },
     crash() { noise({ len: 0.9, gain: 0.14, freq: [900, 120], type: 'lowpass' }); for (let k = 0; k < 6; k++) voice({ type: 'triangle', pts: [[0, 400 + Math.random() * 500]], len: 0.08, gain: 0.04, at: 0.1 + k * 0.09 }); },
+    duel() { [[0, 330], [0.18, 330], [0.36, 494]].forEach(([at, f]) => voice({ type: 'square', pts: [[0, f]], len: 0.15, gain: 0.05, at })); },
+    boom() { noise({ len: 0.7, gain: 0.08, freq: [400, 80], type: 'lowpass', attack: 0.005 }); },
     turn() { voice({ type: 'square', pts: [[0, 660]], len: 0.1, gain: 0.03 }); },
     go() { voice({ type: 'square', pts: [[0, 880]], len: 0.18, gain: 0.05 }); },
     fanfare() { [[0, 523], [0.12, 659], [0.24, 784], [0.36, 1047], [0.5, 1047]].forEach(([at, f], i) => voice({ type: 'square', pts: [[0, f]], len: i === 4 ? 0.6 : 0.12, gain: 0.05, at })); },
@@ -119,6 +121,15 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
     scene.add(m);
     fx.push({ obj: m, t: 0, life: 0.6, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.6, 0.3), kind: 'drop' });
   }
+  function firework(at, color) {
+    for (let i = 0; i < 30; i++) {
+      const m = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), new THREE.MeshBasicMaterial({ color: i % 4 ? color : 0xffffff, transparent: true, fog: false }));
+      m.position.copy(at);
+      scene.add(m);
+      const a = (i / 30) * Math.PI * 2;
+      fx.push({ obj: m, t: 0, life: 1.2, vel: new THREE.Vector3(Math.cos(a) * 3, Math.sin(a) * 3, 0), kind: 'fire' });
+    }
+  }
   function confetti(at, n = 40) {
     const cols = [0xff6a9a, 0xffd24a, 0x7ad8ff, 0x8ad04a, 0xff8a3a];
     for (let i = 0; i < n; i++) {
@@ -136,6 +147,7 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
       if (f.kind === 'drop') f.vel.y -= 8 * dt;
+      if (f.kind === 'fire') { f.vel.multiplyScalar(1 - dt * 1.5); f.vel.y -= 1.5 * dt; }
       if (f.kind === 'puff') { f.vel.multiplyScalar(1 - dt * 2); f.obj.scale.setScalar(0.4 + k * 1.4); }
       if (f.kind === 'paper') { f.vel.multiplyScalar(1 - dt * 1.2); f.vel.y -= 4 * dt; f.obj.rotation.x += f.spin * dt; f.obj.rotation.y += f.spin * 0.7 * dt; }
       f.obj.material.opacity = 1 - k * k;
@@ -244,7 +256,8 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
     marker.rotation.x = Math.PI;
     units[0].holder.add(marker);
     units[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, swing: 0, lastPower: 0 };
+    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, swing: 0, lastPower: 0, streak: players.map(() => 0) };
+    stage.sunrise(0);
     rebuild(state, false);
     atmosphere.apply(params.get('time') || 'night');
     atmosphere.setupShadows([...units.map((u) => u.holder), tower], [stage.group]);
@@ -350,6 +363,7 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       $('kindO').className = 'kind ' + s.tower[0].kind;
     }
     $('hudO').classList.toggle('danger', s.wobble > 0.55 && aiming);
+    $('hudO').classList.toggle('duel', alive(s).length === 2 && s.phase !== 'show' && s.phase !== 'finished');
   }
   const tmpV = new THREE.Vector3();
   function pop(text, at, cls = '', life = 900) {
@@ -391,6 +405,9 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
           if (e.wobble > 0.5) sfx.wobble();
           const [text, cls] = RESULT[e.result];
           pop(text, topOfTower(), cls, 900);
+          // ぴったりが つづくと れんぞく
+          game.streak[e.slot] = e.result === 'perfect' ? game.streak[e.slot] + 1 : 0;
+          if (game.streak[e.slot] >= 2) setTimeout(() => game?.state === s && pop(`れんぞく ぴったり ×${game.streak[e.slot]}!`, topOfTower().add(new THREE.Vector3(0, 0.6, 0)), 'gold big', 1100), 250);
           break;
         }
         case 'collapse':
@@ -401,6 +418,9 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
           game.shake = 0.6;
           splash(e.slot === 0 ? 'くずれた〜!' : `${nameOf(e.slot)} アウト!`, e.slot === 0 ? 'red' : 'small');
           game.units[e.slot].sad = 2.4;
+          game.streak[e.slot] = 0;
+          // のこり 2人: いっきうち
+          if (alive(s).length === 2) setTimeout(() => { if (game?.state === s && s.phase !== 'show') { splash('いっきうち!', 'red'); sfx.duel(); } }, 1300);
           break;
         case 'clear':
           splash('おみごと!', 'gold');
@@ -418,8 +438,25 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
           game.endTimer = 4;
           const win = e.winner === 0;
           if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
-          game.units[e.winner].win = true;
-          confetti(game.units[e.winner].holder.position.clone().add(new THREE.Vector3(0, 2, 0)), 60);
+          const w = game.units[e.winner];
+          w.win = true;
+          confetti(w.holder.position.clone().add(new THREE.Vector3(0, 2, 0)), 60);
+          game.finale = 0.5;
+          game.dawn = 0;
+          // 王冠
+          const crown = new THREE.Group();
+          const gold = new THREE.MeshToonMaterial({ color: 0xffcf3a, emissive: 0x5a3a00 });
+          const band = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.13, 12, 1, true), gold);
+          band.material.side = THREE.DoubleSide;
+          crown.add(band);
+          for (let k = 0; k < 5; k++) {
+            const sp = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.15, 4), gold);
+            sp.position.set(Math.cos((k / 5) * 6.28) * 0.22, 0.13, Math.sin((k / 5) * 6.28) * 0.22);
+            crown.add(sp);
+          }
+          crown.position.y = 2.1;
+          w.holder.add(crown);
+          w.crown = crown;
           break;
         }
       }
@@ -519,6 +556,20 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       mallet.userData.headMat.emissive.setHex(inWin ? 0xffc030 : 0xff5a20);
       mallet.userData.headMat.emissiveIntensity = s.phase === 'aim' ? s.charge * (inWin ? 0.9 : 0.5) : 0;
     }
+    if (s.phase === 'finished' && game.finale !== undefined) {
+      game.dawn = Math.min(1, game.dawn + dt * 0.35);
+      stage.sunrise(game.dawn * game.dawn * (3 - 2 * game.dawn));
+      game.finale -= dt;
+      if (game.finale <= 0) {
+        game.finale = 0.55;
+        const wp = game.units[s.winner].holder.position;
+        confetti(wp.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 2.6, 0)), 18);
+        // しょうじの むこうの 空に 花火
+        firework(new THREE.Vector3(2.45 + (Math.random() - 0.5) * 3, 3 + Math.random() * 2, -14), [0xff6a9a, 0xffd24a, 0x7ad8ff, 0x8ad04a][Math.floor(Math.random() * 4)]);
+        sfx.boom();
+      }
+    }
+    for (const u of game.units) if (u.crown) { u.crown.rotation.y = time * 2; u.crown.position.y = 2.1 + Math.sin(time * 4) * 0.05; }
     stage.update(time);
   }
 
