@@ -39,8 +39,8 @@ export const RULES = {
   },
 };
 export const TURNS = [5, 10, 15];
-export const MINIGAMES = ['daruma', 'catch', 'sled', 'mato', 'tsumi', 'ikada', 'hana', 'hayauchi', 'sumo', 'kakure', 'dasshutsu', 'tsuna', 'nawa', 'kazan', 'yuki', 'bumper', 'kinoko', 'ehon', 'mame', 'volley', 'hikouki', 'ramune', 'wataame', 'keshigomu'];
-export const DUEL_GAMES = ['mato', 'catch', 'daruma', 'tsumi', 'hana', 'hayauchi', 'sumo', 'kakure', 'dasshutsu', 'tsuna', 'nawa', 'kazan', 'yuki', 'bumper', 'kinoko', 'ehon', 'mame', 'volley', 'hikouki', 'ramune', 'wataame', 'keshigomu'];
+export const MINIGAMES = ['daruma', 'catch', 'sled', 'mato', 'tsumi', 'ikada', 'hana', 'hayauchi', 'sumo', 'kakure', 'dasshutsu', 'tsuna', 'nawa', 'kazan', 'yuki', 'bumper', 'kinoko', 'ehon', 'mame', 'volley', 'hikouki', 'ramune', 'wataame', 'keshigomu', 'otoshi'];
+export const DUEL_GAMES = ['mato', 'catch', 'daruma', 'tsumi', 'hana', 'hayauchi', 'sumo', 'kakure', 'dasshutsu', 'tsuna', 'nawa', 'kazan', 'yuki', 'bumper', 'kinoko', 'ehon', 'mame', 'volley', 'hikouki', 'ramune', 'wataame', 'keshigomu', 'otoshi'];
 
 // どうぐ。price はお店の値段(null はお店にない)。weight はどうぐマスで出る重み
 export const ITEMS = {
