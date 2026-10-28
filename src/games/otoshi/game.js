@@ -12,7 +12,7 @@ import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, alive, createGame, ranking, step, timeLeft, windowOf } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
-import { BASE_Y, BLOCK_H, BLOCK_R, HIT_X, blockMesh, buildStage, headMesh, malletMesh } from './stage.js';
+import { BASE_Y, BLOCK_H, BLOCK_R, HIT_X, SEATS, blockMesh, buildStage, headMesh, malletMesh } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 
 const $ = (id) => document.getElementById(id);
@@ -20,8 +20,6 @@ const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const SLOTS = 5;
 const params = new URLSearchParams(location.search);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-// 見て いる 子の すわる ところ(だるまの うしろに ならぶ)
-const SEATS = [[-2.3, -1.0], [-1.25, -2.0], [1.25, -2.0], [2.3, -1.0], [0.4, -3.0]];
 const KIND_LABEL = { normal: 'ふつうの だん', hard: 'かたい だん! つよく', slip: 'すべる だん! よわく' };
 const RESULT = { perfect: ['ぴったり!', 'gold'], good: ['ぬけた!', 'me'], weak: ['よわい…', ''], strong: ['つよすぎ!', 'red'] };
 
