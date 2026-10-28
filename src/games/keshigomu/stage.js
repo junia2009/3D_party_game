@@ -60,9 +60,9 @@ export function eraserMesh(kind, color) {
     const xs = sh.circles.map((c) => c[0]), ys = sh.circles.map((c) => c[1]), r = sh.circles[0][2];
     const w = Math.max(...xs) - Math.min(...xs) + r * 2, d = Math.max(...ys) - Math.min(...ys) + r * 2;
     g.add(new THREE.Mesh(roundedBox(w, d, H, 0.18), rubber));
-    // スリーブ(まん中 6わり)
-    const sl = new THREE.Mesh(new THREE.BoxGeometry(w * (kind === 'naga' ? 0.55 : 0.62), H * 0.7, d + 0.04), sleeve);
-    sl.position.y = H * 0.48;
+    // スリーブ(まん中に 上から ぐるっと まく。上から 見ても 色が わかる)
+    const sl = new THREE.Mesh(new THREE.BoxGeometry(w * (kind === 'naga' ? 0.5 : 0.56), H + 0.03, d + 0.03), sleeve);
+    sl.position.y = H / 2 + 0.005;
     g.add(sl);
   } else if (kind === 'maru') {
     const r = sh.circles[0][2];
@@ -71,7 +71,10 @@ export function eraserMesh(kind, color) {
     const sl = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.02, r + 0.02, H * 0.45, 28, 1, true), sleeve);
     sl.material.side = THREE.DoubleSide;
     sl.position.y = H / 2;
-    g.add(body, sl);
+    // 上の シール(プレイヤーの 色)
+    const top = new THREE.Mesh(new THREE.CircleGeometry(r * 0.5, 24).rotateX(-Math.PI / 2), sleeve);
+    top.position.y = H + 0.005;
+    g.add(body, sl, top);
   } else {
     // どんぐり: 大きい まる(み)と 小さい まる(ぼうし)
     const [[x0, y0, r0], [x1, y1, r1]] = sh.circles;
@@ -82,7 +85,9 @@ export function eraserMesh(kind, color) {
     const sl = new THREE.Mesh(new THREE.CylinderGeometry(r0 + 0.02, r0 + 0.02, H * 0.45, 24, 1, true), sleeve);
     sl.material.side = THREE.DoubleSide;
     sl.position.set(x0, H / 2, -y0);
-    g.add(body, cap, sl);
+    const top = new THREE.Mesh(new THREE.CircleGeometry(r0 * 0.5, 24).rotateX(-Math.PI / 2), sleeve);
+    top.position.set(x0, H + 0.005, -y0);
+    g.add(body, cap, sl, top);
   }
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   g.userData = { sleeve };

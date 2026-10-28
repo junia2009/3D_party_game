@@ -249,7 +249,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       group.add(rider);
       scene.add(group);
       const ring = chargeRing(PLAYER_COLORS[slot].hex);
-      return { group, eraser, rider, model, ring, fall: null, face: 0 };
+      return { group, eraser, rider, model, ring, fall: null, face: 0, lean: 0, hurt: 0 };
     }));
     game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, lastAim: 0, kos: players.map(() => 0) };
     atmosphere.apply(params.get('time') || 'day');
