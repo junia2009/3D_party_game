@@ -14,9 +14,9 @@ import { nextRandom, seedFrom } from '../../rng.js';
 import { bandOf, chanceNow } from './rules.js';
 
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', aim: [0.3, 0.9], wobble: 0.35, tol: [0.15, 0.35], react: [0.15, 0.35], timing: 0.22 },
-  normal: { label: 'ふつう', aim: [0.6, 1.3], wobble: 0.4, tol: [0.3, 0.55], react: [0.15, 0.35], timing: 0.2 },
-  bold: { label: 'つよき', aim: [0.9, 1.7], wobble: 0.45, tol: [0.45, 0.8], react: [0.12, 0.3], timing: 0.18 },
+  cautious: { label: 'しんちょう', aim: [0.2, 0.75], wobble: 0.7, tol: [0.15, 0.35], react: [0.2, 0.4], timing: 0.3 },
+  normal: { label: 'ふつう', aim: [0.4, 1.2], wobble: 0.75, tol: [0.3, 0.55], react: [0.2, 0.4], timing: 0.27 },
+  bold: { label: 'つよき', aim: [0.7, 1.6], wobble: 0.8, tol: [0.45, 0.8], react: [0.15, 0.35], timing: 0.25 },
 };
 
 export function createCpu(personality, seed, slot) {

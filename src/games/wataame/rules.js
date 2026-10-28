@@ -21,18 +21,19 @@ export const RULES = {
   readyTime: 3.0,
   spinTime: 30, // 回す 時間
   showTime: 3.5, // さいごに みんなの わたあめを 見る
-  follow: 6, // わりばしの 回る はやさが 入力に ついていく はやさ
+  follow: 3, // わりばしの 回る はやさが 入力に ついていく はやさ(おもさが あって、ぶれを ならす)
   hi: 2.4, // ちょうどいい はやさの 上(わたあめ 0 cm の とき。回/秒)
   hiDrop: 0.018, // 1 cm ごとに 上が おそく なる
   hiMin: 1.3,
-  band: 0.6, // ちょうどいい はばの ひろさ
+  band: 1.0, // ちょうどいい はばの ひろさ
   minSpin: 0.3, // これより おそいと まけない
   grow: 1.5, // ちょうどいい ときに 1秒で ふえる 大きさ(cm)
   greed: 1.0, // はやすぎる ときの おまけ(いちばん 多くて)
-  strain: 2.2, // はやすぎ 1回/秒 あたりの はりの たまりかた(/秒)
-  relax: 0.6, // はりの もどりかた(/秒)
-  tearLoss: 0.3, // ちぎれると へる わりあい
-  stun: 1.0, // ちぎれた あと まけない 秒
+  grace: 0.15, // ちょうどいいより これだけ はやい までは はりが たまらない(ちょっと はみでた くらいでは ちぎれない)
+  strain: 1.4, // はやすぎ 1回/秒 あたりの はりの たまりかた(/秒)
+  relax: 0.9, // はりの もどりかた(/秒)
+  tearLoss: 0.2, // ちぎれると へる わりあい
+  stun: 0.8, // ちぎれた あと まけない 秒
   chances: [[6, 10], [14, 18], [22, 26]], // ざらめ チャンスが はじまる ころ(回しはじめから 秒)
   ring: 2.0, // わが ちぢむ 時間(さいごが ぴったり)
   perfect: 0.15, // ぴったり(秒)
@@ -113,7 +114,7 @@ export function step(s, inputs) {
     u.w += (spin - u.w) * Math.min(1, RULES.follow * dt);
     const [, hi] = bandOf(u.size);
     // はり: はやすぎると たまる。ちぎれたら へる
-    if (u.w > hi && u.stun <= 0) u.strain += (u.w - hi) * RULES.strain * dt; // ちぎれて いる あいだは はらない
+    if (u.w > hi + RULES.grace && u.stun <= 0) u.strain += (u.w - hi - RULES.grace) * RULES.strain * dt; // ちぎれて いる あいだは はらない
     else u.strain = Math.max(0, u.strain - RULES.relax * dt);
     if (u.stun > 0) u.stun = Math.max(0, u.stun - dt);
     else u.size += RULES.grow * gainOf(u.w, u.size) * dt;

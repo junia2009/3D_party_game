@@ -66,11 +66,17 @@ test('はやすぎると すこし よけいに まけるが、はりが たま�
   assert.equal(s.units[0].tears, 1);
   // ゆっくりに すれば はりは もどる
   const t = toSpin(2);
-  go(t, { spin: bandOf(0)[1] + 0.6 }, 0.5);
+  go(t, { spin: bandOf(0)[1] + 1.0 }, 1.2);
   const st = t.units[0].strain;
   assert.ok(st > 0);
   go(t, { spin: 0.8 }, 1);
   assert.ok(t.units[0].strain < st);
+});
+
+test('ちょうどいいより ちょっと はやい くらいでは はりは たまらない', () => {
+  const s = toSpin(6);
+  go(s, (st) => ({ spin: bandOf(st.units[0].size)[1] + RULES.grace * 0.5 }), 3);
+  assert.equal(s.units[0].strain, 0);
 });
 
 test('ちぎれた あとは しばらく まけない', () => {
@@ -126,7 +132,7 @@ test('同じ性格どうしなら、どの席も勝てる(かたよりすぎな�
 });
 
 test('人くらいの うでまえでも、CPU と互角に戦える', () => {
-  PERSONALITIES.human = { label: 'ひと', aim: [0.3, 1.6], wobble: 0.7, tol: [0.2, 0.7], react: [0.2, 0.5], timing: 0.25 };
+  PERSONALITIES.human = { label: 'ひと', aim: [0.3, 1.4], wobble: 0.9, tol: [0.3, 0.7], react: [0.25, 0.5], timing: 0.3 };
   try {
     let rankSum = 0, wins = 0;
     const NN = 150;

@@ -250,7 +250,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
   // どちらも「回った 角度」を ためて、1フレームごとに 回/秒 に する
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   const motionAvailable = () => typeof window.DeviceMotionEvent !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-  const motion = { last: null, gx: 0, gy: 0, rot: 0 };
+  const motion = { last: null, gx: 0, gy: 0 };
   function onMotion(e) {
     // 円を かくと 加速度の 向きが ぐるっと 回る(重力は ゆっくり うごく ぶんを ひいて のぞく)
     let x, y;
@@ -260,12 +260,15 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       motion.gx += (a.x - motion.gx) * 0.1; motion.gy += (a.y - motion.gy) * 0.1;
       x = a.x - motion.gx; y = a.y - motion.gy;
     } else return;
-    if (Math.hypot(x, y) < 1.6) { motion.last = null; return; }
+    // 小さな ゆれは かぞえない。向きが 一気に とぶのも ぶれなので かぞえない
+    // (手首の ひねり(ジャイロ)は 一しゅんで 針が とんで しまうので つかわない)
+    if (Math.hypot(x, y) < 2.2) { motion.last = null; return; }
     const a = Math.atan2(y, x);
-    if (motion.last !== null) input.acc += wrap(a - motion.last);
+    if (motion.last !== null) {
+      const d = wrap(a - motion.last);
+      if (Math.abs(d) < 1.2) input.acc += d;
+    }
     motion.last = a;
-    // 手首で ぐるっと ひねる ぶん(画面の 向きの まわり)
-    if (e.rotationRate && e.rotationRate.alpha != null) motion.rot = Math.max(motion.rot, Math.abs(e.rotationRate.alpha) / 360);
   }
   async function enableMotion() {
     input.asked = true;
@@ -330,9 +333,8 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
   function sampleSpin(dt) {
     const raw = input.acc / (Math.PI * 2) / Math.max(dt, 1e-3);
     input.acc = 0;
-    spinSigned += (raw - spinSigned) * Math.min(1, dt * 4);
-    spinRate = Math.max(Math.abs(spinSigned), motion.rot);
-    motion.rot = Math.max(0, motion.rot - dt * 2);
+    spinSigned += (raw - spinSigned) * Math.min(1, dt * (input.useMotion ? 2.5 : 4)); // スマホを 回す ときは よけいに ならす
+    spinRate = Math.abs(spinSigned);
   }
   function myInput() {
     const zarame = input.zarame;
@@ -558,6 +560,10 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       // 大きさは じわっと おいつく
       if (Math.abs(u.shown - su.size) > 0.05) { u.shown += (su.size - u.shown) * Math.min(1, dt * 6); u.candy.userData.setSize(u.shown); }
       if (u.colorUntil && u.shown > u.colorUntil) { u.colorUntil = 0; u.candy.userData.setColor(0); }
+      if (slot === 0 && spinning) {
+        if (st > 0.3 && !u.warned) { u.warned = true; pop('ゆっくり!', woolTop(u), 'red', 900); }
+        if (st < 0.05) u.warned = false;
+      }
       if (slot === 0 && spinning && st > 0.4) { u.strainT -= dt; if (u.strainT <= 0) { u.strainT = 0.25 - st * 0.15; sfx.squeak(st); } }
       // わたあめ機: つぼが 回って、糸が ボウルの 中を まわる
       mach.head.rotation.y += dt * (spinning ? 30 : 4);
