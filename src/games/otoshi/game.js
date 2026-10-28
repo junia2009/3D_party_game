@@ -91,6 +91,34 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 0.5, vel: new THREE.Vector3(Math.cos(a) * sp * 0.5, 1 + Math.random() * 2, Math.sin(a) * sp * 0.5), kind: 'drop' });
     }
   }
+  // ほこり(くずれた とき・だんが おちた とき)
+  const puffTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+    grd.addColorStop(0, 'rgba(240,230,210,.9)'); grd.addColorStop(1, 'rgba(240,230,210,0)');
+    g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  function dust(at, n = 8) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, transparent: true, depthWrite: false }));
+      m.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.1, (Math.random() - 0.5) * 0.6));
+      m.scale.setScalar(0.4);
+      scene.add(m);
+      const a = Math.random() * 6.28;
+      fx.push({ obj: m, t: 0, life: 1.1, vel: new THREE.Vector3(Math.cos(a) * 1.2, 0.4 + Math.random() * 0.5, Math.sin(a) * 0.8), kind: 'puff' });
+    }
+  }
+  // あせ(だるまが ぐらぐらで あせる)
+  function sweat(at) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color: 0x8ad8ff, transparent: true }));
+    m.scale.set(0.8, 1.3, 0.8);
+    m.position.copy(at);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.6, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.6, 0.3), kind: 'drop' });
+  }
   function confetti(at, n = 40) {
     const cols = [0xff6a9a, 0xffd24a, 0x7ad8ff, 0x8ad04a, 0xff8a3a];
     for (let i = 0; i < n; i++) {
@@ -108,6 +136,7 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
       if (f.kind === 'drop') f.vel.y -= 8 * dt;
+      if (f.kind === 'puff') { f.vel.multiplyScalar(1 - dt * 2); f.obj.scale.setScalar(0.4 + k * 1.4); }
       if (f.kind === 'paper') { f.vel.multiplyScalar(1 - dt * 1.2); f.vel.y -= 4 * dt; f.obj.rotation.x += f.spin * dt; f.obj.rotation.y += f.spin * 0.7 * dt; }
       f.obj.material.opacity = 1 - k * k;
       if (k >= 1) { scene.remove(f.obj); f.obj.material.dispose(); fx.splice(i, 1); }
@@ -131,7 +160,7 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       return m;
     });
     head = headMesh();
-    head.userData = { y: BASE_Y + BLOCK_H * s.tower.length, drop: drop ? 1.5 + s.tower.length * 0.5 : 0 };
+    Object.assign(head.userData, { y: BASE_Y + BLOCK_H * s.tower.length, drop: drop ? 1.5 + s.tower.length * 0.5 : 0 });
     tower.add(head);
   }
   // ぬけた だんは 右へ とんで ころがる
@@ -166,9 +195,19 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       const p = f.obj.position;
       f.vel.y -= 12 * dt;
       p.addScaledVector(f.vel, dt);
-      f.obj.rotation.z += f.spin * dt;
-      if (p.y < f.floor) { p.y = f.floor; f.vel.y = Math.abs(f.vel.y) > 1.5 ? -f.vel.y * 0.35 : 0; f.vel.x *= 0.7; f.vel.z *= 0.7; f.spin *= 0.6; }
-      if (f.h === undefined && f.t > 2) f.obj.scale.setScalar(Math.max(0.001, 1 - (f.t - 2) * 2));
+      if (f.roll !== undefined) {
+        // たたみの 上を ころころ(よこだおしで わの ように ころがる)
+        f.vel.x *= 1 - dt * 1.2; f.vel.z *= 1 - dt * 1.2;
+        f.roll -= f.vel.x / BLOCK_R * dt;
+        f.tip = Math.min(1, f.tip + dt * 6);
+        f.obj.rotation.set(Math.PI / 2 * f.tip, f.roll, f.obj.rotation.z * (1 - f.tip));
+      } else f.obj.rotation.z += f.spin * dt;
+      if (p.y < f.floor) {
+        p.y = f.floor; f.vel.y = Math.abs(f.vel.y) > 1.5 ? -f.vel.y * 0.35 : 0; f.vel.x *= 0.7; f.vel.z *= 0.7; f.spin *= 0.6;
+        if (f.h === undefined && f.roll === undefined && f.vel.y === 0) { f.roll = 0; f.tip = 0; }
+        if (f.h !== undefined && !f.dusted) { f.dusted = true; dust(p.clone(), 3); }
+      }
+      if (f.h === undefined && f.t > 3) f.obj.scale.setScalar(Math.max(0.001, 1 - (f.t - 3) * 2));
     }
   }
 
@@ -341,7 +380,11 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
           game.lastPower = e.power;
           sfx.knock(e.power);
           const at = new THREE.Vector3(-BLOCK_R, BASE_Y + BLOCK_H / 2, 0.2);
-          spark(at, e.result === 'perfect' ? 14 : 6, e.result === 'perfect' ? 0xffe066 : 0xffffff, 2);
+          const kind = blocks[0]?.userData.kind;
+          spark(at, e.result === 'perfect' ? 14 : 6, kind === 'hard' ? 0xff9a3a : kind === 'slip' ? 0x9ae8ff : e.result === 'perfect' ? 0xffe066 : 0xffffff, 2);
+          // カーン!(ぴったりは 金で 大きく)。かたい だんは ガキン!
+          pop(kind === 'hard' && e.result !== 'weak' ? 'ガキン!' : e.result === 'perfect' ? 'カーーン!' : 'コン!', at.clone().add(new THREE.Vector3(-0.3, 0.5, 0)), e.result === 'perfect' ? 'gold big' : '', 700);
+          if (e.result === 'perfect' || e.result === 'strong') game.slow = 0.18; // たたいた しゅんかんを すこし ゆっくり
           if (e.result === 'weak') blocks[0] && (blocks[0].userData.kick = 0.25);
           else { knockOut(e.power); sfx.slide(); }
           if (e.result === 'strong') game.shake = 0.3;
@@ -352,6 +395,8 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
         }
         case 'collapse':
           collapse(Math.random() < 0.5 ? -1 : 1);
+          dust(new THREE.Vector3(0, BASE_Y, 0), 14);
+          for (const u of game.units) u.shock = 0.8;
           sfx.crash();
           game.shake = 0.6;
           splash(e.slot === 0 ? 'くずれた〜!' : `${nameOf(e.slot)} アウト!`, e.slot === 0 ? 'red' : 'small');
@@ -426,6 +471,11 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       d.cur = d.cur === undefined ? d.y + d.drop : d.cur + (d.y + d.drop - d.cur) * Math.min(1, dt * 16);
       head.position.set(Math.sin(time * 9 + 7) * wob * 0.05, d.cur, 0);
       head.rotation.z = Math.sin(time * 6.5 + 0.5) * wob * 0.15;
+      // ぐらぐらが つよいと かおが 青ざめて あせ
+      const pale = clamp((wob - 0.4) / 0.5, 0, 1);
+      d.faceMat?.color.setRGB(1 - pale * 0.25, 0.95 - pale * 0.05, 0.88 + pale * 0.1);
+      d.sweatT = (d.sweatT || 0) - dt;
+      if (pale > 0.2 && d.sweatT <= 0) { d.sweatT = 0.35 - pale * 0.2; sweat(tower.localToWorld(head.position.clone().add(new THREE.Vector3((Math.random() < 0.5 ? -1 : 1) * 0.4, 0.75, 0.2)))); }
     }
     updateFlying(dt);
     // キャラ: たたく 子は だるまの 左へ。ほかの 子は うしろで 見る
@@ -439,7 +489,10 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       const yaw = hitter ? Math.PI / 2 : Math.atan2(-sx, 2.5 - sz) * 0.6;
       u.holder.rotation.y += (yaw - u.holder.rotation.y) * Math.min(1, dt * 6);
       if (u.sad > 0) u.sad -= dt;
-      u.model.setFace(u.win ? 'happy' : u.sad > 0 ? 'frustrated' : hitter && s.charge > 0 ? 'surprised' : s.wobble > 0.6 ? 'surprised' : 'normal');
+      if (u.shock > 0) u.shock -= dt;
+      u.model.setFace(u.win ? 'happy' : u.sad > 0 ? 'frustrated' : u.shock > 0 || (hitter && s.charge > 0) || s.wobble > 0.6 ? 'surprised' : 'normal');
+      // たたく 子は ためると ふりかぶって のけぞる
+      u.model.root.rotation.x = hitter && s.phase === 'aim' ? -s.charge * 0.25 : 0;
       u.model.play(u.win ? 'cheer' : 'idle');
       u.model.update(dt);
       u.holder.position.y = u.win ? Math.abs(Math.sin(time * 6 + slot)) * 0.25 : 0;
@@ -460,6 +513,11 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       const swingAng = game.swing > 0.8 ? -0.25 : back * (1 - game.swing);
       mallet.position.set(-BLOCK_R - 0.25, BASE_Y + BLOCK_H / 2 + 0.9, 0.05);
       mallet.rotation.set(0, 0, swingAng);
+      // ためると こづちが 光る(ちょうどいい ところで 金色)
+      const [lo, hi] = s.tower.length ? windowOf(s) : [0, 0];
+      const inWin = s.phase === 'aim' && s.charge >= lo && s.charge <= hi;
+      mallet.userData.headMat.emissive.setHex(inWin ? 0xffc030 : 0xff5a20);
+      mallet.userData.headMat.emissiveIntensity = s.phase === 'aim' ? s.charge * (inWin ? 0.9 : 0.5) : 0;
     }
     stage.update(time);
   }
@@ -535,7 +593,7 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
     }
     if (game && mode === 'playing' && !paused && intro >= 1) {
       const s = game.state;
-      game.acc += dt;
+      game.acc += dt * (game.slow > 0 ? 0.25 : 1);
       while (game.acc >= STEP && s.phase !== 'finished') {
         const mi = myInput();
         const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : mi));
@@ -550,7 +608,9 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       }
     }
     if (game && mode === 'playing') renderHud();
-    if (game && !paused) { updateWorld(dt); updateFx(dt); }
+    const wdt = game?.slow > 0 ? dt * 0.25 : dt; // ヒットストップ
+    if (game?.slow > 0) game.slow -= dt;
+    if (game && !paused) { updateWorld(wdt); updateFx(wdt); }
     atmosphere.update(dt);
     updateCamera(dt);
     renderer.render(scene, camera);

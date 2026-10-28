@@ -88,6 +88,7 @@ export function headMesh() {
   gold.position.set(0, 0.3, 0.42);
   gold.rotation.z = Math.PI;
   g.add(body, face, beard, gold);
+  g.userData.faceMat = face.material; // ぐらぐらで 青ざめる
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
@@ -101,6 +102,7 @@ export function malletMesh() {
   const band = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.135, 0.05, 14).rotateZ(Math.PI / 2), toonMaterial(0xd8302a));
   band.position.y = -0.9;
   g.add(handle, head, band);
+  g.userData.headMat = head.material; // ためると 光る
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return g;
 }
