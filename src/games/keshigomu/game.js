@@ -13,7 +13,7 @@ import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, aliveCount, canFlick, createGame, halfDesk, launchSpeed, ranking, step, timeLeft } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
-import { DESK_Y, ERASER_H, buildStage, eraserMesh, glowTex, toWorld } from './stage.js';
+import { DESK_Y, ERASER_H, FLOOR_Y, buildStage, eraserMesh, glowTex, toWorld } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 
 const $ = (id) => document.getElementById(id);
@@ -96,6 +96,62 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
     scene.add(ring);
     fx.push({ obj: ring, t: 0, life: 0.35, vel: new THREE.Vector3(), kind: 'ring' });
   }
+  // はじく ゆび(つくえの 上に ねかせた 絵。うしろから すっと 出て、はじいて きえる)
+  const fingerTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.font = '96px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.translate(64, 64); g.rotate(Math.PI / 2); // 「👆」を 右むきに
+    g.fillText('👆', 0, 6);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  function flickFinger(b, aim) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: fingerTex, transparent: true, depthWrite: false }));
+    m.rotation.y = aim;
+    const back = toWorld(b.x - Math.cos(aim) * 1.6, b.y - Math.sin(aim) * 1.6);
+    m.position.copy(back).setY(DESK_Y + 0.35);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.45, vel: new THREE.Vector3(Math.cos(aim) * 2.2, 0, -Math.sin(aim) * 2.2), kind: 'finger' });
+  }
+  // すべった あとの こすれた すじ と けしかす
+  function rubMark(b) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.18).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x8a7a6a, transparent: true, opacity: 0.25, depthWrite: false }));
+    toWorld(b.x, b.y, m.position).y += 0.006;
+    m.rotation.y = Math.atan2(b.vy, b.vx);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 2.5, vel: new THREE.Vector3(), kind: 'mark', base: 0.25 });
+  }
+  function crumbs(at, n = 3) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.04, 0.12), new THREE.MeshBasicMaterial({ color: 0xf6f2e6, transparent: true }));
+      m.position.copy(at);
+      m.rotation.y = Math.random() * 6;
+      scene.add(m);
+      const a = Math.random() * 6.28;
+      fx.push({ obj: m, t: 0, life: 0.6, vel: new THREE.Vector3(Math.cos(a) * 0.8, 1 + Math.random(), Math.sin(a) * 0.8), kind: 'chip', floor: DESK_Y + 0.02 });
+    }
+  }
+  // くずれる 板の 木くず
+  function woodChips(at, n = 4) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.16), new THREE.MeshBasicMaterial({ color: [0xd8a868, 0xb07a40, 0xefc98e][i % 3], transparent: true }));
+      m.position.copy(at);
+      scene.add(m);
+      const a = Math.random() * 6.28;
+      fx.push({ obj: m, t: 0, life: 1.2, vel: new THREE.Vector3(Math.cos(a) * 1.2, 1.5 + Math.random() * 1.5, Math.sin(a) * 1.2), kind: 'drop', spin: Math.random() * 10 });
+    }
+  }
+  // 回って いる けしごむの まわりの くるくる 線
+  function swirl(u, w) {
+    const m = new THREE.Mesh(new THREE.TorusGeometry(1.15, 0.03, 4, 20, Math.PI * 0.6).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false }));
+    m.position.copy(u.group.position).setY(DESK_Y + 0.25);
+    m.rotation.y = Math.random() * 6;
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.3, vel: new THREE.Vector3(), kind: 'swirl', spin: -w });
+  }
   function confetti(at, n = 40) {
     const cols = [0xff6a9a, 0xffd24a, 0x7ad8ff, 0x8ad04a, 0xff8a3a];
     for (let i = 0; i < n; i++) {
@@ -114,6 +170,11 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       f.obj.position.addScaledVector(f.vel, dt);
       if (f.kind === 'drop') f.vel.y -= 9 * dt;
       if (f.kind === 'ring') f.obj.scale.setScalar(1 + k * 4);
+      if (f.kind === 'finger') { f.vel.multiplyScalar(1 - dt * 6); f.obj.scale.setScalar(1 + k * 0.2); }
+      if (f.kind === 'chip') { f.vel.y -= 9 * dt; if (f.obj.position.y < f.floor) { f.obj.position.y = f.floor; f.vel.set(0, 0, 0); } }
+      if (f.kind === 'swirl') f.obj.rotation.y += f.spin * dt;
+      if (f.spin && f.kind === 'drop') { f.obj.rotation.x += f.spin * dt; f.obj.rotation.z += f.spin * 0.6 * dt; }
+      if (f.kind === 'mark') { f.obj.material.opacity = f.base * (1 - k); if (k >= 1) { scene.remove(f.obj); f.obj.material.dispose(); fx.splice(i, 1); } continue; }
       if (f.kind === 'paper') { f.vel.multiplyScalar(1 - dt * 1.2); f.vel.y -= 5 * dt; f.obj.rotation.x += f.spin * dt; f.obj.rotation.y += f.spin * 0.7 * dt; }
       f.obj.material.opacity = 1 - k * k;
       if (k >= 1) { scene.remove(f.obj); f.obj.material.dispose(); fx.splice(i, 1); }
@@ -361,22 +422,28 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
           sfx.go();
           setTimeout(() => game?.state === s && $('howtoX').classList.remove('show'), 5000);
           break;
-        case 'flick':
+        case 'flick': {
           if (e.slot === 0) sfx.flick(e.power);
           game.units[e.slot].face = 0.5;
+          const b = s.bodies[e.slot];
+          flickFinger(b, Math.atan2(b.vy, b.vx));
+          game.units[e.slot].lean = 0.5; // のって いる 子が うしろへ のけぞる
           break;
+        }
         case 'hit': {
           const at = toWorld(e.x, e.y).add(new THREE.Vector3(0, ERASER_H * 0.6, 0));
           const k = clamp(e.power / 8, 0, 1);
           spark(at, 4 + Math.round(k * 12), 0xffe066, 2 + k * 3);
           sfx.hit(k);
           if (k > 0.5) game.shake = Math.max(game.shake, k * 0.25);
+          if (k > 0.55) pop(k > 0.85 ? 'ドカッ!' : 'ゴン!', at.clone().add(new THREE.Vector3(0, 0.8, 0)), k > 0.85 ? 'red' : 'gold', 600);
+          crumbs(at, 2 + Math.round(k * 4));
           for (const i of [e.a, e.b]) game.units[i].hurt = 0.6;
           break;
         }
         case 'out': {
           const u = game.units[e.slot];
-          u.fall = { t: 0, vx: e.vx, vy: e.vy, spin: (Math.random() - 0.5) * 8 };
+          u.fall = { t: 0, vx: e.vx * 0.6, vz: -e.vy * 0.6, vy: 1.5, spin: (Math.random() - 0.5) * 8, rest: false };
           sfx.fall();
           pop(e.slot === 0 ? 'おちた〜!' : `${nameOf(e.slot)} アウト!`, toWorld(e.x, e.y).add(new THREE.Vector3(0, 1.2, 0)), e.slot === 0 ? 'red' : '', 1300);
           if (e.by === 0) setTimeout(() => game?.state === s && splash('おとした!', 'gold small'), 300);
@@ -435,18 +502,39 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       const u = game.units[slot];
       if (u.fall) {
         // おちる: すべって いた いきおいの まま とびだして、くるくる まわって 下へ
+        // ゆかに あたると ぽよんと はねて、ころがって とまる(のって いる 子は くやしい かお)
         const f = u.fall;
         f.t += dt;
-        u.group.position.x += f.vx * dt * 0.6;
-        u.group.position.z -= f.vy * dt * 0.6;
-        u.group.position.y = DESK_Y - f.t * f.t * 9;
-        u.group.rotation.x += f.spin * dt;
-        u.group.rotation.z += f.spin * 0.7 * dt;
-        u.group.visible = f.t < 2.5;
-        u.model.setFace('surprised');
+        const p = u.group.position;
+        p.x += f.vx * dt;
+        p.z += f.vz * dt;
+        if (!f.rest) {
+          f.vy -= 18 * dt;
+          p.y += f.vy * dt;
+          u.group.rotation.x += f.spin * dt;
+          u.group.rotation.z += f.spin * 0.7 * dt;
+          if (p.y <= FLOOR_Y) {
+            p.y = FLOOR_Y;
+            f.vy = -f.vy * 0.42;
+            f.vx *= 0.6; f.vz *= 0.6; f.spin *= 0.5;
+            if (f.vy > 1.2) { spark(p.clone().setY(FLOOR_Y + 0.1), 5, 0xffffff, 2); if (slot === 0 || f.t < 1.4) sfx.hit(0.3); }
+            else f.rest = true;
+          }
+        } else {
+          f.vx *= 1 - dt * 4; f.vz *= 1 - dt * 4;
+          u.group.rotation.x += (Math.round(u.group.rotation.x / Math.PI) * Math.PI - u.group.rotation.x) * Math.min(1, dt * 6);
+          u.group.rotation.z += (Math.round(u.group.rotation.z / Math.PI) * Math.PI - u.group.rotation.z) * Math.min(1, dt * 6);
+        }
+        u.model.setFace(f.rest ? 'frustrated' : 'surprised');
       } else {
         toWorld(b.x, b.y, u.group.position);
         u.group.rotation.set(0, b.a, 0);
+        // すべって いる: こすれた すじと けしかす。回って いると くるくる 線
+        const sp = Math.hypot(b.vx, b.vy);
+        u.rubT = (u.rubT || 0) - dt * sp;
+        if (sp > 1.2 && u.rubT <= 0) { u.rubT = 0.35; rubMark(b); if (Math.random() < 0.4) crumbs(u.group.position.clone().setY(DESK_Y + 0.05), 1); }
+        u.swT = (u.swT || 0) - dt;
+        if (Math.abs(b.w) > 4 && u.swT <= 0) { u.swT = 0.12; swirl(u, b.w); }
         // ぶつかった ときは すこし はねる
         if (u.hurt > 0) { u.hurt = Math.max(0, u.hurt - dt); u.group.position.y += Math.sin(u.hurt / 0.6 * Math.PI) * 0.15; }
         u.model.setFace(u.win ? 'happy' : u.hurt > 0.2 ? 'surprised' : b.charge > 0.6 ? 'frustrated' : 'normal');
@@ -460,6 +548,10 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       const want = b.charge > 0 && aimNow !== undefined ? Math.atan2(Math.cos(aimNow), -Math.sin(aimNow)) : camYaw;
       u.yaw = u.yaw === undefined ? want : u.yaw + Math.atan2(Math.sin(want - u.yaw), Math.cos(want - u.yaw)) * Math.min(1, dt * 8);
       u.rider.rotation.y = u.fall ? u.rider.rotation.y : u.yaw - b.a;
+      // はじいた ときは のけぞる。いっぱい ためると ぷるぷる
+      if (u.lean > 0) u.lean = Math.max(0, u.lean - dt * 1.5);
+      u.rider.rotation.x = -u.lean * 0.6 + (b.charge >= 1 ? Math.sin(time * 40) * 0.05 : 0);
+      u.rider.scale.setScalar(RIDER * (1 - b.charge * 0.12)); // ためると ちぢこまる
       // ためる わ
       const ring = u.ring;
       ring.visible = !b.out && b.charge > 0;
@@ -506,7 +598,8 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
     const kNext = clamp((RULES.battleTime - s.phaseT + 2 - RULES.shrinkFrom) / (RULES.shrinkTo - RULES.shrinkFrom), 0, 1);
     const sNext = s.phase === 'battle' ? 1 - (1 - RULES.shrinkMin) * kNext : s.shrink;
     const dropped = stage.updateDesk(half, [RULES.desk[0] / 2 * sNext, RULES.desk[1] / 2 * sNext], dt, time);
-    if (dropped > 0 && Math.random() < 0.3) sfx.crumble();
+    if (dropped.length && Math.random() < 0.3) sfx.crumble();
+    for (const d of dropped) if (Math.random() < 0.25) woodChips(toWorld(d.x, d.y), 3);
     stage.update(time);
   }
 

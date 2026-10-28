@@ -12,6 +12,7 @@ import { mergeStatic } from '../../runtime/merge.js';
 import { RULES, SHAPES } from './rules.js';
 
 export const DESK_Y = 0.9; // 天板の 上の 高さ
+export const FLOOR_Y = -6; // 教室の ゆか
 const TILE = 0.5; // 天板の 板 1まい
 const toWorld = (x, y, out = new THREE.Vector3()) => out.set(x, DESK_Y, -y);
 export { toWorld };
@@ -149,7 +150,7 @@ export function buildStage(scene) {
   floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
   floorTex.repeat.set(8, 8);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), new THREE.MeshToonMaterial({ map: floorTex, gradientMap: toonGradient }));
-  floor.position.y = -6;
+  floor.position.y = FLOOR_Y;
   floor.receiveShadow = true;
   floor.userData.noMerge = true;
   group.add(floor);
@@ -326,10 +327,10 @@ export function buildStage(scene) {
   // 天板を いまの 大きさに あわせる(はみ出た 板は くずれて おちる)。もうすぐ くずれる 板は 赤っぽく
   const BASE = new THREE.Color(0xffffff), WARN = new THREE.Color(0xff8a6a);
   function updateDesk(half, nextHalf, dt, t) {
-    let dropped = 0;
+    const dropped = [];
     tileInfo.forEach((d, k) => {
       const outside = Math.abs(d.x) > half[0] || Math.abs(d.y) > half[1];
-      if (outside && d.fall < 0) { d.fall = 0; dropped++; }
+      if (outside && d.fall < 0) { d.fall = 0; dropped.push(d); }
       const soon = !outside && (Math.abs(d.x) > nextHalf[0] || Math.abs(d.y) > nextHalf[1]);
       if (d.fall >= 0) {
         d.fall += dt;
