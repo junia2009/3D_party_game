@@ -14,12 +14,12 @@
 import { nextRandom, seedFrom } from '../../rng.js';
 import { RULES, cellOf, neighbors } from './rules.js';
 
-const SIGHT = 6; // これより ちかい たからばこには すぐ きづく(道のりの ます)
+const SIGHT = 7; // これより ちかい たからばこには すぐ きづく(道のりの ます)
 
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', think: 0.45, fear: 6, chest: 1.0, stray: 0.12, wobble: 0.25, notice: [3, 6] },
-  normal: { label: 'ふつう', think: 0.4, fear: 3, chest: 1.3, stray: 0.1, wobble: 0.22, notice: [2.5, 5] },
-  bold: { label: 'つよき', think: 0.35, fear: 1, chest: 1.8, stray: 0.1, wobble: 0.2, notice: [2, 4.5] },
+  cautious: { label: 'しんちょう', think: 0.4, fear: 5, chest: 1.2, stray: 0.07, wobble: 0.18, notice: [2, 4.2] },
+  normal: { label: 'ふつう', think: 0.3, fear: 3, chest: 1.5, stray: 0.05, wobble: 0.15, notice: [1.6, 3.4] },
+  bold: { label: 'つよき', think: 0.25, fear: 1, chest: 2.0, stray: 0.05, wobble: 0.12, notice: [1.2, 2.9] },
 };
 
 export function createCpu(personality, seed, slot) {
