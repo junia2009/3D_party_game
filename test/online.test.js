@@ -112,6 +112,18 @@ test('とどいた 入力は 1刻み 1つずつ。1回きりの 入力は くり
   assert.ok(ses.queues[0].length <= 8);
 });
 
+test('いちど たまった 入力は すこしずつ へらして おくれを のこさない。1回きりの 入力は すてない', () => {
+  const ses = new MinigameSession({ key: 'bowl', players: lineup(1), seed: 3 });
+  const throwIn = { x: 0, angle: 0, speed: 0.7, spin: 0 };
+  ses.push(0, [null, null, null, null, throwIn, null, null, null]); // はじめに 8つ たまった
+  const got = [];
+  // あとは 画面と おなじ はやさ(1刻み 1つ)で とどく
+  for (let t = 0; t < 20; t++) { got.push(ses.inputFor(0)); ses.push(0, [null]); }
+  assert.equal(got.filter((v) => v === throwIn).length, 1, '投げる 入力は ちょうど 1回');
+  assert.ok(got.indexOf(throwIn) < 4, `たまった ぶんを とばして はやく 投げる(${got.indexOf(throwIn)} 刻みめ)`);
+  assert.ok(ses.queues[0].length <= 3, 'たまりは へった まま');
+});
+
 test('人の 入力で 投げた ボウリングが、ローカルと おなじ 結果に なる(おなじ ルールの 計算)', () => {
   const players = lineup(5);
   const ses = new MinigameSession({ key: 'bowl', players, seed: 9 });

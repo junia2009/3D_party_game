@@ -9,7 +9,8 @@
 // つかいかた: 競技の 1刻みの 輪で、オンラインの ときは rules.step の かわりに net.step(s, inputs) を よぶ。
 //   inputs[me] だけが サーバーへ 送られる(ほかの 席の 入力は サーバーから とどいた ものを つかう)。
 
-const START_BUFFER = 3; // はじめに ためる 刻みの 数
+const START_BUFFER = 2; // はじめに ためる 刻みの 数(サーバーは 2刻みずつ くばる)
+const KEEP_BUFFER = 4; // これより たまって いたら 1刻み よけいに すすめて、すこしずつ おいつく(ためた ぶんだけ おくれる)
 const MAX_BUFFER = 10; // これより たまったら まとめて すすめる
 
 // とどいた 状態を いまの 状態へ 上書きする。中の 物(配列・物)は できるだけ おなじ 物の まま 中身だけ かえる。
@@ -69,6 +70,8 @@ export function createNetDriver({ client, rules, state, me = client.seat }) {
     if (!started) { if (queue.length >= START_BUFFER) started = true; else return []; }
     if (!queue.length) return []; // まだ とどかない: まつ
     const ev = advance();
+    // すこし たまった: 1刻み よけいに すすめる(目立たない ように すこしずつ)
+    if (queue.length > KEEP_BUFFER) ev.push(...advance());
     // おくれすぎ: まとめて すすめて おいつく
     while (queue.length > MAX_BUFFER) ev.push(...advance());
     return ev;

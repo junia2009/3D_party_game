@@ -11,7 +11,18 @@
 import { GAMES } from '../board/simulate.js';
 
 const MAX_QUEUE = 8; // これより たまったら 古い ものから すてる(おくれを ためない)
+// 入力が これより たまって いたら、1刻みに 1つずつ「なくても こまらない もの」を すてて へらす。
+// 画面と サーバーは おなじ はやさで 刻むので、いちど たまった ぶんは へらさないと ずっと おくれた ままに なる
+const KEEP_QUEUE = 2;
 const same = (a, b) => a === b || (a && b && JSON.stringify(a) === JSON.stringify(b));
+// なくても こまらない 入力: 何も して いない(null)か、ひとつ前と おなじ(おしっぱなしの つづき)。
+// 1回きりの 入力(投げる・たたく)は すてない
+function dropOne(q, last) {
+  for (let i = 0; i < q.length; i++) {
+    if (q[i] === null || same(q[i], i ? q[i - 1] : last)) { q.splice(i, 1); return true; }
+  }
+  return false;
+}
 
 export class MinigameSession {
   constructor({ key, players, seed }) {
@@ -41,7 +52,7 @@ export class MinigameSession {
     if (!this.human[seat] || !Array.isArray(inputs)) return;
     const q = this.queues[seat];
     for (const v of inputs.slice(-MAX_QUEUE)) q.push(v ?? null);
-    while (q.length > MAX_QUEUE) q.shift();
+    while (q.length > MAX_QUEUE) if (!dropOne(q, this.last[seat])) q.shift();
   }
 
   setOnline(seat, on) {
@@ -53,6 +64,7 @@ export class MinigameSession {
   inputFor(seat) {
     if (!this.human[seat] || !this.online[seat]) return this.g.input(this.cpus[seat], this.s, seat);
     const q = this.queues[seat];
+    if (q.length > KEEP_QUEUE) dropOne(q, this.last[seat]);
     if (q.length) {
       const v = q.shift();
       this.hold[seat] = v !== null && same(v, this.last[seat]);

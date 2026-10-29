@@ -30,7 +30,8 @@ const FULL_EVERY = 30; // 30刻み(0.5 秒)ごとに 状態も くばる(画面�
 const END_WAIT_MS = 600; // 競技が おわってから ロビーへ もどすまで(さいごの 状態を とどける)
 const IDLE_SWEEP_MS = 30 * 60 * 1000; // だれも いない 部屋を たたむまで
 // 大会の 間合い
-const CPU_THINK_MS = 700; // CPU が 手を うつまで(みんなが 演出を 見おわってから)
+const AHEAD = 1; // 大会の 手番を 画面より いくつ 先まで すすめて よいか
+const CPU_THINK_MS = 700; // CPU が 手を うつまで(前の 操作を くばってから)
 const SEEN_LIMIT_MS = 25000; // 演出を 見おわった しらせが こない 画面は これ以上 またない
 const HUMAN_LIMIT_MS = 45000; // 人が 手を きめない ときは CPU が かわりに
 const TAIKAI_END_MS = 3000; // おわってから 部屋へ もどすまで
@@ -309,10 +310,10 @@ export class RoomDO {
     }
   }
 
-  // みんなが さいごの 操作の 演出を 見おわったか(つながって いる 人だけ)
-  allSeen() {
+  // みんなが 演出を 見おわったか(つながって いる 人だけ)。ahead: その 数だけ 先へ いって よい
+  allSeen(ahead = 0) {
     const t = this.taikai;
-    return this.room.seats.every((s, i) => !s || !s.connected || !t.human[i] || (this.tk.seen[i] ?? 0) >= t.seq);
+    return this.room.seats.every((s, i) => !s || !s.connected || !t.human[i] || (this.tk.seen[i] ?? 0) >= t.seq - ahead);
   }
 
   pumpTaikai() {
@@ -323,10 +324,12 @@ export class RoomDO {
     if (!t || t.done || this.session || this.game) return;
     const now = Date.now();
     if (now < this.tk.lastAt) return;
-    if (!this.allSeen() && now - this.tk.lastAt < SEEN_LIMIT_MS) return;
     const pend = t.pending;
-    // 競技・対決: 競技の 進行を まわして、順位を 大会へ
     const g = t.gameLineup();
+    // 手番は 1つ 先まで きめて くばって よい(画面は 演出の あいだに うけとって おき、おわったら すぐ 次へ。
+    // 往復の 待ちが 手番ごとに はさまらない)。競技は みんなが 盤を 見おわってから
+    if (!this.allSeen(g ? 0 : AHEAD) && now - this.tk.lastAt < SEEN_LIMIT_MS) return;
+    // 競技・対決: 競技の 進行を まわして、順位を 大会へ
     if (g) {
       const lineup = g.seats.map((i) => t.players[i]);
       const seed = t.seed + t.s.turn * 31 + t.seq;
@@ -348,7 +351,10 @@ export class RoomDO {
       return;
     }
     // 人の 手番: まつ(ずっと きめない ときは CPU が かわりに)
-    if (t.waitingFor() !== null) {
+    const who = t.waitingFor();
+    if (who !== null) {
+      // その 子の 画面が まだ 演出中: 待ち時間は 見おわってから かぞえる(画面が 止まって いても いつかは かぞえはじめる)
+      if ((this.tk.seen[who] ?? 0) < t.seq && now - this.tk.lastAt < SEEN_LIMIT_MS) this.tk.waitAt = now;
       if (now - this.tk.waitAt < HUMAN_LIMIT_MS) return;
       const res = t.apply(t.standIn());
       if (res) this.broadcastAct(res);
