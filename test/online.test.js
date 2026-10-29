@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { RoomCore, SEATS, makeRoomCode, normalizeRoomCode } from '../server/room-core.js';
-import { MinigameSession } from '../src/net/session.js';
+import { MinigameSession, PULSE } from '../src/net/session.js';
 import { MINIGAMES } from '../src/board/rules.js';
 import { GAMES } from '../src/board/simulate.js';
 import { ONLINE_GAMES } from '../src/net/games.js';
@@ -103,13 +103,35 @@ test('とどいた 入力は 1刻み 1つずつ。1回きりの 入力は くり
   assert.equal(ses.inputFor(0), null);
   assert.deepEqual(ses.inputFor(0), throwIn);
   assert.equal(ses.inputFor(0), null, '投げる 入力は 1回きり');
-  const stick = { x: 1, y: 0 };
-  ses.push(0, [stick, stick]);
-  ses.inputFor(0); ses.inputFor(0);
-  assert.deepEqual(ses.inputFor(0), stick, 'まだ とどいて いない あいだも おしっぱなしは つづく');
+  // スティック: まだ とどいて いない あいだも つづく
+  const mz = new MinigameSession({ key: 'meiro', players: lineup(1), seed: 3 });
+  mz.push(0, [{ x: 1, y: 0 }, { x: 0.9, y: 0.1 }]);
+  mz.inputFor(0); mz.inputFor(0);
+  assert.deepEqual(mz.inputFor(0), { x: 0.9, y: 0.1 }, 'かわりつづける スティックも つづく');
+  // スティック + とぶ: とぶ だけ 1回きり
+  const kz = new MinigameSession({ key: 'kazan', players: lineup(1), seed: 3 });
+  kz.push(0, [{ x: 1, z: 0, jump: true }]);
+  assert.equal(kz.inputFor(0).jump, true);
+  assert.deepEqual(kz.inputFor(0), { x: 1, z: 0, jump: false }, 'とぶ は くりかえさず、スティックは つづく');
   // たまりすぎた ぶんは すてる
   ses.push(0, Array(30).fill(null));
   assert.ok(ses.queues[0].length <= 8);
+});
+
+test('けしごむ: ひっぱって いる あいだに 入力が とぎれても はなした ことに ならない(ねらいは そのまま)', () => {
+  const ses = new MinigameSession({ key: 'keshigomu', players: lineup(1), seed: 3 });
+  // ゆびを うごかしながら ひっぱる(ねらいが 毎刻み かわる)
+  ses.push(0, [0.5, 0.52, 0.54].map((aim) => ({ hold: true, aim, spin: 0 })));
+  for (let i = 0; i < 3; i++) ses.inputFor(0);
+  // とどかない 刻み
+  for (let i = 0; i < 5; i++) assert.deepEqual(ses.inputFor(0), { hold: true, aim: 0.54, spin: 0 });
+  // はなした 入力が とどく
+  ses.push(0, [{ hold: false, aim: 0.6, spin: 0 }]);
+  assert.deepEqual(ses.inputFor(0), { hold: false, aim: 0.6, spin: 0 });
+});
+
+test('どの 競技にも 1回きりの 入力の きまりが ある', () => {
+  for (const key of ONLINE_GAMES) assert.ok(key in PULSE, key);
 });
 
 test('いちど たまった 入力は すこしずつ へらして おくれを のこさない。1回きりの 入力は すてない', () => {
