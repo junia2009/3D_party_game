@@ -2,7 +2,8 @@
 //
 // 倒れ木を わって つくった レーンが 5本 ならんで いて、5人が いっせいに 投げる(まち時間なし)。
 // - 3フレーム。1フレームに 2回まで 投げる(1回目で ぜんぶ たおしたら ストライク、2回目は なし)。
-// - 投げる: 向き(angle)・はやさ(speed)・ひねり(spin)。ひねると ころがる うちに だんだん まがる(カーブ)。
+// - 投げる: 立つ 場所(x)・向き(angle)・はやさ(speed)・ひねり(spin)。立つ 場所で じゃまものを よけられる。
+//   ひねると ころがる うちに だんだん まがる(カーブ)。
 // - ピン(まつぼっくり)は 10本。たおれた ピンも すべって ほかの ピンを たおす。
 // - 金の ピン: フレームごとに 1本だけ。たおすと +3。
 // - じゃまもの: レーンに 小石や こぶ。あたると どんぐりが はねて 向きが かわる。
@@ -11,7 +12,7 @@
 //
 // 5本の レーンは おなじ ならび(金の ピンと じゃまものの 場所も おなじ)。うでまえだけで きそう。
 //
-// inputs[slot]: { angle(ラジアン。0 = まっすぐ、+ = 右), speed(0〜1), spin(-1〜1。+ = 右へ まがる) } または null
+// inputs[slot]: { x(立つ 場所。-stance〜stance), angle(ラジアン。0 = まっすぐ、+ = 右), speed(0〜1), spin(-1〜1。+ = 右へ まがる) } または null
 //   投げて いい ときに 1回だけ うけとる。
 // 座標(レーンごと): x は よこ(まんなか 0、右 +)、y は 投げる 線から おくへ。
 // state を書きかえるのは step() だけ。乱数は state.rng だけ。
@@ -39,6 +40,7 @@ export const RULES = {
   vmin: 3.2,
   vmax: 8.5,
   maxAngle: 0.07, // 投げる 向きの はば
+  stance: 0.36, // 立つ 場所の はば(まんなかから)
   hook: 0.3, // ひねりの まがる 強さ
   rollFric: 0.18, // どんぐりの ころがり まさつ(はやさに かける)
   pinFric: 2.4, // たおれた ピンの すべり まさつ
@@ -112,7 +114,7 @@ export function throwBall(s, slot, inp) {
   const angle = Math.max(-RULES.maxAngle, Math.min(RULES.maxAngle, inp.angle || 0));
   const k = Math.max(0, Math.min(1, inp.speed ?? 0.6));
   const v = RULES.vmin + (RULES.vmax - RULES.vmin) * k;
-  lane.ball = { x: Math.max(-RULES.laneW / 2 + RULES.ballR, Math.min(RULES.laneW / 2 - RULES.ballR, inp.x ?? 0)), y: 0, vx: Math.sin(angle) * v, vy: Math.cos(angle) * v, spin: Math.max(-1, Math.min(1, inp.spin || 0)), gutter: false, t: 0, still: 0, hitObstacle: false };
+  lane.ball = { x: Math.max(-RULES.stance, Math.min(RULES.stance, inp.x ?? 0)), y: 0, vx: Math.sin(angle) * v, vy: Math.cos(angle) * v, spin: Math.max(-1, Math.min(1, inp.spin || 0)), gutter: false, t: 0, still: 0, hitObstacle: false };
   lane.thrown = true;
 }
 

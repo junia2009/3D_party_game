@@ -1,7 +1,7 @@
 // 森の 倒れ木の どんぐりボウリング の CPU。
 //
 // 人と同じく「向き・はやさ・ひねり」を 1回 出すだけ。見て いるのは 自分の レーンの ピンと じゃまもの。
-// - 投げる まえに、いくつかの 投げかたを 頭の 中で ころがして(ルールと おなじ 計算)、たおれる 本数を くらべる。
+// - 立つ 場所(まんなか・左・右)も えらぶ。投げる まえに、いくつかの 投げかたを 頭の 中で ころがして(ルールと おなじ 計算)、たおれる 本数を くらべる。
 //   ぴったり 1つの 向きだけで うまく いく 投げかたより、となりの 向きでも うまく いく ものを えらぶ(ずれに つよい)。
 // - えらんだ 投げかたから、向き・はやさ・ひねりが すこし ずれる。
 // 性格: aim(向きの ずれ)・power(はやさの ずれ)・spins(つかう ひねり)・gold(金の ピンを ねらう 気もち)・think(考える 秒)。
@@ -12,12 +12,13 @@ import { nextRandom, seedFrom } from '../../rng.js';
 import { RULES, STEP, canThrow, stepLane, throwBall } from './rules.js';
 
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', aim: 0.021, power: 0.07, spinErr: 0.12, spins: [0], speeds: [0.6], gold: 0.5, think: [1.2, 2.6] },
-  normal: { label: 'ふつう', aim: 0.024, power: 0.09, spinErr: 0.16, spins: [-0.5, 0, 0.5], speeds: [0.75], gold: 1, think: [0.9, 2.2] },
-  bold: { label: 'つよき', aim: 0.03, power: 0.11, spinErr: 0.2, spins: [-0.8, 0, 0.8], speeds: [0.95], gold: 2, think: [0.6, 1.8] },
+  cautious: { label: 'しんちょう', aim: 0.024, power: 0.08, spinErr: 0.12, spins: [0], speeds: [0.6], gold: 0.5, think: [1.2, 2.6] },
+  normal: { label: 'ふつう', aim: 0.027, power: 0.1, spinErr: 0.16, spins: [-0.5, 0, 0.5], speeds: [0.75], gold: 1, think: [0.9, 2.2] },
+  bold: { label: 'つよき', aim: 0.033, power: 0.12, spinErr: 0.2, spins: [-0.8, 0, 0.8], speeds: [0.95], gold: 2, think: [0.6, 1.8] },
 };
 
-const ANGLES = Array.from({ length: 13 }, (_, k) => (k - 6) * (RULES.maxAngle / 6.5));
+const ANGLES = Array.from({ length: 9 }, (_, k) => (k - 4) * (RULES.maxAngle / 4.5));
+const STANCES = [-0.3, 0, 0.3];
 
 export function createCpu(personality, seed, slot) {
   return { personality, rng: seedFrom(`${seed}:bowl-cpu:${slot}`), key: null, waitUntil: null, plan: null };
@@ -34,8 +35,9 @@ function trial(s, lane, inp, goldWant) {
   throwBall(sim, 0, inp);
   for (let k = 0; k < (RULES.rollMax / STEP) && !l.done; k += 2) {
     stepLane(sim, l, STEP * 2);
-    // どんぐりが ピンの うしろへ ぬけて しばらく したら もう かわらない
-    if (l.ball.y > RULES.laneL + 0.5 && l.ball.t > 3) break;
+    // どんぐりが ピンを ぬけて、うごく ピンが なくなったら もう かわらない
+    if (k % 8 === 0 && l.ball.y > RULES.headPin + 1.2 && !l.pins.some((p) => p.down && Math.abs(p.vx) + Math.abs(p.vy) > 0.3)) break;
+    if (l.ball.gutter && l.ball.y < RULES.headPin - 1) break; // みぞ: 0本
   }
   const before = lane.pins.filter((p) => p.down).length;
   const down = l.pins.filter((p) => p.down).length - before;
@@ -59,8 +61,8 @@ function choose(cpu, s, slot) {
   }
   if (!table) {
     table = [];
-    for (const spin of sk.spins) for (const speed of sk.speeds) {
-      const row = ANGLES.map((a) => ({ angle: a, speed, spin, v: trial(s, lane, { angle: a, speed, spin }, sk.gold) }));
+    for (const x of STANCES) for (const spin of sk.spins) for (const speed of sk.speeds) {
+      const row = ANGLES.map((a) => ({ x, angle: a, speed, spin, v: trial(s, lane, { x, angle: a, speed, spin }, sk.gold) }));
       table.push(row);
     }
     if (s.throwNo === 0) shared.get(s).set(key, table);
@@ -89,6 +91,7 @@ export function cpuInput(cpu, s, slot) {
   if (!cpu.plan) cpu.plan = choose(cpu, s, slot) || { angle: 0, speed: 0.7, spin: 0 };
   const p = cpu.plan;
   return {
+    x: (p.x ?? 0) + gauss(cpu) * sk.aim * 2,
     angle: p.angle + gauss(cpu) * sk.aim,
     speed: Math.max(0, Math.min(1, p.speed + gauss(cpu) * sk.power)),
     spin: Math.max(-1, Math.min(1, p.spin + gauss(cpu) * sk.spinErr)),

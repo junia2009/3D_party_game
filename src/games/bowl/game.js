@@ -2,7 +2,7 @@
 //
 // ルールは rules.js、CPU は cpu.js。ここは「入力を集めて rules.step を回し、結果を3Dと HUD に映す」だけ。
 //
-// 投げ方: 画面を 上へ シュッと はじく(スワイプ)。はやさ = いきおい、向き = すすむ 向き、
+// 投げ方: 指を おいた 左右の 場所に 立って、画面を 上へ シュッと はじく(スワイプ)。はやさ = いきおい、向き = すすむ 向き、
 // さいごに まげると ひねり(カーブ)。パソコンは マウスで おなじ。
 
 import * as THREE from 'three';
@@ -29,6 +29,8 @@ export function swipeToThrow(pts) {
   while (n > 1 && pts[n - 1].x === pts[n - 2].x && pts[n - 1].y === pts[n - 2].y) n--;
   if (n < 2 || pts[pts.length - 1].t - pts[n - 1].t > 300) return null;
   pts = pts.slice(0, n);
+  // とちゅうで ゆびを とめて いたら、そこから あとの うごきだけを 見る
+  for (let i = pts.length - 1; i > 0; i--) if (pts[i].t - pts[i - 1].t > 180) { pts = pts.slice(i - 1); break; }
   const end = pts[pts.length - 1];
   // さいごの 0.12 秒の うごきで いきおいと 向き
   let k = pts.length - 1;
@@ -151,7 +153,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
   let game = null;
   let intro = 1;
   const INTRO_TIME = 2.4;
-  const input = { pts: null, id: null, pending: null };
+  const input = { pts: null, id: null, pending: null, stance: 0 };
 
   function buildLaneProps() {
     // ピンと じゃまものを いまの state に あわせて 作りなおす(フレームの はじめ)
@@ -196,7 +198,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
       const holder = new THREE.Group();
       holder.add(model.root);
       holder.scale.setScalar(SCALE);
-      holder.position.set(laneX(slot) - 0.62, 0, 0.8);
+      holder.position.set(laneX(slot) - 0.5, 0, 0.8);
       holder.rotation.y = Math.PI; // おくを 向く
       scene.add(holder);
       return { model, holder, act: 0 };
@@ -214,6 +216,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     // ねらいの 矢じるし(自分の レーンだけ)
     const guide = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 3).translate(0, 1.5, 0).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
     guide.position.set(laneX(0), 0.01, -0.2);
+    guide.userData.base = laneX(0);
     guide.visible = false;
     scene.add(guide);
     if (game?.guide) scene.remove(game.guide);
@@ -221,7 +224,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     buildLaneProps();
     atmosphere.apply(params.get('time') || 'day');
     atmosphere.setupShadows([...units.map((u) => u.holder), ...lanes.map((l) => l.ball)], [stage.group]);
-    Object.assign(input, { pts: null, id: null, pending: null });
+    Object.assign(input, { pts: null, id: null, pending: null, stance: 0 });
     buildChips();
     setMode('playing');
     intro = fromSky ? 0 : 1;
@@ -267,6 +270,8 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     if (!canThrow(game.state, 0)) return;
     input.id = e.pointerId;
     input.pts = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
+    // 指を おいた 左右の 場所に 立つ(画面の まんなか = レーンの まんなか)
+    input.stance = clamp((e.clientX / innerWidth - 0.5) * 2.4, -1, 1) * RULES.stance;
     $('howtoBo').classList.remove('show');
   });
   window.addEventListener('pointermove', (e) => {
@@ -278,7 +283,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     if (input.id !== e.pointerId) return;
     input.pts.push({ x: e.clientX, y: e.clientY, t: performance.now() });
     const th = swipeToThrow(input.pts);
-    if (th && game && canThrow(game.state, 0)) input.pending = th;
+    if (th && game && canThrow(game.state, 0)) input.pending = { ...th, x: input.stance };
     else if (!th) pop('上へ シュッと!', null, 'small', 700);
     input.id = null;
     input.pts = null;
@@ -447,9 +452,14 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
         L.ball.rotation.y = Math.atan2(b.vx, b.vy) * -1;
         L.ball.visible = b.y < RULES.laneL + 0.8;
       } else {
-        toWorld(slot, 0, -0.15, L.ball.position);
+        // 投げる まえ: 立つ 場所に おく(自分は 指の 場所、CPU は きめた 場所)
+        const want = slot === 0 ? input.stance : game.cpus[slot]?.plan?.x ?? 0;
+        L.rollX += (want - L.rollX) * Math.min(1, dt * 12);
+        toWorld(slot, L.rollX, -0.15, L.ball.position);
         L.ball.visible = true;
       }
+      const u = game.units[slot];
+      u.holder.position.x = laneX(slot) + L.rollX - 0.5;
       // ピン: たおれたら その 向きへ ころん
       lane.pins.forEach((p, i) => {
         const m = L.pins[i];
@@ -484,6 +494,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     const th = input.pts && input.pts.length > 2 ? swipeToThrow(input.pts) : null;
     g.visible = !!th && canThrow(s, 0);
     if (th) g.rotation.y = -th.angle * 3;
+    g.position.x = g.userData.base + game.lanes[0].rollX;
     stage.update(time);
   }
 

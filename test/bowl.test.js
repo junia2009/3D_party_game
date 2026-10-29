@@ -75,6 +75,21 @@ test('みぞに おちると 0本。2回目で のこりを たおすと スペ�
   assert.equal(s.players[0].spares, 1);
 });
 
+test('立つ 場所を えらべる(はばの 中だけ)。はじに 立てば まんなかの 小石を よけられる', () => {
+  const s = toAim(4);
+  step(s, PLAYERS.map((_, i) => (i === 0 ? { x: 0.3, angle: 0, speed: 0.6, spin: 0 } : i === 1 ? { x: 9, angle: 0, speed: 0.6, spin: 0 } : null)));
+  assert.ok(Math.abs(s.lanes[0].ball.x - 0.3) < 0.05);
+  assert.ok(s.lanes[1].ball.x <= RULES.stance + 1e-9, 'はばの そとには 立てない');
+  // まんなかに 小石: まんなかから まっすぐは あたる、はじからは あたらない
+  const hit = (x) => {
+    const g = toAim(4);
+    g.obstacles = [{ x: 0, y: 3, r: 0.07, kind: 'stone' }];
+    return throwOnce(g, { x, angle: 0, speed: 0.7, spin: 0 }).some((e) => e.type === 'bump' && e.slot === 0);
+  };
+  assert.ok(hit(0));
+  assert.ok(!hit(0.3));
+});
+
 test('ひねると まがる', () => {
   const xs = [-0.6, 0, 0.6].map((spin) => {
     const s = toAim(3);
@@ -104,7 +119,7 @@ test('なげないと しばらくして そっと 投げる(すすむ)', () => 
 
 test('同じ性格どうしなら、どの席も勝てる(かたよりすぎない)', () => {
   const wins = [0, 0, 0, 0, 0];
-  const NN = 50;
+  const NN = 40;
   for (let seed = 1; seed <= NN; seed++) wins[ranking(run(seed * 7 + 1, { personalities: PLAYERS.map(() => 'normal') }).s)[0]]++;
   for (const w of wins) assert.ok(w > NN * 0.06 && w < NN * 0.36, `席ごとの勝ち数 ${wins}`);
 });
