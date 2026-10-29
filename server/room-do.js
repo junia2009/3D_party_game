@@ -8,21 +8,32 @@
 //   settings { settings }                 あそびを えらぶ(ホストだけ)
 //   start                                 はじめる(ホストだけ)
 //   in { v: [入力, …] }                   競技の 入力(1刻み 1つ。たまった ぶんを まとめて)
+//   bact { action }                       大会: 自分の 手番の 操作
+//   bseen { seq }                         大会: その 操作の 演出を 見おわった
 //   leave                                 ぬける
 //   ping
 // メッセージ(サーバー → 画面)
-//   joined { seat, code }   lobby { lobby }   start { key, lineup, seed, seat }
+//   joined { seat, code }   lobby { lobby }   start { key, lineup, seed, seat, taikai? }
+//   taikai { lineup, seed, stage, turns, seat, seq, s }(大会が はじまった / とちゅうから 入った)
+//   bact { seq, action, s }(大会の 操作。みんなの 画面も おなじ act で すすめる)
 //   snap { tick, ins, s? }(SNAP_EVERY 刻みごとに、その あいだの 刻みごとの みんなの 入力。FULL_EVERY 刻みごとに 状態 s も)
 //   end { result }   error { msg }
 
 import { RoomCore } from './room-core.js';
 import { MinigameSession } from '../src/net/session.js';
 import { ONLINE_GAMES } from '../src/net/games.js';
+import { TaikaiSession } from '../src/net/taikai-session.js';
+import { simulate } from '../src/board/simulate.js';
 
 const SNAP_EVERY = 2; // 2刻み(1/30 秒)ごとに 入力を くばる
 const FULL_EVERY = 30; // 30刻み(0.5 秒)ごとに 状態も くばる(画面の 計算の ずれを なおす)
 const END_WAIT_MS = 600; // 競技が おわってから ロビーへ もどすまで(さいごの 状態を とどける)
 const IDLE_SWEEP_MS = 30 * 60 * 1000; // だれも いない 部屋を たたむまで
+// 大会の 間合い
+const CPU_THINK_MS = 700; // CPU が 手を うつまで(みんなが 演出を 見おわってから)
+const SEEN_LIMIT_MS = 25000; // 演出を 見おわった しらせが こない 画面は これ以上 またない
+const HUMAN_LIMIT_MS = 45000; // 人が 手を きめない ときは CPU が かわりに
+const TAIKAI_END_MS = 3000; // おわってから 部屋へ もどすまで
 
 export class RoomDO {
   constructor(ctx, env) {
@@ -33,6 +44,8 @@ export class RoomDO {
     this.session = null;
     this.timer = null;
     this.pending = []; // まだ くばって いない 刻みごとの 入力
+    this.taikai = null; // 大会の 進行(TaikaiSession)
+    this.tk = null; // 大会の 間合い { seen, lastAt, timer }
     this.ready = ctx.blockConcurrencyWhile(async () => {
       const saved = await ctx.storage.get('room');
       if (saved) {
@@ -112,10 +125,14 @@ export class RoomDO {
       this.sockets.set(ws, msg.clientId);
       this.send(ws, { t: 'joined', seat: res.seat, code: room.code });
       this.broadcastLobby();
-      // 競技の とちゅうに もどって きた: いまの 競技へ 入れる
+      // とちゅうに もどって きた: いまの 大会・競技へ 入れる
+      if (room.phase === 'playing' && this.taikai) {
+        this.taikai.setOnline(res.seat, true);
+        this.send(ws, this.taikaiMsg(res.seat));
+      }
       if (room.phase === 'playing' && this.session) {
-        this.session.setOnline(res.seat, true);
-        this.send(ws, this.startMsg(res.seat));
+        const gs = this.gameSeat(res.seat);
+        if (gs >= 0) { this.session.setOnline(gs, true); this.send(ws, this.startMsg(gs)); }
       }
       return this.save();
     }
@@ -123,7 +140,22 @@ export class RoomDO {
     if (msg.t === 'ping') return this.send(ws, { t: 'pong' });
     if (msg.t === 'in') {
       const seat = room.seatOf(clientId);
-      if (seat >= 0 && this.session) this.session.push(seat, msg.v);
+      const gs = seat >= 0 ? this.gameSeat(seat) : -1;
+      if (gs >= 0 && this.session) this.session.push(gs, msg.v);
+      return;
+    }
+    if (msg.t === 'bact') {
+      const seat = room.seatOf(clientId);
+      const tk = this.taikai;
+      if (!tk || seat < 0 || tk.waitingFor() !== seat) return this.send(ws, { t: 'error', msg: 'いまは あなたの 番では ないよ' });
+      const res = tk.apply({ ...msg.action, slot: seat });
+      if (!res) return this.send(ws, { t: 'error', msg: 'その 操作は できないよ' });
+      this.broadcastAct(res);
+      return;
+    }
+    if (msg.t === 'bseen') {
+      const seat = room.seatOf(clientId);
+      if (seat >= 0 && this.tk) this.tk.seen[seat] = Math.max(this.tk.seen[seat] ?? 0, Number(msg.seq) || 0);
       return;
     }
     if (msg.t === 'chara') {
@@ -139,17 +171,17 @@ export class RoomDO {
       return this.save();
     }
     if (msg.t === 'start') {
-      if (room.settings.mode === 'taikai') return this.send(ws, { t: 'error', msg: 'すごろくは じゅんびちゅうです' });
       const res = room.start(clientId);
       if (res.error) return this.send(ws, { t: 'error', msg: res.error });
-      this.startGame(res);
+      if (res.mode === 'taikai') this.startTaikai(res);
+      else this.startGame(res);
       this.broadcastLobby();
       return this.save();
     }
     if (msg.t === 'leave') {
       const { seat } = room.leave(clientId);
       this.sockets.delete(ws);
-      if (seat >= 0 && this.session) this.session.setOnline(seat, false);
+      this.goneSeat(seat);
       try { ws.close(1000, 'ぬけました'); } catch { /* 済 */ }
       this.broadcastLobby();
       return this.save();
@@ -162,23 +194,43 @@ export class RoomDO {
     if (!clientId) return;
     this.sockets.delete(ws);
     const { seat } = this.room.disconnect(clientId);
-    if (seat >= 0 && this.session) this.session.setOnline(seat, false);
+    this.goneSeat(seat);
     this.broadcastLobby();
     this.save();
     if (this.room.isDeserted()) this.ctx.storage.setAlarm(Date.now() + IDLE_SWEEP_MS);
   }
 
-  // ── 競技 ────────────────────────────────────────
-  startMsg(seat) {
-    const g = this.game;
-    return { t: 'start', key: g.key, lineup: g.lineup, seed: g.seed, seat, tick: this.session.tick, s: this.session.s };
+  // 人が いなく なった: 競技と 大会では CPU が かわりに
+  goneSeat(seat) {
+    if (seat < 0) return;
+    const gs = this.gameSeat(seat);
+    if (gs >= 0 && this.session) this.session.setOnline(gs, false);
+    this.taikai?.setOnline(seat, false);
   }
 
-  startGame({ game, lineup, seed }) {
-    this.game = { key: game, lineup, seed };
+  // ── 競技 ────────────────────────────────────────
+  // 部屋の 席 → 競技の 席(大会の 対決は 2人だけ。出ない 子は -1)
+  gameSeat(seat) {
+    if (!this.game) return -1;
+    return this.game.seats ? this.game.seats.indexOf(seat) : seat;
+  }
+  startMsg(gameSeat) {
+    const g = this.game;
+    return { t: 'start', key: g.key, lineup: g.lineup, seed: g.seed, seat: gameSeat, tick: this.session.tick, s: this.session.s, taikai: !!g.onDone };
+  }
+
+  // seats: 大会の 対決なら 出る 2人の 部屋の 席。onDone: 大会の 競技なら おわった ときに 順位を わたす
+  startGame({ game, lineup, seed }, { seats = null, onDone = null } = {}) {
+    this.game = { key: game, lineup, seed, seats, onDone };
     this.session = new MinigameSession({ key: game, players: lineup, seed });
-    this.room.seats.forEach((s, i) => { if (s && !s.connected) this.session.setOnline(i, false); });
-    for (const [ws, id] of this.sockets) this.send(ws, this.startMsg(this.room.seatOf(id)));
+    this.room.seats.forEach((s, i) => {
+      const gs = this.gameSeat(i);
+      if (gs >= 0 && (!s || !s.connected)) this.session.setOnline(gs, false);
+    });
+    for (const [ws, id] of this.sockets) {
+      const gs = this.gameSeat(this.room.seatOf(id));
+      if (gs >= 0) this.send(ws, this.startMsg(gs));
+    }
     this.pending = [];
     // 刻みは 時計に あわせて まわす(タイマーが おくれても、そのぶん まとめて すすめる)
     this.clock = Date.now();
@@ -211,12 +263,98 @@ export class RoomDO {
     this.timer = null;
     const result = this.session.result();
     this.session = null;
+    const onDone = this.game.onDone;
+    if (onDone) {
+      // 大会の 競技: 順位を 大会へ もどす(部屋は 大会の まま)
+      setTimeout(() => { this.broadcast({ t: 'end', result }); this.game = null; onDone(result); }, END_WAIT_MS);
+      return;
+    }
     setTimeout(() => {
       this.broadcast({ t: 'end', result });
       this.room.finish();
       this.broadcastLobby();
       this.save();
     }, END_WAIT_MS);
+  }
+
+  // ── 大会(すごろく) ──────────────────────────────────
+  taikaiMsg(seat) {
+    const t = this.taikai;
+    return { t: 'taikai', lineup: t.players, seed: t.seed, stage: t.s.stage, turns: t.s.turns, seat, seq: t.seq, s: t.s };
+  }
+
+  startTaikai({ lineup, seed, stage, turns }) {
+    this.taikai = new TaikaiSession({ players: lineup, seed, stage, turns });
+    this.room.seats.forEach((s, i) => { if (s && !s.connected) this.taikai.setOnline(i, false); });
+    for (const [ws, id] of this.sockets) this.send(ws, this.taikaiMsg(this.room.seatOf(id)));
+    const now = Date.now();
+    clearInterval(this.tk?.timer);
+    this.tk = { seen: {}, lastAt: now + 4000, waitAt: now + 4000, timer: setInterval(() => this.pumpTaikai(), 200) }; // はじめは 会場へ 入る 時間を まつ
+  }
+
+  broadcastAct(res) {
+    const now = Date.now();
+    this.tk.lastAt = now;
+    this.tk.waitAt = now;
+    this.broadcast({ t: 'bact', seq: res.seq, action: res.action, s: this.taikai.s });
+    if (this.taikai.done) {
+      clearInterval(this.tk.timer);
+      setTimeout(() => {
+        this.taikai = null;
+        this.tk = null;
+        this.room.finish();
+        this.broadcastLobby();
+        this.save();
+      }, TAIKAI_END_MS);
+    }
+  }
+
+  // みんなが さいごの 操作の 演出を 見おわったか(つながって いる 人だけ)
+  allSeen() {
+    const t = this.taikai;
+    return this.room.seats.every((s, i) => !s || !s.connected || !t.human[i] || (this.tk.seen[i] ?? 0) >= t.seq);
+  }
+
+  pumpTaikai() {
+    const t = this.taikai;
+    if (!t || t.done || this.session) return;
+    const now = Date.now();
+    if (now < this.tk.lastAt) return;
+    if (!this.allSeen() && now - this.tk.lastAt < SEEN_LIMIT_MS) return;
+    const pend = t.pending;
+    // 競技・対決: 競技の 進行を まわして、順位を 大会へ
+    const g = t.gameLineup();
+    if (g) {
+      const lineup = g.seats.map((i) => t.players[i]);
+      const seed = t.seed + t.s.turn * 31 + t.seq;
+      const live = g.seats.some((i) => t.human[i] && t.online[i]);
+      if (!live) {
+        // 人が いない 対決は すぐ 決める
+        const r = simulate(g.key, lineup.map((l) => ({ cpu: l.cpu || 'normal' })), seed);
+        const res = t.apply(t.resultAction(g.seats, r.ranking, r.picked));
+        if (res) this.broadcastAct(res);
+        return;
+      }
+      this.startGame({ game: g.key, lineup, seed }, {
+        seats: pend.type === 'duelGame' ? g.seats : null,
+        onDone: (result) => {
+          const res = t.apply(t.resultAction(g.seats, result.ranking, result.picked));
+          if (res) this.broadcastAct(res);
+        },
+      });
+      return;
+    }
+    // 人の 手番: まつ(ずっと きめない ときは CPU が かわりに)
+    if (t.waitingFor() !== null) {
+      if (now - this.tk.waitAt < HUMAN_LIMIT_MS) return;
+      const res = t.apply(t.standIn());
+      if (res) this.broadcastAct(res);
+      return;
+    }
+    // CPU の 手番
+    if (now - this.tk.lastAt < CPU_THINK_MS) return;
+    const res = t.apply(t.autoAction());
+    if (res) this.broadcastAct(res);
   }
 
   async alarm() {

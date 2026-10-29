@@ -42,8 +42,12 @@ export function setupOnline(ctx) {
       lobby: (l) => { lobby = l; renderRoom(); },
       start: (m) => {
         // つなぎなおしで おなじ 競技の とちゅうに もどった ときは そのまま つづける
-        if (ctx.inGame()) return;
+        if (ctx.inMinigame()) return;
         ctx.playOnline(m, client);
+      },
+      taikai: (m) => {
+        if (ctx.inGame()) return; // つなぎなおし: 盤は そのまま つづける
+        ctx.playOnlineTaikai(m, client);
       },
       error: (msg, fatal) => {
         ctx.toast(msg);
@@ -135,8 +139,13 @@ export function setupOnline(ctx) {
     const host = isHost();
     for (const b of $('roomMode').children) {
       b.setAttribute('aria-pressed', String(b.dataset.v === lobby.settings.mode));
-      b.disabled = !host || b.dataset.v === 'taikai'; // すごろくは じゅんびちゅう
+      b.disabled = !host;
     }
+    const taikai = lobby.settings.mode === 'taikai';
+    $('roomGame').hidden = taikai;
+    $('roomStage').hidden = $('roomTurns').hidden = !taikai;
+    for (const b of $('roomStage').children) { b.setAttribute('aria-pressed', String(b.dataset.v === lobby.settings.stage)); b.disabled = !host; }
+    for (const b of $('roomTurns').children) { b.setAttribute('aria-pressed', String(Number(b.dataset.v) === lobby.settings.turns)); b.disabled = !host; }
     const sel = $('roomGame');
     if (!sel.options.length) {
       sel.append(new Option('おまかせ(毎回 ちがう 競技)', 'random'));
@@ -150,6 +159,8 @@ export function setupOnline(ctx) {
   }
   for (const b of $('roomMode').children) b.addEventListener('click', () => { ctx.knock(); client?.setSettings({ mode: b.dataset.v }); });
   $('roomGame').addEventListener('change', () => client?.setSettings({ game: $('roomGame').value }));
+  for (const b of $('roomStage').children) b.addEventListener('click', () => { ctx.knock(); client?.setSettings({ stage: b.dataset.v }); });
+  for (const b of $('roomTurns').children) b.addEventListener('click', () => { ctx.knock(); client?.setSettings({ turns: Number(b.dataset.v) }); });
   $('roomStart').addEventListener('click', () => { ctx.unlockAudio(); ctx.knock(); client?.start(); });
 
   return {

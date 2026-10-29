@@ -19,6 +19,7 @@ import { buildBoardScene, podiumSpot } from './scene.js';
 import { createEffects } from './effects.js';
 import { simulate } from './simulate.js';
 import { clearTaikai, saveTaikai } from './save.js';
+import { replaceState } from '../net/drive.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -294,13 +295,14 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     sfx.banner();
   }
   function say(text) { $('msgB').textContent = text; }
-  function name(i) { return i === 0 ? 'あなた' : game.players[i].name; }
+  const ME = () => game?.me ?? 0; // 自分の 席(オンラインでは 0 とは かぎらない)
+  function name(i) { return i === ME() ? 'あなた' : game.players[i].name; }
   function renderCards() {
     const s = game.s;
     $('cardsB').replaceChildren(...(s.order.length ? s.order : s.players.map((_, i) => i)).map((i) => {
       const p = s.players[i];
       const d = document.createElement('div');
-      d.className = 'bcard' + (i === 0 ? ' me' : '') + (s.phase === 'turn' && currentSlot(s) === i ? ' now' : '');
+      d.className = 'bcard' + (i === ME() ? ' me' : '') + (s.phase === 'turn' && currentSlot(s) === i ? ' now' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[i].hex));
       d.innerHTML = `<span class="nm">${name(i)}</span><span class="vals"><span class="md">${p.medals}</span><span class="ac">${p.acorns}</span></span>` +
         `<span class="it">${p.items.map(() => '●').join('')}</span>`;
@@ -351,10 +353,13 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   let runId = 0;
 
   // resume: 保存しておいた 大会(save.js)。あれば そこから つづける
-  async function startTournament({ fromSky = false, resume = null } = {}) {
-    const seed = resume ? resume.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+  async function startTournament({ fromSky = false, resume = null, net = null } = {}) {
+    // オンライン: { client, start, onFinish }。顔ぶれ・種・いまの 状態は サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : resume ? resume.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
     let players;
-    if (resume) players = resume.players;
+    if (net) players = net.start.lineup.map((l, i) => ({ character: l.character, cpu: l.cpu, name: i === me ? 'あなた' : l.name }));
+    else if (resume) players = resume.players;
     else {
       const pick = { rng: seedFrom(`${seed}:pick`) };
       const others = CHARACTERS.filter((c) => c.key !== picked && !c.guest).map((c) => c.key); // ゲストは CPU に出てこない
@@ -369,6 +374,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     if (view.stage !== st.key) { view.dispose(); view = buildBoardScene(scene, st); }
     fx.hidePodium();
     const s = resume ? resume.s : createTournament(players, seed, { turns: opts.turns, stage: opts.stage });
+    if (net) replaceState(s, JSON.parse(JSON.stringify(net.start.s)));
     const pieces = await Promise.all(players.map(async (p, i) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[i].hex);
@@ -380,9 +386,9 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       scene.add(holder);
       return { model, holder, sq: s.players[i].sq, anim: null, face: 0 };
     }));
-    const cpus = players.map((p, i) => (p.cpu ? createCpu(p.cpu, seed, i) : null));
+    const cpus = players.map((p, i) => (p.cpu && !net ? createCpu(p.cpu, seed, i) : null));
     if (resume) cpus.forEach((c, i) => { if (c && resume.cpus?.[i]) Object.assign(c, resume.cpus[i]); });
-    game = { s, seed, players, pieces, cpus };
+    game = { s, seed, players, pieces, cpus, me, net: net ? netLink(net) : null };
     save();
     settlePieces();
     atmosphere.apply(params.get('time') || st.time || 'day');
@@ -390,8 +396,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     placeOwl(s.owl, true);
     setMode('playing');
     intro = fromSky ? 0 : 1;
-    camOn(0);
-    focus.copy(game.pieces[0].holder.position);
+    camOn(me);
+    focus.copy(game.pieces[me].holder.position);
     renderCards();
     const id = ++runId;
     drive(id); // 進行(非同期でずっと回る。新しい大会が始まったら止まる)
@@ -815,7 +821,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           camOn(e.slot);
           react(e.slot, e.delta > 0 ? 'cheer' : 'idle', e.delta > 0 ? 'happy' : e.delta < 0 ? 'frustrated' : 'normal');
           if (e.delta > 0) sfx.gain(); else if (e.delta < 0) sfx.lose();
-          pop(`${e.delta >= 0 ? '+' : ''}${e.delta}`, e.slot, e.delta >= 0 ? (e.slot === 0 ? 'me' : '') : 'red');
+          pop(`${e.delta >= 0 ? '+' : ''}${e.delta}`, e.slot, e.delta >= 0 ? (e.slot === ME() ? 'me' : '') : 'red');
           renderCards();
           await sleep(0.9 / speed());
           break;
@@ -927,11 +933,63 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   // ── 進行 ────────────────────────────────────────
   // さいごの 手番を 端末に しまう(ページが 読み込みなおされても つづきから 遊べるように)
   function save() {
-    if (!game) return;
+    if (!game || game.net) return; // オンラインの 大会は 端末に しまわない
     if (game.s.phase === 'finished') { clearTaikai(); return; }
     saveTaikai({ picked, seed: game.seed, players: game.players, s: game.s, cpus: game.cpus });
   }
+  // オンライン: サーバーから とどく 操作を じゅんに うけとる
+  function netLink(net) {
+    const queue = [];
+    let wake = null;
+    net.client.h.bact = (m) => { queue.push(m); wake?.(); };
+    return {
+      ...net,
+      next: () => new Promise((resolve) => {
+        const take = () => { if (queue.length) resolve(queue.shift()); else wake = () => { wake = null; take(); }; };
+        take();
+      }),
+      send: (action) => net.client.send({ t: 'bact', action }),
+      seen: (seq) => net.client.send({ t: 'bseen', seq }),
+    };
+  }
+  async function driveOnline(id) {
+    const live = () => id === runId && game;
+    const n = game.net;
+    const me = game.me;
+    await sleep(0.1);
+    n.seen(n.start.seq); // はじめの 状態は 見た
+    while (live() && game.s.phase !== 'finished') {
+      const s = game.s;
+      const pend = s.pending;
+      let msg;
+      if (pend.type === 'minigame' || pend.type === 'duelGame') {
+        // 競技へは タイトルが つれて いく(サーバーが はじめる)。出ない 対決は 盤で まつ
+        if (pend.type === 'duelGame' && pend.a !== me && pend.b !== me) say(`${name(pend.a)} と ${name(pend.b)} が 対決中…`);
+        msg = await n.next();
+        say('');
+      } else if (pend.slot === me) {
+        const action = await humanAct(pend);
+        if (!live()) return;
+        n.send(action);
+        msg = await n.next();
+      } else if (pend.type === 'roll' || pend.type === 'orderRoll') {
+        // ほかの 子の サイコロ: 回して いる あいだに 目が とどく
+        [msg] = await Promise.all([n.next(), rollDice(pend.slot, false)]);
+      } else {
+        msg = await n.next();
+      }
+      if (!live()) return;
+      const ev = act(s, msg.action);
+      replaceState(s, msg.s); // サーバーの 状態で こたえあわせ
+      await show(ev);
+      n.seen(msg.seq);
+    }
+    if (live()) await ceremony(live);
+    // おわったら 部屋へ もどる(サーバーも 部屋に もどって いる)
+    if (live()) { await sleep(3); n.onFinish?.(); }
+  }
   async function drive(id) {
+    if (game.net) return driveOnline(id);
     const live = () => id === runId && game;
     await sleep(0.1);
     while (live() && game.s.phase !== 'finished') {
@@ -1003,12 +1061,13 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   }
   async function humanAct(pend) {
     const s = game.s;
-    const me = s.players[0];
-    const a = (type, extra = {}) => ({ slot: 0, type, ...extra });
+    const meSlot = ME();
+    const me = s.players[meSlot];
+    const a = (type, extra = {}) => ({ slot: meSlot, type, ...extra });
     switch (pend.type) {
       case 'orderRoll':
       case 'roll': {
-        await rollDice(0, true);
+        await rollDice(meSlot, true);
         return a('roll');
       }
       case 'item': {
@@ -1016,7 +1075,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         return v < 0 ? a('skipItem') : a('useItem', { index: v });
       }
       case 'swapPick': {
-        const v = await choose('だれと入れかえる?', s.players.map((_, i) => i).filter((i) => i !== 0).map((i) => ({ label: name(i), value: i })));
+        const v = await choose('だれと入れかえる?', s.players.map((_, i) => i).filter((i) => i !== meSlot).map((i) => ({ label: name(i), value: i })));
         return a('swap', { target: v });
       }
       case 'branch': {
@@ -1044,7 +1103,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       }
       case 'duelPick': {
         const v = await choose('対決: だれと勝負する?', [
-          ...s.players.map((_, i) => i).filter((i) => i !== 0).map((i) => ({ label: `${name(i)}<small>${s.players[i].acorns}</small>`, value: i, disabled: s.players[i].acorns <= 0 })),
+          ...s.players.map((_, i) => i).filter((i) => i !== meSlot).map((i) => ({ label: `${name(i)}<small>${s.players[i].acorns}</small>`, value: i, disabled: s.players[i].acorns <= 0 })),
           { label: 'やめておく', value: -1 },
         ]);
         return v < 0 ? a('duelSkip') : a('duelPick', { target: v });
@@ -1130,7 +1189,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     fx.confetti(at.clone().setY(1), 180);
     sfx.fanfare();
     sfx.cheer();
-    splash(w === 0 ? 'あなたの優勝!' : `${name(w)}の優勝!`, 'gold');
+    splash(w === ME() ? 'あなたの優勝!' : `${name(w)}の優勝!`, 'gold');
     await sleep(3.2);
   }
 
@@ -1138,18 +1197,18 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     const s = game.s;
     const order = ranking(s);
     const w = order[0];
-    $('resultTitle').textContent = w === 0 ? 'あなたの優勝!' : `${game.players[w].name}の優勝!`;
+    $('resultTitle').textContent = w === ME() ? 'あなたの優勝!' : `${game.players[w].name}の優勝!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = s.players[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = game.players[slot].cpu ? `CPU(${PERSONALITIES[game.players[slot].cpu].label})` : 'あなた';
+      if (slot === ME()) li.className = 'me';
+      const who = game.players[slot].cpu ? `CPU(${PERSONALITIES[game.players[slot].cpu].label})` : slot === ME() ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === game.players[slot].character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">メダル ${p.medals}<small>どんぐり ${p.acorns}</small></span>`;
       return li;
     }));
-    if (w === 0) sfx.medal();
+    if (w === ME()) sfx.medal();
     setMode('result');
   }
 
@@ -1400,13 +1459,13 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     frame,
     // opts: { turns, stage }
     // resume: 保存しておいた 大会(save.js の loadTaikai)。あれば キャラ・ステージ・ターンも そちらに あわせる
-    async enter(character, { fromSky = true, turns = 10, stage = 'shiki', resume = null } = {}) {
+    async enter(character, { fromSky = true, turns = 10, stage = 'shiki', resume = null, net = null } = {}) {
       picked = resume ? resume.picked : character;
-      opts = resume ? { turns: resume.s.turns, stage: resume.s.stage } : { turns, stage };
+      opts = net ? { turns: net.start.turns, stage: net.start.stage } : resume ? { turns: resume.s.turns, stage: resume.s.stage } : { turns, stage };
       st = STAGES[opts.stage];
       unlockAudio();
       active = true;
-      await startTournament({ fromSky, resume });
+      await startTournament({ fromSky, resume, net });
       renderer.compile(scene, camera);
     },
     // 競技からもどってきたとき(タイトルが呼ぶ)

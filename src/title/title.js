@@ -768,6 +768,7 @@ async function leaveGame(to) {
     // オンラインの 競技を とちゅうで やめた: 部屋も ぬける(のこりは CPU が やる)
     online.leave();
     onlineGame = false;
+    onlineTaikai = false;
     if (to === 'play') to = 'online';
   }
   whoosh(0.9, true);
@@ -798,10 +799,74 @@ const online = setupOnline({
   games: GAMES,
   picked: () => picked,
   setPicked: (k) => { picked = k; settings.character = k; saveSettings(settings); },
-  playOnline: (m, client) => playOnline(m, client),
+  playOnline: (m, client) => (onlineTaikai ? playOnlineInTaikai(m, client) : playOnline(m, client)),
+  playOnlineTaikai: (m, client) => playOnlineTaikai(m, client),
   inGame: () => onlineGame,
+  inMinigame: () => onlineGame && !!playing && playing !== taikaiBoard,
 });
-let onlineGame = false; // オンラインの 競技の 会場に いる
+let onlineGame = false; // オンラインの 競技・大会の 会場に いる
+let onlineTaikai = false; // オンラインの 大会の とちゅう
+// オンラインの 大会: 部屋から 盤へ
+async function playOnlineTaikai(m, client) {
+  while (busy) await wait(100);
+  busy = true;
+  onlineGame = true;
+  onlineTaikai = true;
+  taikai.stage = m.stage; // 曲は ステージで きまる
+  unlockAudio();
+  whoosh(1.1, true);
+  go('dive');
+  dive.dir = 1;
+  const ready = ensureGame('taikai');
+  await wait(250);
+  await curtain.cover();
+  const g = await ready;
+  await g.enter(m.lineup[m.seat].character, { fromSky: true, net: { client, start: m, onFinish: () => backToRoom('taikai') } });
+  playing = g;
+  taikaiBoard = g;
+  playingKey = 'taikai';
+  active = 'game';
+  updateMusic();
+  dive.dir = 0;
+  dive.k = 1;
+  whoosh(0.8, false);
+  await curtain.reveal();
+  busy = false;
+}
+// オンラインの 大会の 競技: 盤から 競技へ 入って、おわったら 盤へ もどる
+async function playOnlineInTaikai(m, client) {
+  while (busy) await wait(100);
+  const home = taikaiBoard;
+  busy = true;
+  whoosh(1.1, true);
+  await curtain.cover();
+  const g = await ensureGame(m.key);
+  await g.enter(m.lineup[m.seat].character, {
+    fromSky: true,
+    lineup: m.lineup,
+    net: { client, start: m },
+    onFinish: async () => {
+      while (busy) await wait(100);
+      busy = true;
+      whoosh(0.9, true);
+      await curtain.cover();
+      g.exit();
+      playing = home;
+      playingKey = 'taikai';
+      updateMusic();
+      releaseGame(m.key);
+      home?.resume?.();
+      await curtain.reveal();
+      busy = false;
+    },
+  });
+  playing = g;
+  playingKey = m.key;
+  updateMusic();
+  whoosh(0.8, false);
+  await curtain.reveal();
+  busy = false;
+}
 async function playOnline(m, client) {
   while (busy) await wait(100);
   busy = true;
@@ -831,8 +896,11 @@ async function backToRoom(key) {
   whoosh(0.9, true);
   await curtain.cover();
   playing?.exit();
+  if (taikaiBoard && taikaiBoard !== playing) taikaiBoard.exit();
   playing = null;
+  taikaiBoard = null;
   onlineGame = false;
+  onlineTaikai = false;
   releaseGame(key);
   active = 'title';
   updateMusic();

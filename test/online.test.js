@@ -173,3 +173,61 @@ test('サーバーの 入力で 画面も おなじ ように すすみ、さい
     assert.ok(sent.length > 100, '自分の 入力を 送って いる');
   }
 });
+
+// ── 大会(すごろく) ────────────────────────────────────
+import { TaikaiSession } from '../src/net/taikai-session.js';
+import { act } from '../src/board/rules.js';
+import { simulate } from '../src/board/simulate.js';
+
+test('大会: サーバーの 進行で さいごまで すすみ、画面も おなじ 操作で おなじ けっかに なる', () => {
+  for (const stage of ['shiki', 'yuen']) {
+    const players = lineup(2);
+    const t = new TaikaiSession({ players, seed: 5, stage, turns: 5 });
+    // 画面の がわ: おなじ 操作を act で すすめる
+    const screen = JSON.parse(JSON.stringify(t.s));
+    let n = 0, games = 0;
+    const human = (seat) => {
+      // 人の 手番: CPU と おなじ きめかたで(テスト用)
+      const p = t.pending;
+      assert.equal(t.waitingFor(), seat);
+      return t.standIn();
+    };
+    while (!t.done) {
+      if (++n > 5000) throw new Error('おわらない');
+      let res;
+      const g = t.gameLineup();
+      if (g) {
+        games++;
+        const r = simulate(g.key, g.seats.map((i) => ({ cpu: t.players[i].cpu || 'normal' })), 7 + n);
+        res = t.apply(t.resultAction(g.seats, r.ranking, r.picked));
+      } else if (t.waitingFor() !== null) res = t.apply(human(t.waitingFor()));
+      else res = t.apply(t.autoAction());
+      assert.ok(res, `できない 操作: ${JSON.stringify(t.pending)}`);
+      act(screen, res.action);
+      assert.equal(res.seq, n);
+    }
+    assert.deepEqual(screen, JSON.parse(JSON.stringify(t.s)), `${stage}: 画面と サーバーが おなじ`);
+    assert.ok(games >= 5, '競技が ある');
+  }
+});
+
+test('大会: 人の 手番は その 人を まつ。切れたら CPU が うつ。手番で ない 人の 操作は うけつけない', () => {
+  const t = new TaikaiSession({ players: lineup(5), seed: 3, turns: 5 });
+  assert.equal(t.pending.type, 'orderRoll');
+  assert.equal(t.waitingFor(), 0);
+  assert.equal(t.autoAction(), null, '人を まって いる あいだ CPU は うたない');
+  assert.equal(t.apply({ slot: 1, type: 'roll' }), null, '手番では ない');
+  assert.ok(t.apply({ slot: 0, type: 'roll' }));
+  t.setOnline(1, false);
+  assert.equal(t.waitingFor(), null);
+  assert.ok(t.apply(t.autoAction()), '切れた 人の 番は CPU が うつ');
+});
+
+test('大会の 対決は 2人の 順位を 大会の 席に もどす', () => {
+  const t = new TaikaiSession({ players: lineup(2), seed: 3, turns: 5 });
+  t.s.pending = { type: 'duelGame', a: 3, b: 1, game: 'bowl' };
+  assert.deepEqual(t.gameLineup(), { key: 'bowl', seats: [3, 1] });
+  assert.deepEqual(t.resultAction([3, 1], [1, 0]), { type: 'duelResult', winner: 1 });
+  t.s.pending = { type: 'minigame', game: 'meiro' };
+  assert.deepEqual(t.resultAction([0, 1, 2, 3, 4], [4, 3, 2, 1, 0]), { type: 'minigameResult', ranking: [4, 3, 2, 1, 0] });
+});

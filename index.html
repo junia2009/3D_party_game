@@ -233,6 +233,7 @@
   /* 長い 競技名は 2行に おる(1行の ままだと 画面ごと 右へ はみ出す) */
   /* オンライン */
   #online, #room { gap: 10px; }
+  #room .seg[hidden], #room .gamesel[hidden] { display: none; }
   .plank.big { width: 100%; }
   .nameinput, .codeinput, .gamesel { font: 800 18px var(--font-body); color: var(--ink); padding: 10px 12px; border-radius: 12px; border: 3px solid #c9a676; background: #fff; width: 100%; box-sizing: border-box; }
   .codeinput { font: 400 30px var(--font-display); letter-spacing: .3em; text-align: center; }
@@ -2230,6 +2231,8 @@
     <h3>あそび <small id="roomHostNote"></small></h3>
     <div class="seg" id="roomMode"><button type="button" data-v="game">競技</button><button type="button" data-v="taikai">すごろく</button></div>
     <select class="gamesel" id="roomGame" aria-label="競技"></select>
+    <div class="seg" id="roomStage" hidden><button type="button" data-v="shiki">四季の森</button><button type="button" data-v="yuen">どんぐり遊園地</button></div>
+    <div class="seg" id="roomTurns" hidden><button type="button" data-v="5">5<small>ターン</small></button><button type="button" data-v="10">10<small>ターン</small></button><button type="button" data-v="15">15<small>ターン</small></button></div>
   </div>
   <button class="go" type="button" id="roomStart">はじめる!</button>
   <p class="netstatus" id="roomStatus" role="status"></p>

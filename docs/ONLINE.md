@@ -13,7 +13,7 @@
 
 - 席は 5つ。さいしょに 入った 人が ホスト(あそびを えらんで はじめる)。ホストが ぬけたら 次の 人へ。
 - キャラは 人どうしで かぶらない。あいた 席は はじめる ときに CPU で うめる(性格は くじ)。
-- あそび: 競技(1つずつ。おまかせ も できる)/ すごろく(じゅんびちゅう)。
+- あそび: 競技(1つずつ。おまかせ も できる)/ すごろく(ステージ・ターン数を えらぶ)。
 - オンラインで えらべる 競技は `src/net/games.js` の `ONLINE_GAMES` に ある ものだけ。
 - 競技が おわると 部屋へ もどる。とちゅうで 切れた 人の 席は のこり、そのあいだ CPU が かわりに 動く。
   おなじ 端末(clientId)で つなぎなおすと もとの 席に もどれる。競技の とちゅうで「メニューへ」は 部屋も ぬける。
@@ -22,11 +22,12 @@
 
 ```
 画面(src/title/online.js, src/net/client.js, src/net/drive.js)
-   │  WebSocket(hello / chara / settings / start / in / leave)
+   │  WebSocket(hello / chara / settings / start / in / bact / bseen / leave)
    ▼
 Worker(server/index.js)── /new /match /room?code=
    ├─ RoomDO(server/room-do.js): あいことば ごとに 1つ。部屋の きまりは server/room-core.js
-   │     └─ MinigameSession(src/net/session.js): 競技を 60 刻み/秒で すすめる(ルールは src/games/*/rules.js そのまま)
+   │     ├─ MinigameSession(src/net/session.js): 競技を 60 刻み/秒で すすめる(ルールは src/games/*/rules.js そのまま)
+   │     └─ TaikaiSession(src/net/taikai-session.js): すごろくの 手番を すすめる
    └─ MatchDO(server/match-do.js): だれとでも の 部屋の 名簿
 ```
 
@@ -42,6 +43,21 @@ Worker(server/index.js)── /new /match /room?code=
   オンラインの あいだは 一時停止しても 時間は とまらない(サーバーが すすめる)。
 - オンラインでは、できごとを 見のがす ことが ある(とちゅうから 入った・おくれて まとめて すすめた)。
   演出は「前の できごとが あった はず」に たよりすぎない(どんぐりつみの「落とす」は、つるの先が なくても 落とせる)。
+
+## すごろく(大会)
+
+- 大会の 進行も サーバー(`src/net/taikai-session.js` の `TaikaiSession`。ルールは `src/board/rules.js` の `act` そのまま)。
+  すごろくは 時間でなく「手番の 子の 操作」で すすむので、競技とは べつの しくみ。
+- 操作(`act` に わたす もの)には 番号(seq)を つけて、みんなへ `bact { seq, action, s }` で くばる。
+  画面も おなじ `act` で すすめて 演出を 出し、そのあと `s` で こたえあわせ する。見おわったら `bseen { seq }`。
+- サーバーは つながって いる 人 みんなが 見おわってから 次へ すすむ(見おわらない 人は 25 秒で おいていく)。
+  - 人の 手番: その 子の 画面から `bact { action }` が とどくのを まつ(45 秒 きめないと CPU が かわりに)。
+  - CPU・切れた 人の 手番: すこし 間を おいて CPU が きめる。
+  - みんなの 競技・対決: 部屋が 競技を はじめる(ふつうの 競技と おなじ `start`)。おわったら 順位を 大会へ もどす。
+    人の いない 対決は その場で `simulate`。出ない 子は 盤で「…が 対決中…」と まつ。
+- 画面は `src/board/game.js` の `driveOnline`。自分の 席は `game.me`(盤の 名前・カードも これで「あなた」を きめる)。
+  オンラインの 大会は とちゅうから やりなおす ための 保存を しない(つなぎなおすと サーバーが いまの 状態を くれる)。
+- 大会が おわると 3 秒後に 部屋へ もどる。
 
 ## 競技を オンライン対応に する
 
