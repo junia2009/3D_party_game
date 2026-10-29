@@ -283,7 +283,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
   let clock = 0, fast = false, paused = false;
   const timers = [];
   const sleep = (sec) => new Promise((resolve) => timers.push({ at: clock + sec, resolve }));
-  const speed = () => (fast ? 3 : 1);
+  // オンラインで 演出が おくれて、とどいた 操作が たまって いる ときも はやく(おいつく)
+  const speed = () => (fast || (game?.net?.backlog ?? 0) >= 2 ? 3 : 1);
 
   // ── HUD ─────────────────────────────────────────
   function splash(text, cls = '') {
@@ -944,6 +945,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     net.client.h.bact = (m) => { queue.push(m); wake?.(); };
     return {
       ...net,
+      get backlog() { return queue.length; },
       next: () => new Promise((resolve) => {
         const take = () => { if (queue.length) resolve(queue.shift()); else wake = () => { wake = null; take(); }; };
         take();

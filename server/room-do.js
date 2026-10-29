@@ -317,7 +317,10 @@ export class RoomDO {
 
   pumpTaikai() {
     const t = this.taikai;
-    if (!t || t.done || this.session) return;
+    // 競技の とちゅう・競技の 順位を もどす まで(this.game が のこって いる あいだ)は まつ。
+    // session は 競技が おわった ときに 消えるが、順位を 大会へ もどすのは すこし あと(END_WAIT_MS)。
+    // その すきまに 次へ すすむと、おなじ 競技を もう一度 はじめて しまう
+    if (!t || t.done || this.session || this.game) return;
     const now = Date.now();
     if (now < this.tk.lastAt) return;
     if (!this.allSeen() && now - this.tk.lastAt < SEEN_LIMIT_MS) return;

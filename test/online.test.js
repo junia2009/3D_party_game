@@ -231,3 +231,51 @@ test('大会の 対決は 2人の 順位を 大会の 席に もどす', () => {
   t.s.pending = { type: 'minigame', game: 'meiro' };
   assert.deepEqual(t.resultAction([0, 1, 2, 3, 4], [4, 3, 2, 1, 0]), { type: 'minigameResult', ranking: [4, 3, 2, 1, 0] });
 });
+
+// 部屋(Durable Object)を そのまま 動かす。時計は にせもの(mock.timers)で すすめる
+import { mock } from 'node:test';
+import { RoomDO } from '../server/room-do.js';
+import { cpuAct, createCpu } from '../src/board/cpu.js';
+
+test('大会の 部屋: 競技は 1回ずつ はじまり、競技の あとも 手番が すすむ', async () => {
+  mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: 1_000_000 });
+  try {
+    const storage = { get: async () => null, put: async () => {}, setAlarm() {}, deleteAll: async () => {} };
+    const room = new RoomDO({ blockConcurrencyWhile: (fn) => fn(), storage, waitUntil() {} }, {});
+    await room.ready;
+    room.room = new RoomCore({ code: '1234', isPublic: false, games: ONLINE_GAMES });
+    // 人は 1人(席 0)。操作の 演出は すぐ 見おわり、自分の 番は CPU の 考えで うつ
+    const cpu = createCpu('normal', 1, 0);
+    let starts = 0;
+    let twice = 0; // 大会が すすまない まま、また 競技が はじまった 回数
+    let since = true; // 前の 競技の あと、大会が すすんだか
+    let lastTurn = 0;
+    const ws = {
+      close() {},
+      send(text) {
+        const m = JSON.parse(text);
+        if (m.t === 'start') { starts++; if (!since) twice++; since = false; }
+        if (m.t !== 'taikai' && m.t !== 'bact') return;
+        since = true;
+        lastTurn = m.s.turn;
+        queueMicrotask(() => {
+          room.onMessage(ws, { t: 'bseen', seq: m.seq });
+          const p = m.s.pending;
+          if (p && p.slot === 0 && p.type !== 'minigame' && p.type !== 'duelGame') room.onMessage(ws, { t: 'bact', action: cpuAct(cpu, m.s, 0) });
+        });
+      },
+    };
+    await room.onMessage(ws, { t: 'hello', clientId: 'a', name: 'あ', character: 'ponta' });
+    await room.onMessage(ws, { t: 'settings', settings: { mode: 'taikai', turns: 5 } });
+    await room.onMessage(ws, { t: 'start' });
+    for (let i = 0; i < 40000 && room.taikai && !room.taikai.done; i++) {
+      mock.timers.tick(50);
+      await new Promise((r) => setImmediate(r));
+    }
+    assert.ok(room.taikai?.done, `大会が さいごまで すすむ(ターン ${lastTurn})`);
+    assert.ok(starts > 0, '競技を あそんだ');
+    assert.equal(twice, 0, 'おなじ 競技を 2回 はじめない');
+  } finally {
+    mock.timers.reset();
+  }
+});
