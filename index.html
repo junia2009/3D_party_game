@@ -615,6 +615,12 @@
   #hudI .timer:empty { visibility: hidden; }
   #hudI .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 40px); font-size: 14px; }
   #hudI .splash.small { font-size: clamp(24px, 8vw, 46px); }
+  /* 画面の そとの たからばこを さす 矢じるし */
+  #hudI .chestarrow { position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px; pointer-events: none; animation: tamefull .8s infinite; }
+  #hudI .chestarrow[hidden] { display: none; }
+  #hudI .chestarrow i { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, #ffd24a 0 55%, transparent 56%); }
+  #hudI .chestarrow i::after { content: ''; position: absolute; right: -10px; top: 50%; margin-top: -9px; border: 9px solid transparent; border-left: 12px solid #ffd24a; border-right: 0; }
+  #hudI .chestarrow b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; }
   /* 森の谷まの かみひこうき: 上に みんなの 点(順位で ならぶ)と のこり時間。下に のこりの きょりと かたむきの めやす */
   #hudA .scores { display: flex; gap: 4px; flex-wrap: wrap; }
   #hudA .chip { padding: 4px 8px 4px 4px; position: relative; }
@@ -1914,6 +1920,7 @@
     <button class="pausebtn" id="pauseBtnI" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
   </div>
   <div class="pops" id="popsI"></div>
+  <div class="arrows" id="arrowsI"></div>
   <div class="splash" id="splashI"></div>
   <p class="howto" id="howtoI">ゆびを おいて ずらすと はしる。<br><b>どんぐり</b>は 1こ、<b>たからばこ</b>は 5こ!<br><b>おばけ</b>に ぶつかると おとすよ。ひかる <b>矢じるし</b>は ジャンプ</p>
   <div class="stick" id="stickI" hidden><i></i></div>

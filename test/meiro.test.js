@@ -156,7 +156,7 @@ test('同じ性格どうしなら、どの席も勝てる(かたよりすぎな�
 });
 
 test('人くらいの うでまえでも、CPU と互角に戦える', () => {
-  PERSONALITIES.human = { label: 'ひと', think: 0.6, fear: 3, chest: 1.3, stray: 0.2, wobble: 0.35 };
+  PERSONALITIES.human = { label: 'ひと', think: 0.6, fear: 3, chest: 1.3, stray: 0.2, wobble: 0.35, notice: [1, 2.5] }; // 人は 矢じるしで たからばこに きづける
   try {
     let rankSum = 0, wins = 0;
     const NN = 60;

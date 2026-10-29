@@ -288,6 +288,26 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       c.classList.toggle('lead', order[0] === slot && s.players[slot].score > 0);
     });
     $('timeI').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
+    // 画面の そとの たからばこは、ふちに 矢じるしで 向きを 見せる
+    const chests = s.phase === 'play' ? s.items.filter((it) => it.kind === 'chest') : [];
+    const box = $('arrowsI');
+    while (box.children.length < chests.length) { const el = document.createElement('div'); el.className = 'chestarrow'; el.innerHTML = '<i></i><b>🎁</b>'; box.append(el); }
+    [...box.children].forEach((el, k) => {
+      const it = chests[k];
+      if (!it) { el.hidden = true; return; }
+      tmpV.copy(toWorld(it.x + 0.5, it.y + 0.5)).setY(0.3).project(camera);
+      const inView = tmpV.z < 1 && Math.abs(tmpV.x) < 0.92 && Math.abs(tmpV.y) < 0.85;
+      el.hidden = inView;
+      if (inView) return;
+      // カメラの うしろでも 向きが あう ように、自分から みた 向きで きめる
+      const me = s.players[0];
+      const a = Math.atan2(it.y + 0.5 - me.y, it.x + 0.5 - me.x); // 画面の 右 = +x、下 = +y
+      const c = Math.cos(a), sn = Math.sin(a);
+      const m = Math.max(Math.abs(c) / 0.42, Math.abs(sn) / 0.4);
+      el.style.left = `${50 + (c / m) * 100}%`;
+      el.style.top = `${52 + (sn / m) * 100}%`;
+      el.firstElementChild.style.transform = `rotate(${a}rad)`;
+    });
   }
   const tmpV = new THREE.Vector3();
   function pop(text, at, cls = '', life = 900) {

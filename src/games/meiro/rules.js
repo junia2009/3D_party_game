@@ -164,12 +164,13 @@ export function createGame(players, seed) {
 
 function spawnChest(s) {
   // たからばこは めいろの すみの ほう(ゆき止まり)に でやすい
-  const free = emptyCells(s);
+  // だれかの すぐ ちかくには でない(でた しゅんかんに とられない ように)
+  const free = emptyCells(s).filter(([x, y]) => s.players.every((p) => Math.abs(p.x - x - 0.5) + Math.abs(p.y - y - 0.5) > 5));
   const dead = free.filter(([x, y]) => DIRS.filter(([dx, dy]) => s.grid[y + dy]?.[x + dx] === 0).length === 1);
   const list = dead.length ? dead : free;
   if (!list.length) return;
   const [x, y] = pick(s, list);
-  s.items.push({ x, y, kind: 'chest' });
+  s.items.push({ x, y, kind: 'chest', id: (s.chestId = (s.chestId || 0) + 1), born: s.phase === 'play' ? s.t : s.t + s.phaseT }); // born: でた 時(はじめの ぶんは スタートの 時)
 }
 
 export const timeLeft = (s) => (s.phase === 'play' ? Math.max(0, s.phaseT) : 0);

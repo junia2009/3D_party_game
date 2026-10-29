@@ -5,21 +5,25 @@
 //   「ねうち ÷ きょり」が いちばん よい どんぐりか たからばこを ねらう。おばけの ちかくは とおりたくない(fear)。
 // - ねらいが きまったら みちの つぎの ますの まんなかへ むかう。手は すこし ぶれる。
 // - ときどき まよう(stray: ちかくの てきとうな ところを ねらう)。
-// 性格: think・fear・chest(たからばこを どれだけ ほしがるか)・stray・wobble。
+// - たからばこは でた しゅんかんには きづかない(人と おなじ)。ちかく(道のりで sight ます いない)に くるか、
+//   でてから notice 秒 たってから(音や まわりの ようすで)きづく。
+// 性格: think・fear・chest(たからばこを どれだけ ほしがるか)・stray・wobble・notice。
 //
 // 乱数は CPU ごとに持つ(シードはゲームのシードと席から作る)。
 
 import { nextRandom, seedFrom } from '../../rng.js';
 import { RULES, cellOf, neighbors } from './rules.js';
 
+const SIGHT = 6; // これより ちかい たからばこには すぐ きづく(道のりの ます)
+
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', think: 0.45, fear: 6, chest: 1.0, stray: 0.12, wobble: 0.25 },
-  normal: { label: 'ふつう', think: 0.4, fear: 3, chest: 1.3, stray: 0.1, wobble: 0.22 },
-  bold: { label: 'つよき', think: 0.35, fear: 1, chest: 1.8, stray: 0.1, wobble: 0.2 },
+  cautious: { label: 'しんちょう', think: 0.45, fear: 6, chest: 1.0, stray: 0.12, wobble: 0.25, notice: [3, 6] },
+  normal: { label: 'ふつう', think: 0.4, fear: 3, chest: 1.3, stray: 0.1, wobble: 0.22, notice: [2.5, 5] },
+  bold: { label: 'つよき', think: 0.35, fear: 1, chest: 1.8, stray: 0.1, wobble: 0.2, notice: [2, 4.5] },
 };
 
 export function createCpu(personality, seed, slot) {
-  return { personality, rng: seedFrom(`${seed}:meiro-cpu:${slot}`), path: null, next: 0 };
+  return { personality, rng: seedFrom(`${seed}:meiro-cpu:${slot}`), path: null, next: 0, noticeAt: {} };
 }
 
 // めいろを たどる(きょりの 近い ほうから)。おばけの ちかくは 遠まわりに かぞえる
@@ -55,6 +59,11 @@ function plan(cpu, s, slot) {
   for (const it of s.items) {
     const d = dist[it.y * n + it.x];
     if (!isFinite(d)) continue;
+    if (it.kind === 'chest') {
+      // まだ きづいて いない たからばこは ねらわない
+      if (cpu.noticeAt[it.id] === undefined) cpu.noticeAt[it.id] = it.born + sk.notice[0] + nextRandom(cpu) * (sk.notice[1] - sk.notice[0]);
+      if (d > SIGHT && s.t < cpu.noticeAt[it.id]) continue;
+    }
     // ほかの 子の ほうが ずっと ちかい ものは あとまわし
     const rival = s.players.some((q, i) => i !== slot && Math.abs(cellOf(q.x) - it.x) + Math.abs(cellOf(q.y) - it.y) < d * 0.5);
     const v = (it.kind === 'chest' ? RULES.chestValue * sk.chest : 1) / (d + 1) * (rival ? 0.5 : 1) * (stray ? nextRandom(cpu) : 1);
