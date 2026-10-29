@@ -16,6 +16,7 @@ import { clearTaikai, loadTaikai } from '../board/save.js';
 import { createAtmosphere } from '../games/daruma/atmosphere.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { createMusic } from '../music/player.js';
+import { GAME_MUSIC } from '../music/songs.js';
 import { ROLES, buildIsland, islandHeight } from './island.js';
 import { buildSign, drawSign } from './sign.js';
 import { woodPlank } from './wood.js';
@@ -57,13 +58,14 @@ function unlockAudio() {
   music.attach(audio);
   setTimeout(updateMusic, 900); // はじめの ジングルの あとから
 }
-// いまの 場面の BGM(競技の あいだは まだ 曲が ないので しずかに)
+// いまの 場面の BGM
 function musicFor() {
   if (active === 'title') return 'title';
   if (playing && playing === taikaiBoard) return taikai.stage; // ステージごとの 曲
-  return null;
+  return GAME_MUSIC[playingKey] ?? null; // 競技は 雰囲気ごとの 曲
 }
-function updateMusic() { music.play(musicFor()); }
+// 盤や 競技の あいだは 効果音が 聞こえる ように 小さめ
+function updateMusic() { music.play(musicFor(), active === 'title' ? 1 : playing === taikaiBoard ? 0.8 : 0.6); }
 function tone(freq, start, len, type = 'triangle', gain = 0.12) {
   if (!audio || !settings.sound) return;
   const t = audio.currentTime + start;
@@ -665,6 +667,7 @@ const curtain = createLeafCurtain($('leaves'), $('curtainLabel'));
 let active = 'title'; // 'title' | 'game'(どちらを描くか)
 const games = {}; // 競技 → 組み立て(Promise)
 let playing = null; // いま会場にいる競技
+let playingKey = null; // その 競技の 名前(曲を えらぶ)
 let busy = false; // 入れかえのとちゅう
 // 大木へ飛びこむ具合(0 = ふつう、1 = 葉の中)と、その向き
 const dive = { k: 0, dir: 0, crown: new THREE.Vector3(-1.4, 4.5, -2.2) };
@@ -725,6 +728,7 @@ async function enterGame() {
   taikai.resume = false;
   await playing.enter(picked, current === 'taikai' ? { fromSky: true, turns: taikai.turns, stage: taikai.stage, resume } : undefined);
   taikaiBoard = current === 'taikai' ? playing : null;
+  playingKey = current;
   active = 'game';
   updateMusic();
   dive.dir = 0;
@@ -769,6 +773,7 @@ async function playMinigame(key, lineup, character) {
   const done = new Promise((r) => { finish = r; });
   await g.enter(character, { fromSky: true, lineup, onFinish: (res) => finish(res) });
   playing = g;
+  playingKey = key;
   updateMusic();
   whoosh(0.8, false);
   await curtain.reveal();
@@ -779,6 +784,7 @@ async function playMinigame(key, lineup, character) {
   await curtain.cover();
   g.exit();
   playing = home;
+  playingKey = 'taikai';
   updateMusic();
   releaseGame(key); // 大会の 競技は 遊びおわったら すぐ 片づける
   home.resume?.();
@@ -1048,6 +1054,7 @@ frame();
 window.title = {
   camera, scene, go,
   get screen() { return screen; },
+  get bgm() { return music.playing; },
   get active() { return active; },
   get busy() { return busy; },
   setTime: (k) => atmosphere.apply(k),

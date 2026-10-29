@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SONGS, STEPS_PER_BAR, fromChords, noteFreq } from '../src/music/songs.js';
+import { GAME_MUSIC, SONGS, STEPS_PER_BAR, fromChords, noteFreq } from '../src/music/songs.js';
 import { createMusic } from '../src/music/player.js';
 import { LIST as STAGES } from '../src/board/stages/index.js';
+import { MINIGAMES } from '../src/board/rules.js';
 
 test('音の 名前から 高さ', () => {
   assert.equal(noteFreq('A4'), 440);
@@ -45,6 +46,10 @@ test('どの 曲も 楽譜が ととのって いる(小節の 長さ・音の �
 
 test('大会の ステージには それぞれの 曲が ある', () => {
   for (const st of STAGES.filter((x) => x.ready)) assert.ok(SONGS[st.key], `${st.name} の 曲が ない`);
+});
+
+test('どの 競技にも 曲が ある', () => {
+  for (const key of MINIGAMES) assert.ok(SONGS[GAME_MUSIC[key]], `${key} の 曲が ない`);
 });
 
 // 音を 出さない にせの AudioContext。いつ どの 高さを 鳴らしたかを おぼえる

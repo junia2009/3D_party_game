@@ -2,7 +2,8 @@
 //
 //   const music = createMusic();
 //   music.attach(audio)       … AudioContext を わたす(さいしょの タップの あと)
-//   music.play('title')       … 曲を かえる(null で しずかに)。おなじ 曲なら そのまま
+//   music.play('title', 0.6)  … 曲を かえる(null で しずかに)。おなじ 曲なら そのまま。
+//                               2つめは 曲の 大きさ(競技では 効果音が 聞こえる ように 下げる)
 //   music.setVolume('low')    … 'on' / 'low' / 'off'
 //   music.setRate(1.15)       … テンポを かえる(のこり すこしで いそぐ ときなど)
 
@@ -18,6 +19,7 @@ export function createMusic({ manual = false } = {}) {
   let bus = null; // ぜんぶの 曲が とおる 出口(音量)
   let volume = 'on';
   let want = null; // 鳴らしたい 曲
+  let level = 1;
   let cur = null; // 鳴って いる 曲 { name, song, gain, order, sec, step, at }
   let rate = 1;
   let timer = null;
@@ -219,15 +221,19 @@ export function createMusic({ manual = false } = {}) {
   function sync() {
     if (!audio) return;
     const name = volume === 'off' || globalThis.document?.hidden ? null : want;
-    if (cur?.name === name) return;
+    if (cur?.name === name) {
+      // おなじ 曲で 大きさだけ かわった
+      if (cur && cur.level !== level) { cur.level = level; cur.gain.gain.setTargetAtTime(level, audio.currentTime, 0.3); }
+      return;
+    }
     if (cur) { fadeOut(cur); cur = null; }
     if (name && SONGS[name]) {
       const gain = audio.createGain();
       gain.gain.setValueAtTime(0, audio.currentTime);
-      gain.gain.linearRampToValueAtTime(1, audio.currentTime + FADE);
+      gain.gain.linearRampToValueAtTime(level, audio.currentTime + FADE);
       gain.connect(bus);
       const song = SONGS[name];
-      cur = { name, song, gain, order: song.order, sec: 0, step: 0, at: audio.currentTime + 0.1 };
+      cur = { name, song, gain, level, order: song.order, sec: 0, step: 0, at: audio.currentTime + 0.1 };
     }
     if (cur && !timer && !manual) timer = setInterval(tick, 40);
     if (!cur && timer) { clearInterval(timer); timer = null; }
@@ -238,7 +244,7 @@ export function createMusic({ manual = false } = {}) {
 
   return {
     attach,
-    play(name) { want = name; sync(); },
+    play(name, lv = 1) { want = name; level = lv; sync(); },
     setVolume(v) {
       volume = v in VOLUME ? v : 'on';
       if (bus) bus.gain.setTargetAtTime(VOLUME[volume], audio.currentTime, 0.1);
