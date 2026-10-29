@@ -1,6 +1,7 @@
 # オンライン対戦サーバーを Cloudflare Workers へ デプロイする。
 # ルール(src/)は サーバーも おなじ コードを 取りこむので、ルールを かえた ときも デプロイが ひつよう。
 # リポジトリの Secrets に CLOUDFLARE_API_TOKEN(と CLOUDFLARE_ACCOUNT_ID)が ない あいだは、デプロイを とばす。
+# 手で うごかす ときは GitHub の Actions → Server → Run workflow。
 name: Server
 
 on:
