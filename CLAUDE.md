@@ -60,6 +60,15 @@
 - 曲を足したら `npm test`(`test/music.test.js` が小節の長さや音の名前を見張る)。
   耳で確かめるときは、スクラッチパッドで OfflineAudioContext に録音して mp3 にし、ユーザーに聞いてもらう。
 
+## オンライン対戦
+
+- 設計は [docs/ONLINE.md](docs/ONLINE.md)。サーバーは Cloudflare Workers + Durable Objects(`server/`)。
+- **ルールの計算はサーバーだけ。** 競技は `src/net/session.js` がサーバーで回し、画面は `src/net/drive.js` で状態を映す。
+- **部屋のきまりは `server/room-core.js` に閉じる**(WebSocket に触らない。`test/online.test.js` で直接たしかめる)。
+- 競技の画面は**自分の席を `game.me` で書く**(オンラインでは 0 とはかぎらない)。新しい競技も最初からそう書く。
+  オンライン対応にしたら `src/net/games.js` の `ONLINE_GAMES` に足す。
+- 手元で: `npm run server`(wrangler dev :8787)と `npm run serve`。localhost の画面は自動で手元のサーバーを見る。
+
 ## キャラクター
 
 - モデルの元は `src/characters.js`。`models/*.glb` は書き出した結果なので、手で編集しない。

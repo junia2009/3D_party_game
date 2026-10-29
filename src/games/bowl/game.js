@@ -14,6 +14,7 @@ import { RULES, STEP, canThrow, createGame, ranking, step } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { ballMesh, buildStage, laneX, obstacleMesh, pinMesh, toWorld } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -182,14 +183,17 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
   }
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) {
       for (const u of game.units) scene.remove(u.holder);
       for (const L of game.lanes) { scene.remove(L.ball); for (const m of [...L.pins, ...L.obstacles]) scene.remove(m); }
     }
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const units = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -203,10 +207,10 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
       scene.add(holder);
       return { model, holder, act: 0 };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    units[0].holder.add(marker);
-    units[0].marker = marker;
+    units[me].holder.add(marker);
+    units[me].marker = marker;
     const lanes = players.map((p, slot) => {
       const ball = ballMesh();
       toWorld(slot, 0, 0, ball.position);
@@ -215,12 +219,12 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     });
     // ねらいの 矢じるし(自分の レーンだけ)
     const guide = new THREE.Mesh(new THREE.PlaneGeometry(0.06, 3).translate(0, 1.5, 0).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
-    guide.position.set(laneX(0), 0.01, -0.2);
-    guide.userData.base = laneX(0);
+    guide.position.set(laneX(me), 0.01, -0.2);
+    guide.userData.base = laneX(me);
     guide.visible = false;
     scene.add(guide);
     if (game?.guide) scene.remove(game.guide);
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, lanes, guide, acc: 0, endTimer: null, shake: 0, frameShown: -1, pinCount: 0 };
+    game = { seed, me, players, state, cpus: players.map((p, slot) => (p.cpu && !net ? createCpu(p.cpu, seed, slot) : null)), net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state }) : null, units, lanes, guide, acc: 0, endTimer: null, shake: 0, frameShown: -1, pinCount: 0 };
     buildLaneProps();
     atmosphere.apply(params.get('time') || 'day');
     atmosphere.setupShadows([...units.map((u) => u.holder), ...lanes.map((l) => l.ball)], [stage.group]);
@@ -267,7 +271,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
   window.addEventListener('pointerdown', (e) => {
     if (!playing() || input.id !== null || e.target.closest('button, a')) return;
     unlockAudio();
-    if (!canThrow(game.state, 0)) return;
+    if (!canThrow(game.state, game.me)) return;
     input.id = e.pointerId;
     input.pts = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
     // 指を おいた 左右の 場所に 立つ(画面の まんなか = レーンの まんなか)
@@ -283,7 +287,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     if (input.id !== e.pointerId) return;
     input.pts.push({ x: e.clientX, y: e.clientY, t: performance.now() });
     const th = swipeToThrow(input.pts);
-    if (th && game && canThrow(game.state, 0)) input.pending = { ...th, x: input.stance };
+    if (th && game && canThrow(game.state, game.me)) input.pending = { ...th, x: input.stance };
     else if (!th) pop('上へ シュッと!', null, 'small', 700);
     input.id = null;
     input.pts = null;
@@ -308,11 +312,11 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     void el.offsetWidth;
     el.classList.add('show');
   }
-  const nameOf = (slot) => (slot === 0 ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[slot].character)?.name || '');
+  const nameOf = (slot) => (slot === game.me ? 'あなた' : game.players[slot].name || CHARACTERS.find((c) => c.key === game.players[slot].character)?.name || '');
   function buildChips() {
     $('chipsBo').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i><b>0</b>';
       return d;
@@ -332,7 +336,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     $('throwBo').textContent = s.phase === 'aim' || s.phase === 'roll' ? (s.throwNo ? '2投め' : '1投め') : '';
     // 投げる 時間の のこり
     const bar = $('aimBo');
-    const show = canThrow(s, 0);
+    const show = canThrow(s, game.me);
     bar.hidden = !show;
     if (show) bar.firstElementChild.style.transform = `scaleX(${clamp(s.aimLeft / RULES.aimTime, 0, 1)})`;
   }
@@ -359,29 +363,29 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
           if (s.frame !== game.frameShown) buildLaneProps();
           if (e.frame === 0 && e.throwNo === 0) { splash('なげろ!', 'gold'); sfx.go(); }
           else if (e.throwNo === 0) splash(`フレーム ${e.frame + 1}`, 'small');
-          else if (canThrow(s, 0)) splash('2投め', 'small');
+          else if (canThrow(s, game.me)) splash('2投め', 'small');
           break;
         case 'throw':
           game.units[e.slot].act = 0.5;
-          if (e.slot === 0) { sfx.throw(); sfx.roll(); }
+          if (e.slot === game.me) { sfx.throw(); sfx.roll(); }
           break;
         case 'pin': {
           const L = game.lanes[e.slot];
           const m = L.pins[e.i];
           if (m) m.userData.dir = Math.atan2(e.x - s.lanes[e.slot].pins[e.i].x, 1);
-          if (e.slot === 0) { game.pinCount++; sfx.pin(game.pinCount); }
+          if (e.slot === game.me) { game.pinCount++; sfx.pin(game.pinCount); }
           if (e.gold) spark(toWorld(e.slot, e.x, e.y).setY(0.3), 14, 0xffd24a, 2);
           break;
         }
         case 'bump':
-          if (e.slot === 0) { sfx.bump(); pop(e.kind === 'stone' ? 'こつん!' : 'ぼこっ!', game.lanes[0].ball.position.clone().setY(0.4), 'small', 600); }
+          if (e.slot === game.me) { sfx.bump(); pop(e.kind === 'stone' ? 'こつん!' : 'ぼこっ!', game.lanes[game.me].ball.position.clone().setY(0.4), 'small', 600); }
           break;
         case 'gutter':
-          if (e.slot === 0) { sfx.gutter(); pop('みぞ…', game.lanes[0].ball.position.clone().setY(0.3), 'red', 800); }
+          if (e.slot === game.me) { sfx.gutter(); pop('みぞ…', game.lanes[game.me].ball.position.clone().setY(0.3), 'red', 800); }
           break;
         case 'scored': {
           const at = toWorld(e.slot, 0, RULES.headPin).setY(0.8);
-          if (e.slot === 0) {
+          if (e.slot === game.me) {
             game.pinCount = 0;
             if (e.mark === 'strike') { splash('ストライク!', 'gold'); sfx.strike(); game.shake = 0.25; }
             else if (e.mark === 'spare') { splash('スペア!', 'gold'); sfx.spare(); }
@@ -401,8 +405,8 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
           break;
         case 'finished': {
           game.endTimer = 4;
-          const win = e.winner === 0;
-          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
+          const win = e.winner === game.me;
+          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(game.me) + 1}い`, 'small');
           game.units[e.winner].win = true;
           confetti(game.units[e.winner].holder.position.clone().add(new THREE.Vector3(0, 1.4, 0)), 50);
           break;
@@ -420,13 +424,13 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${nameOf(order[0])}の 勝ち!`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${nameOf(order[0])}の 勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const pl = s.players[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       const marks = [pl.strikes ? `ストライク ${pl.strikes}` : '', pl.spares ? `スペア ${pl.spares}` : ''].filter(Boolean).join('・');
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
@@ -453,7 +457,7 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
         L.ball.visible = b.y < RULES.laneL + 0.8;
       } else {
         // 投げる まえ: 立つ 場所に おく(自分は 指の 場所、CPU は きめた 場所)
-        const want = slot === 0 ? input.stance : game.cpus[slot]?.plan?.x ?? 0;
+        const want = slot === game.me ? input.stance : game.cpus[slot]?.plan?.x ?? 0;
         L.rollX += (want - L.rollX) * Math.min(1, dt * 12);
         toWorld(slot, L.rollX, -0.15, L.ball.position);
         L.ball.visible = true;
@@ -492,9 +496,9 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     // ねらいの 線(はじいて いる あいだ)
     const g = game.guide;
     const th = input.pts && input.pts.length > 2 ? swipeToThrow(input.pts) : null;
-    g.visible = !!th && canThrow(s, 0);
+    g.visible = !!th && canThrow(s, game.me);
     if (th) g.rotation.y = -th.angle * 3;
-    g.position.x = g.userData.base + game.lanes[0].rollX;
+    g.position.x = g.userData.base + game.lanes[game.me].rollX;
     stage.update(time);
   }
 
@@ -505,12 +509,12 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
     const s = game.state;
-    const lx = laneX(0);
-    const b = s.lanes[0].ball;
+    const lx = laneX(game.me);
+    const b = s.lanes[game.me].ball;
     const want = new THREE.Vector3(lx, portrait ? 2.3 : 1.95, portrait ? 3.3 : 2.9);
     const look = new THREE.Vector3(lx, 0, -6.5);
     if (s.phase === 'roll' || s.phase === 'aim') {
-      if (b && s.lanes[0].thrown) {
+      if (b && s.lanes[game.me].thrown) {
         // どんぐりを おいかけて、ピンの てまえで とまる
         const z = -Math.min(b.y, RULES.headPin - 3.2);
         want.set(lx + b.x * 0.4, portrait ? 1.6 : 1.25, z + (portrait ? 2.6 : 2.1));
@@ -577,7 +581,14 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game?.net && mode === 'playing' && intro >= 1) {
+      // オンライン: 時間は サーバーが すすめる(一時停止中も とまらない)
+      game.net.pump(dt, myInput, onEvents);
+      if (game.endTimer !== null) {
+        game.endTimer -= dt;
+        if (game.endTimer <= 0) { game.endTimer = null; showResult(); }
+      }
+    } else if (game && mode === 'playing' && !paused && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
@@ -625,9 +636,9 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

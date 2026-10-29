@@ -1,0 +1,77 @@
+# オンライン対戦サーバーを Cloudflare Workers へ デプロイする。
+# ルール(src/)は サーバーも おなじ コードを 取りこむので、ルールを かえた ときも デプロイが ひつよう。
+# リポジトリの Secrets に CLOUDFLARE_API_TOKEN(と CLOUDFLARE_ACCOUNT_ID)が ない あいだは、デプロイを とばす。
+name: Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'src/**'
+      - 'wrangler.toml'
+      - 'package-lock.json'
+      - '.github/workflows/server.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+
+      - name: 鍵が あるか
+        id: key
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RAW: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN が まだ ないので デプロイを とばします"
+            echo "ok=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ok=1" >> "$GITHUB_OUTPUT"
+          ID="$(printf '%s' "$RAW" | tr -d '[:space:]')"
+          if printf '%s' "$ID" | grep -qE '^[0-9a-f]{32}$'; then echo "id=$ID" >> "$GITHUB_OUTPUT"; else echo "id=" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Cloudflare へ デプロイ
+        id: deploy
+        if: steps.key.outputs.ok == '1'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ steps.key.outputs.id }}
+
+      # 動いて いるか、アプリの 接続先と あって いるかを たしかめる
+      - name: デプロイ後の 疎通確認
+        if: steps.key.outputs.ok == '1'
+        env:
+          DEPLOYED: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          BASE="${DEPLOYED%/}"
+          echo "デプロイ先: $BASE"
+          CLIENT_URL=$(sed -n "s/^const DEFAULT_SERVER = '\([^']*\)'.*/\1/p" src/net/client.js)
+          echo "アプリの接続先: $CLIENT_URL"
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS "$BASE/health" | grep -q '"ok":true'; then break; fi
+            sleep 5
+          done
+          curl -fsS "$BASE/health" | grep -q '"ok":true' || { echo "::error::/health が こたえません"; exit 1; }
+          curl -fsS -X POST -H 'Origin: https://junia2009.github.io' "$BASE/new" | grep -q '"code"' || { echo "::error::部屋を つくれません"; exit 1; }
+          if [ -n "$BASE" ] && [ "${CLIENT_URL%/}" != "$BASE" ]; then
+            echo "::error::src/net/client.js の DEFAULT_SERVER($CLIENT_URL)が デプロイ先($BASE)と ちがいます"
+            exit 1
+          fi

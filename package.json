@@ -7,9 +7,12 @@
     "export:glb": "node tools/export-glb.mjs",
     "test": "node --test test/*.test.js",
     "gen:precache": "node tools/gen-precache.mjs",
-    "icons": "node tools/make-icons.mjs"
+    "icons": "node tools/make-icons.mjs",
+    "server": "wrangler dev --port 8787",
+    "deploy:server": "wrangler deploy"
   },
   "devDependencies": {
-    "three": "0.180.0"
+    "three": "0.180.0",
+    "wrangler": "^4.155.0"
   }
 }

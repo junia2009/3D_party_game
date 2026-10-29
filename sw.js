@@ -10,7 +10,7 @@
 // 版はファイルの中身から作るので、1つでも変われば sw.js が変わり、ブラウザが入れなおす。
 
 // <precache>
-const VERSION = 'c09db3d8af54';
+const VERSION = 'dcdf3e5342e0';
 const PRECACHE = [
   "./",
   "./assets/thumbs/bowl.jpg",
@@ -199,6 +199,10 @@ const PRECACHE = [
   "./src/model-kit.js",
   "./src/music/player.js",
   "./src/music/songs.js",
+  "./src/net/client.js",
+  "./src/net/drive.js",
+  "./src/net/games.js",
+  "./src/net/session.js",
   "./src/npcs.js",
   "./src/rng.js",
   "./src/runtime/merge.js",
@@ -206,6 +210,7 @@ const PRECACHE = [
   "./src/settings.js",
   "./src/title/island.js",
   "./src/title/leaves.js",
+  "./src/title/online.js",
   "./src/title/paint.js",
   "./src/title/portraits.js",
   "./src/title/release.js",

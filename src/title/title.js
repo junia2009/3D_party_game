@@ -24,6 +24,7 @@ import { createLeafCurtain } from './leaves.js';
 import { makePortraits } from './portraits.js';
 import { createZukan } from './zukan.js';
 import { LIST as STAGE_LIST } from '../board/stages/index.js';
+import { setupOnline } from './online.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -224,6 +225,9 @@ const SCREENS = {
   dive: { el: null, view: [0, 0], sign: false },
   // キャラ図鑑(本は島の前でひらく。島はうしろでそのまま)
   zukan: { el: null, view: [0, 0], sign: false },
+  // オンライン(入口と 部屋)
+  online: { el: $('online'), view: [0.24, 0.17], sign: false },
+  room: { el: $('room'), view: [0.24, 0.17], sign: false },
 };
 let screen = 'loading';
 const view = { x: 0, y: 0, sign: 1, r: 1 };
@@ -252,6 +256,8 @@ function go(next) {
     ensureFaces();
     zukan.open();
   }
+  if (next === 'online' || next === 'room') ensureFaces();
+  if (next === 'room') online?.render();
 }
 
 function toast(text) {
@@ -267,6 +273,9 @@ addEventListener('pointerdown', () => {
   if (screen !== 'title') return;
   unlockAudio();
   jingle();
+  // リンクで 部屋に よばれた: その 部屋へ
+  const code = online.takePendingRoom();
+  if (code) { go('online'); online.join(code); return; }
   go('menu');
 });
 addEventListener('keydown', (e) => {
@@ -320,6 +329,7 @@ function ensureFaces() {
     if (screen === 'play') renderChars();
     if (screen === 'zukan') zukan.refreshTabs();
     if (screen === 'stages') renderResume();
+    if (screen === 'room') online.render();
   });
 }
 function renderChars() {
@@ -754,6 +764,12 @@ async function enterGame() {
 async function leaveGame(to) {
   if (busy) return;
   busy = true;
+  if (onlineGame) {
+    // オンラインの 競技を とちゅうで やめた: 部屋も ぬける(のこりは CPU が やる)
+    online.leave();
+    onlineGame = false;
+    if (to === 'play') to = 'online';
+  }
   whoosh(0.9, true);
   await curtain.cover();
   playing.exit();
@@ -767,6 +783,61 @@ async function leaveGame(to) {
   applyQuality();
   go(to);
   // 葉の中から、うしろへ引いて島へもどる
+  dive.k = 1;
+  dive.dir = -1;
+  clock.getDelta();
+  await curtain.reveal();
+  busy = false;
+}
+
+// ── オンライン: 部屋から 競技へ 入って、おわったら 部屋へ もどる ─────────────
+const online = setupOnline({
+  $, go, toast, knock, unlockAudio,
+  characters: () => shownCharacters(),
+  faces: () => faces,
+  games: GAMES,
+  picked: () => picked,
+  setPicked: (k) => { picked = k; settings.character = k; saveSettings(settings); },
+  playOnline: (m, client) => playOnline(m, client),
+  inGame: () => onlineGame,
+});
+let onlineGame = false; // オンラインの 競技の 会場に いる
+async function playOnline(m, client) {
+  while (busy) await wait(100);
+  busy = true;
+  onlineGame = true;
+  unlockAudio();
+  whoosh(1.1, true);
+  go('dive');
+  dive.dir = 1;
+  const ready = ensureGame(m.key);
+  await wait(250);
+  await curtain.cover();
+  const g = await ready;
+  await g.enter(m.lineup[m.seat].character, { fromSky: true, lineup: m.lineup, net: { client, start: m }, onFinish: () => backToRoom(m.key) });
+  playing = g;
+  playingKey = m.key;
+  active = 'game';
+  updateMusic();
+  dive.dir = 0;
+  dive.k = 1;
+  whoosh(0.8, false);
+  await curtain.reveal();
+  busy = false;
+}
+async function backToRoom(key) {
+  while (busy) await wait(100);
+  busy = true;
+  whoosh(0.9, true);
+  await curtain.cover();
+  playing?.exit();
+  playing = null;
+  onlineGame = false;
+  releaseGame(key);
+  active = 'title';
+  updateMusic();
+  applyQuality();
+  go(online.client ? 'room' : 'online');
   dive.k = 1;
   dive.dir = -1;
   clock.getDelta();
@@ -1068,6 +1139,7 @@ window.title = {
   camera, scene, go,
   get screen() { return screen; },
   get bgm() { return music.playing; },
+  online: () => online,
   get active() { return active; },
   get busy() { return busy; },
   setTime: (k) => atmosphere.apply(k),

@@ -1,0 +1,25 @@
+# オンライン対戦サーバー(Cloudflare Workers + Durable Objects)
+# デプロイ: main へ push すると .github/workflows/server.yml が 自動で。 / ローカル: npm run server
+# name を かえると 別の worker に なる(Durable Object の 部屋にも 届かなく なる)ので かえない。
+
+name = "dongurinpic-server"
+main = "server/index.js"
+compatibility_date = "2025-09-01"
+
+# あいことば ごとに 1つの 部屋
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDO"
+
+# だれとでも の 名簿(ひとつだけ)
+[[durable_objects.bindings]]
+name = "MATCH"
+class_name = "MatchDO"
+
+# 無料プランで Durable Objects を 使うには SQLite バックエンドが ひつよう
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO", "MatchDO"]
+
+[observability]
+enabled = true
