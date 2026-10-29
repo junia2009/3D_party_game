@@ -140,7 +140,7 @@
   }
   .back:active { transform: translateY(3px); }
   .head h2 {
-    margin: 0; flex: 1; font: 400 clamp(22px, 6.4vw, 30px) var(--font-display); color: var(--cream);
+    margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; font: 400 clamp(22px, 6.4vw, 30px) var(--font-display); color: var(--cream);
     -webkit-text-stroke: 7px var(--ink); paint-order: stroke fill; text-align: center;
   }
   /* 競技のカード */
@@ -230,7 +230,8 @@
     box-shadow: 0 5px 0 #8f2a24; -webkit-text-stroke: 5px #8f2a24; paint-order: stroke fill;
   }
   .go:active { transform: translateY(4px); box-shadow: 0 1px 0 #8f2a24; }
-  .head h2.long { font-size: clamp(18px, min(5.4vw, 6.4vh), 28px); white-space: nowrap; }
+  /* 長い 競技名は 2行に おる(1行の ままだと 画面ごと 右へ はみ出す) */
+  .head h2.long { font-size: clamp(18px, min(5.4vw, 6.4vh), 28px); line-height: 1.15; text-wrap: balance; word-break: keep-all; }
   /* 背の低い画面(横向きのスマホ)では、入口をつめて1画面に収める */
   @media (max-height: 520px) {
     #play { gap: 6px; }
