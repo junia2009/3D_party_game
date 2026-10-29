@@ -12,6 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, onIce, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { TEAM_COLORS, buildIce, buildStage } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -275,8 +276,10 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
   const input = { touch: null, stick: null, keys: new Set(), throw: false, make: false, target: null };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const meSeat = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me: meSeat });
     if (game) for (const u of game.units) scene.remove(u.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     for (const m of balls.values()) scene.remove(m);
@@ -284,6 +287,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     for (const m of golds.values()) scene.remove(m);
     golds.clear();
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     fieldGroup.clear();
     for (const c of state.ice) fieldGroup.add(buildIce(c));
     const units = await Promise.all(state.units.map(async (su) => {
@@ -316,17 +320,17 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       holder.add(makeBall);
       return { model, holder, ring, pips, makeBall, size: def?.size || 1, snow: null, flash: 0, throwT: 0, splats: [], arms: [model.node('arm_L'), model.node('arm_R')] };
     }));
-    const me = units[state.units.findIndex((u) => u.slot === 0)];
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const me = units[state.units.findIndex((u) => u.slot === meSeat)];
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[meSeat].hex }));
     marker.rotation.x = Math.PI;
     me.holder.add(marker);
     me.marker = marker;
     // 自分の 向きの 矢じるし(どこへ とぶか わかるように)
-    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 3).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex, transparent: true, opacity: 0.85 }));
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.4, 3).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[meSeat].hex, transparent: true, opacity: 0.85 }));
     arrow.position.set(0, 0.05, 0.75);
     me.holder.add(arrow);
     me.arrow = arrow;
-    game = { duel: false, toss: undefined, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, meIdx: state.units.findIndex((u) => u.slot === 0) };
+    game = { me: meSeat, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me: meSeat }) : null, duel: false, toss: undefined, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, meIdx: state.units.findIndex((u) => u.slot === meSeat) };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows([...units.map((u) => u.holder), fieldGroup], [stage.group, fieldGroup]);
     Object.assign(input, { touch: null, stick: null, throw: false, make: false, target: null });
@@ -479,7 +483,7 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       $(`team${side}Y`).replaceChildren(...s.teams[side].map((i) => {
         const u = s.units[i];
         const d = document.createElement('div');
-        d.className = 'chip' + (u.slot === 0 ? ' me' : '') + (u.slot < 0 ? ' helper' : '');
+        d.className = 'chip' + (u.slot === game.me ? ' me' : '') + (u.slot < 0 ? ' helper' : '');
         d.style.setProperty('--c', css(u.slot < 0 ? 0xb8a890 : PLAYER_COLORS[u.slot].hex));
         d.innerHTML = (u.slot < 0 ? `<b>${HELPER_NAMES[u.kind]}</b>` : '<i></i>') + '<span class="hp"></span>';
         return d;
@@ -631,8 +635,8 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       const p = game.players[slot];
       const u = s.units.find((x) => x.slot === slot);
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}・${u.side === s.winner ? 'かち' : 'まけ'}</small></span><span class="dist">${u.hits}<small>あてた</small></span>`;
@@ -807,12 +811,12 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -868,9 +872,9 @@ export async function createYuki({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

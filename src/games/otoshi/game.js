@@ -11,6 +11,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, alive, createGame, ranking, step, timeLeft, windowOf } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { BASE_Y, BLOCK_H, BLOCK_R, HIT_X, SEATS, blockMesh, buildStage, headMesh, malletMesh } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -235,11 +236,14 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
   scene.add(mallet);
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const u of game.units) scene.remove(u.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const units = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -252,11 +256,11 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       scene.add(holder);
       return { model, holder, arms: [model.node('arm_L'), model.node('arm_R')] };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    units[0].holder.add(marker);
-    units[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, swing: 0, lastPower: 0, streak: players.map(() => 0) };
+    units[me].holder.add(marker);
+    units[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, swing: 0, lastPower: 0, streak: players.map(() => 0) };
     stage.sunrise(0);
     rebuild(state, false);
     atmosphere.apply(params.get('time') || 'night');
@@ -330,11 +334,11 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
     void el.offsetWidth;
     el.classList.add('show');
   }
-  const nameOf = (slot) => (slot === 0 ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[slot].character)?.name || '');
+  const nameOf = (slot) => (slot === game.me ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[slot].character)?.name || '');
   function buildChips() {
     $('chipsO').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = `<i></i><b>${CHARACTERS.find((c) => c.key === p.character)?.name || ''}</b>`;
       return d;
@@ -348,8 +352,8 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
     });
     $('timeO').textContent = s.phase === 'aim' ? String(Math.ceil(timeLeft(s))) : '';
     const aiming = s.phase === 'aim';
-    $('turnO').textContent = aiming ? (s.turn === 0 ? 'あなたの ばん!' : `${nameOf(s.turn)}の ばん`) : '';
-    $('turnO').classList.toggle('mine', aiming && s.turn === 0);
+    $('turnO').textContent = aiming ? (s.turn === game.me ? 'あなたの ばん!' : `${nameOf(s.turn)}の ばん`) : '';
+    $('turnO').classList.toggle('mine', aiming && s.turn === game.me);
     // つよさの ゲージ: みどり = ちょうどいい、金の 線 = まんなか、はり = いまの つよさ
     const g = $('gaugeO');
     g.hidden = !aiming || !s.tower.length;
@@ -358,7 +362,7 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       g.style.setProperty('--lo', String(lo));
       g.style.setProperty('--hi', String(hi));
       g.style.setProperty('--p', String(s.charge));
-      g.classList.toggle('mine', s.turn === 0);
+      g.classList.toggle('mine', s.turn === game.me);
       $('kindO').textContent = KIND_LABEL[s.tower[0].kind] + (s.shift > 0 ? '(ずれてる)' : '');
       $('kindO').className = 'kind ' + s.tower[0].kind;
     }
@@ -384,10 +388,10 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
     for (const e of events) {
       switch (e.type) {
         case 'turn':
-          if (e.slot === 0) { splash('あなたの ばん!', 'gold small'); sfx.turn(); }
+          if (e.slot === game.me) { splash('あなたの ばん!', 'gold small'); sfx.turn(); }
           break;
         case 'timeout':
-          if (e.slot === 0) pop('じかんぎれ!', topOfTower(), 'red', 800);
+          if (e.slot === game.me) pop('じかんぎれ!', topOfTower(), 'red', 800);
           break;
         case 'hit': {
           game.swing = 1;
@@ -416,7 +420,7 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
           for (const u of game.units) u.shock = 0.8;
           sfx.crash();
           game.shake = 0.6;
-          splash(e.slot === 0 ? 'くずれた〜!' : `${nameOf(e.slot)} アウト!`, e.slot === 0 ? 'red' : 'small');
+          splash(e.slot === game.me ? 'くずれた〜!' : `${nameOf(e.slot)} アウト!`, e.slot === game.me ? 'red' : 'small');
           game.units[e.slot].sad = 2.4;
           game.streak[e.slot] = 0;
           // のこり 2人: いっきうち
@@ -436,8 +440,8 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
           break;
         case 'finished': {
           game.endTimer = 4;
-          const win = e.winner === 0;
-          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
+          const win = e.winner === game.me;
+          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(game.me) + 1}い`, 'small');
           const w = game.units[e.winner];
           w.win = true;
           confetti(w.holder.position.clone().add(new THREE.Vector3(0, 2, 0)), 60);
@@ -472,12 +476,12 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${nameOf(order[0])}の 勝ち!`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${nameOf(order[0])}の 勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}・ぬいた ${s.knocks[slot]}</small></span><span class="dist">${s.outs[slot] === null ? 'のこり' : 'アウト'}</span>`;
@@ -642,17 +646,17 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt * (game.slow > 0 ? 0.25 : 1);
       while (game.acc >= STEP && s.phase !== 'finished') {
         const mi = myInput();
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : mi));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : mi));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       tickT -= dt;
-      if (s.phase === 'aim' && s.charge > 0 && tickT <= 0) { tickT = 0.08; if (s.turn === 0) sfx.tick(s.charge); }
+      if (s.phase === 'aim' && s.charge > 0 && tickT <= 0) { tickT = 0.08; if (s.turn === game.me) sfx.tick(s.charge); }
       if (game.endTimer !== null) {
         game.endTimer -= dt;
         if (game.endTimer <= 0) { game.endTimer = null; showResult(); }
@@ -694,9 +698,9 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

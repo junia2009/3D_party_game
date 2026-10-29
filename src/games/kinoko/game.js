@@ -11,6 +11,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { HEXES, RULES, STEP, createGame, moveTime, ranking, step } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { OWL_AT, PALETTE, SINK_Y, WATER_Y, buildFlag, buildMushrooms, buildStage, css as colorCss } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -100,7 +101,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
     },
   };
   function volFor(x, z) {
-    const me = game.state.runners[0];
+    const me = game.state.runners[game.me];
     return Math.max(0.25, 1 - Math.hypot(x - me.x, z - me.z) / 9);
   }
 
@@ -281,11 +282,14 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
   const input = { touch: null, stick: null, keys: new Set(), jump: false, target: null };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -297,11 +301,11 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       const def = CHARACTERS.find((c) => c.key === p.character);
       return { model, holder, size: def.size || 1, out: null, landK: 0 };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, duel: false, count: 4, tick: 0 };
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, duel: false, count: 4, tick: 0 };
     atmosphere.apply(params.get('time') || 'day');
     atmosphere.setupShadows([...runners.map((r) => r.holder), ...mushrooms], [stage.group, ...mushrooms]);
     Object.assign(input, { touch: null, stick: null, jump: false, target: null });
@@ -441,7 +445,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
   function buildChips() {
     $('chipsG').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i><b></b>';
       return d;
@@ -450,7 +454,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
   function renderHud() {
     const s = game.state;
     [...$('chipsG').children].forEach((c, i) => c.classList.toggle('out', !s.runners[i].alive));
-    $('jumpG').hidden = s.phase === 'finished' || !s.runners[0].alive;
+    $('jumpG').hidden = s.phase === 'finished' || !s.runners[game.me].alive;
     const el = $('flagG');
     if (s.stage === 'signal' && s.flag !== null) {
       const k = Math.max(0, s.stageT / moveTime(s.round));
@@ -508,13 +512,13 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
           flagUp = 0;
           break;
         case 'jump': {
-          if (e.slot === 0) sfx.jump();
+          if (e.slot === game.me) sfx.jump();
           const r = s.runners[e.slot];
           puff(r.x, 0.05, r.z, 2, 0xffffff, 0.7);
           break;
         }
         case 'drop':
-          if (e.slot === 0 || volFor(s.runners[e.slot].x, s.runners[e.slot].z) > 0.5) sfx.drop();
+          if (e.slot === game.me || volFor(s.runners[e.slot].x, s.runners[e.slot].z) > 0.5) sfx.drop();
           break;
         case 'slam': {
           sfx.slam(volFor(e.x, e.z));
@@ -544,8 +548,8 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
         case 'fall': {
           const u = game.runners[e.slot];
           u.out = { t: 0, x: e.x, z: e.z, y: 0, vy: 1.5 };
-          pop(e.sunk ? 'ブクブク…' : 'あ〜っ!', e.x, 1.6, e.z, e.slot === 0 ? 'red' : 'out');
-          if (e.slot === 0) splash('おちちゃった…', 'red small');
+          pop(e.sunk ? 'ブクブク…' : 'あ〜っ!', e.x, 1.6, e.z, e.slot === game.me ? 'red' : 'out');
+          if (e.slot === game.me) splash('おちちゃった…', 'red small');
           if (s.phase === 'play' && s.runners.filter((x) => x.alive).length === 2 && !game.duel) {
             game.duel = true;
             setTimeout(() => { splash('いっきうち!', 'gold small'); sfx.drum(); }, 900);
@@ -555,7 +559,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
         case 'finished': {
           game.endTimer = 4.5;
           $('flagG').hidden = true;
-          const win = e.winner === 0;
+          const win = e.winner === game.me;
           splash(e.timeUp ? 'じかん ぎれ!' : win ? 'さいごの 1人!' : 'しゅうりょう!', win ? 'gold' : '');
           if (win) sfx.fanfare();
           const r = s.runners[e.winner];
@@ -580,13 +584,13 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${order.indexOf(0) + 1}位`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${order.indexOf(game.me) + 1}位`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${r.alive ? 'のこった!' : ''}<small>${r.survived} かい セーフ</small></span>`;
@@ -800,12 +804,12 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
       const n = Math.ceil(RULES.readyTime - game.state.t);
       if (n < game.count && n >= 1) { game.count = n; splash(String(n), 'small'); sfx.beep(false); }
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -855,9 +859,9 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

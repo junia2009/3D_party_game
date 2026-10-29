@@ -11,6 +11,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, limitOf, rattleK, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEAT_X, buildStage, ramuneBottle } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -142,11 +143,14 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
   const input = { keys: new Set(), target: null, useMotion: false, asked: false, motion: 0, tap: 0, pop: false };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const u of game.units) { scene.remove(u.holder); scene.remove(u.capFly); }
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const units = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -157,7 +161,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       holder.position.set(SEAT_X(slot), 0, UNIT_Z);
       // 自分の びんは すこし 大きく
       const bottle = ramuneBottle(true);
-      const BS = slot === 0 ? 0.95 : 0.85;
+      const BS = slot === me ? 0.95 : 0.85;
       bottle.scale.setScalar(BS);
       scene.add(holder, bottle);
       // とんで いく ふた(と すじ)
@@ -176,10 +180,10 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       const headY = box.max.y;
       return { model, holder, bottle, capFly, size: def?.size || 1, arms: [model.node('arm_L'), model.node('arm_R')], shakeT: 0, lift: 0, front, handY, headY, bs: BS };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    units[0].holder.add(marker);
-    units[0].marker = marker;
+    units[me].holder.add(marker);
+    units[me].marker = marker;
     const swoosh = [0, 1].map(() => {
       const m = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.012, 4, 16, Math.PI * 0.7), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false }));
       m.visible = false;
@@ -187,7 +191,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       return m;
     });
     if (game?.swoosh) for (const m of game.swoosh) scene.remove(m);
-    game = { swoosh, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, camY: 0 };
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, swoosh, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, camY: 0 };
     atmosphere.apply(params.get('time') || 'night');
     atmosphere.setupShadows(units.map((u) => u.holder), [stage.group]);
     input.pop = false;
@@ -317,7 +321,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
   function buildChips() {
     $('chipsR').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i><b>0</b>';
       return d;
@@ -333,7 +337,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     });
     $('roundR').textContent = s.round >= 0 ? `${s.round + 1} / ${RULES.rounds} かいめ` : '';
     $('timeR').textContent = s.phase === 'shake' ? String(Math.ceil(timeLeft(s))) : '';
-    const b = s.bottles[0];
+    const b = s.bottles[game.me];
     const active = s.phase === 'shake' && !b.popped && !b.burst;
     popEl.hidden = !active;
     // あわの メーター(げんかいは 見せない。がたがたで わかる)
@@ -379,7 +383,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
           // かまえ: びんを もちあげて「よーし!」
           setTimeout(() => {
             if (game?.state !== s || s.phase !== 'prep') return;
-            const u0 = game.units[0];
+            const u0 = game.units[game.me];
             pop('よーし!', u0.holder.position.clone().add(new THREE.Vector3(0, u0.headY + 0.7, 0)), 'gold', 700);
           }, 800);
           sfx.ready();
@@ -393,7 +397,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
           setTimeout(() => $('howtoR').classList.remove('show'), 4000);
           break;
         case 'rattle':
-          if (e.slot === 0) { sfx.rattle(); pop('がたがた!', game.units[0].bottle.position.clone().add(new THREE.Vector3(0, 1, 0)), 'red', 700); }
+          if (e.slot === game.me) { sfx.rattle(); pop('がたがた!', game.units[game.me].bottle.position.clone().add(new THREE.Vector3(0, 1, 0)), 'red', 700); }
           break;
         case 'pop': {
           const u = game.units[e.slot];
@@ -401,9 +405,9 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
           u.flyH = e.height;
           u.capFly.visible = true;
           const mouth = u.bottle.position.clone().add(new THREE.Vector3(0, 0.75 * u.bs, 0));
-          spray(mouth, e.slot === 0 ? 36 : 16, 1.0, 0xe8f8ff, e.slot === 0 ? 5 : 3);
+          spray(mouth, e.slot === game.me ? 36 : 16, 1.0, 0xe8f8ff, e.slot === game.me ? 5 : 3);
           ringAt(mouth, 0xffffff);
-          if (e.slot === 0) {
+          if (e.slot === game.me) {
             sfx.pop();
             sfx.whistle();
             game.shake = 0.15;
@@ -417,7 +421,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
           u.fountain = 1.2; // しばらく あわが ふきだしつづける
           spray(u.bottle.position.clone().add(new THREE.Vector3(0, 0.75 * u.bs, 0)), 50, 2.6, 0xffffff, 5);
           puddle(u.bottle.position);
-          if (e.slot === 0) { sfx.burst(); game.shake = 0.4; splash('ふきこぼれた!', 'red small'); }
+          if (e.slot === game.me) { sfx.burst(); game.shake = 0.4; splash('ふきこぼれた!', 'red small'); }
           else if ((game.zoom ?? 0) > 0.5) toast(e.slot, 'ふきこぼれ!');
           break;
         }
@@ -427,23 +431,23 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
           const hs = e.heights;
           const top = Math.max(...hs);
           const who = hs.indexOf(top);
-          const me = s.bottles[0];
+          const me = s.bottles[game.me];
           const best = me.height > 0 && me.height >= me.best && s.round > 0 && me.heights.slice(0, -1).every((h) => h < me.height);
           setTimeout(() => {
             if (game?.state !== s) return;
             if (top > 0) {
-              const name = who === 0 ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[who].character)?.name;
-              splash(`この回 1ばん ${name} ${top}m!`, who === 0 ? 'gold small' : 'small');
-              if (who === 0) sfx.fanfare();
+              const name = who === game.me ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[who].character)?.name;
+              splash(`この回 1ばん ${name} ${top}m!`, who === game.me ? 'gold small' : 'small');
+              if (who === game.me) sfx.fanfare();
             }
-            if (best && who !== 0) setTimeout(() => game?.state === s && splash(`じこベスト ${me.height}m!`, 'gold small'), 1000);
+            if (best && who !== game.me) setTimeout(() => game?.state === s && splash(`じこベスト ${me.height}m!`, 'gold small'), 1000);
           }, 1500);
           break;
         }
         case 'finished': {
           game.endTimer = 5.5;
-          const win = e.winner === 0;
-          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
+          const win = e.winner === game.me;
+          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(game.me) + 1}い`, 'small');
           // フィナーレ: 夜空に 大きな 花火を つぎつぎ。勝った 子に 王冠
           game.finale = 0;
           const w = game.units[e.winner];
@@ -475,13 +479,13 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${CHARACTERS.find((c) => c.key === game.players[order[0]].character).name}の 勝ち!`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${CHARACTERS.find((c) => c.key === game.players[order[0]].character).name}の 勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const b = s.bottles[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}・${b.heights.map((h) => (h ? `${h}m` : 'ぶしゅ')).join(' / ')}</small></span><span class="dist">${b.total}<small>m</small></span>`;
@@ -515,7 +519,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       // ビー玉: ふると くびれで カラカラ はねる
       const { marble, drops } = u.bottle.userData;
       marble.position.y = 0.58 + Math.abs(Math.sin(u.shakeT * 2)) * 0.03 * power;
-      if (slot === 0 && power > 0.5) { u.clinkT = (u.clinkT || 0) - dt; if (u.clinkT <= 0) { u.clinkT = 0.22 + Math.random() * 0.15; sfx.clink(); } }
+      if (slot === game.me && power > 0.5) { u.clinkT = (u.clinkT || 0) - dt; if (u.clinkT <= 0) { u.clinkT = 0.22 + Math.random() * 0.15; sfx.clink(); } }
       // 水てき(つたって おちる)
       for (const d of drops) {
         const dd = d.userData;
@@ -524,7 +528,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
         d.position.set(Math.cos(dd.a) * 0.128, dd.y, Math.sin(dd.a) * 0.128);
       }
       // がたがた: 口から あわが じわっと あふれる
-      if (rk > 0.25 && Math.random() < dt * rk * (slot === 0 ? 30 : 8)) {
+      if (rk > 0.25 && Math.random() < dt * rk * (slot === game.me ? 30 : 8)) {
         const m = u.bottle.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.08, 0.72 * u.bs, 0.02));
         spray(m, 1, 0.3, 0xffffff, 0.6);
       }
@@ -534,7 +538,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
         if (Math.random() < dt * 40) spray(u.bottle.position.clone().add(new THREE.Vector3(0, 0.75 * u.bs, 0)), 2, 0.8, 0xffffff, 2.5);
       }
       // シャカシャカの 線(自分だけ)
-      if (slot === 0) {
+      if (slot === game.me) {
         game.swoosh.forEach((m, k) => {
           m.visible = power > 0.25;
           m.position.set(x + (k ? 0.32 : -0.32) * u.bs * 1.3, u.bottle.position.y + 0.35 * u.bs, u.bottle.position.z);
@@ -585,8 +589,8 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
           u.peak = true;
           if (u.flyH > 0) {
             firework(u.capFly.position, PLAYER_COLORS[slot].hex);
-            if (slot === 0) sfx.boom();
-            pop(`${u.flyH}m`, u.capFly.position.clone().add(new THREE.Vector3(0, 0.6, 0)), slot === 0 ? 'gold' : 'me', 1600);
+            if (slot === game.me) sfx.boom();
+            pop(`${u.flyH}m`, u.capFly.position.clone().add(new THREE.Vector3(0, 0.6, 0)), slot === game.me ? 'gold' : 'me', 1600);
           }
         }
         if (tt < 1) u.peak = false;
@@ -628,7 +632,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     camPos.set(portrait ? 0.3 : 0, (portrait ? 2.1 : 1.9) + game.camY, portrait ? 8.6 : 5.6);
     camLook.set(portrait ? 0.3 : 0, 1.0 + game.camY * 1.02, -0.4);
     // ふる あいだは 自分の びんを アップ(ポンしたら ひく)
-    const mb = s.bottles[0], mu = game.units[0];
+    const mb = s.bottles[game.me], mu = game.units[game.me];
     const close = s.phase === 'shake' && !mb.popped && !mb.burst ? 1 : s.phase === 'shake' && (mb.popped || mb.burst) && s.t - (mb.popAt ?? s.t) < 0.25 ? 1 : 0;
     game.zoom = (game.zoom ?? 0) + (close - (game.zoom ?? 0)) * Math.min(1, dt * (close ? 3.5 : 2.5));
     if (game.zoom > 0.001) {
@@ -705,18 +709,18 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1 && $('shakeAskR').hidden) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1 && $('shakeAskR').hidden) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
         const mi = myInput();
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : mi));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : mi));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       decayInput(dt);
       // しゅわしゅわ の 音(自分の びん)
-      const b = s.bottles[0];
+      const b = s.bottles[game.me];
       fizzT -= dt;
       if (s.phase === 'shake' && !b.popped && !b.burst && fizzT <= 0 && b.push > 1) { fizzT = 0.14; sfx.fizz(Math.min(1, b.fizz / 90)); if (b.rattle) sfx.rattle(); }
       if (game.endTimer !== null) {
@@ -760,9 +764,9 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

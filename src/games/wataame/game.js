@@ -11,6 +11,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonGradient } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, bandOf, chanceNow, createGame, ranking, spinLeft, step } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEAT_X, TABLE_Y, TABLE_Z, WOOL_COLORS, buildStage, cottonCandy } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -166,11 +167,14 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
   const input = { keys: new Set(), target: null, useMotion: false, asked: false, finger: 0, motion: 0, acc: 0, zarame: false };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const u of game.units) scene.remove(u.holder, u.candy, u.stick, ...u.strands);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const units = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -188,7 +192,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       // わりばし(わたあめから 手まで。毎フレーム のばす)と、ボウルから まきつく 糸
       candy.userData.stick.visible = false;
       const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1, 6), new THREE.MeshToonMaterial({ color: 0xf0dcb0, gradientMap: toonGradient }));
-      const strands = Array.from({ length: slot === 0 ? 5 : 3 }, (_, k) => {
+      const strands = Array.from({ length: slot === me ? 5 : 3 }, (_, k) => {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(STRAND_N * 3), 3));
         const l = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffe0f0, transparent: true, opacity: 0, depthWrite: false }));
@@ -199,11 +203,11 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       scene.add(stick, ...strands);
       return { model, holder, candy, stick, strands, size: def?.size || 1, arms, tips: arms.map(armTip), headY: box.max.y, front: box.max.z, midY: box.min.y + (box.max.y - box.min.y) * 0.42, ang: Math.random() * 6, shown: 0, strainT: 0 };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    units[0].holder.add(marker);
-    units[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0 };
+    units[me].holder.add(marker);
+    units[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0 };
     atmosphere.apply(params.get('time') || 'evening');
     stage.machines.forEach((m, slot) => m.userData.plate.material.color.setHex(PLAYER_COLORS[slot].hex));
     atmosphere.setupShadows(units.map((u) => u.holder), [stage.group]);
@@ -357,7 +361,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
   function buildChips() {
     $('chipsL').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i><b>0</b>';
       return d;
@@ -373,7 +377,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       c.classList.toggle('lead', order[0] === slot && s.units[slot].size > 0);
     });
     $('timeL').textContent = s.phase === 'spin' ? String(Math.ceil(spinLeft(s))) : '';
-    const u = s.units[0];
+    const u = s.units[game.me];
     // はやさの メーター: 半円(0〜GAUGE_MAX 回/秒)。みどり = ちょうどいい、あか = はやすぎ
     const [lo, hi] = bandOf(u.size);
     const deg = (w) => clamp(w / GAUGE_MAX, 0, 1) * 180;
@@ -455,11 +459,11 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
           if (good) {
             u.candy.userData.setColor(e.i + 1);
             u.colorUntil = s.units[e.slot].size + 3.5; // 色の しまは すこしの あいだ だけ(また ピンクに もどる)
-            sugarRain(u.candy.position, WOOL_COLORS[e.i + 1], e.slot === 0 ? (e.q === 'perfect' ? 70 : 40) : 16);
+            sugarRain(u.candy.position, WOOL_COLORS[e.i + 1], e.slot === game.me ? (e.q === 'perfect' ? 70 : 40) : 16);
             u.flash = 1; // わたあめが ぱっと 光って ふくらむ
             stage.machines[e.slot].userData.glow.material.color.setHex(WOOL_COLORS[e.i + 1]);
           }
-          if (e.slot === 0) {
+          if (e.slot === game.me) {
             if (good) sfx.sugar(e.q === 'perfect'); else sfx.miss();
             pop(Q_TEXT[e.q] + (e.bonus ? ` +${e.bonus}cm` : ''), woolTop(u), good ? 'gold' : 'red', 900);
           }
@@ -469,11 +473,11 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
           const u = game.units[e.slot];
           const from = u.candy.position.clone();
           for (const m of u.candy.userData.tear(s.units[e.slot].size)) flyPuff(m, from);
-          snap(from.clone().add(new THREE.Vector3(0, u.candy.userData.r * 0.6, 0)), e.slot === 0 ? 18 : 8);
-          sprinkle(from, 0xffffff, e.slot === 0 ? 24 : 10, 1.4, 1.2);
+          snap(from.clone().add(new THREE.Vector3(0, u.candy.userData.r * 0.6, 0)), e.slot === game.me ? 18 : 8);
+          sprinkle(from, 0xffffff, e.slot === game.me ? 24 : 10, 1.4, 1.2);
           u.candy.userData.setSize(s.units[e.slot].size);
           u.shown = s.units[e.slot].size;
-          if (e.slot === 0) { sfx.tear(); game.shake = 0.35; pop(`ちぎれた! -${e.lost}cm`, woolTop(u), 'red', 1100); }
+          if (e.slot === game.me) { sfx.tear(); game.shake = 0.35; pop(`ちぎれた! -${e.lost}cm`, woolTop(u), 'red', 1100); }
           break;
         }
         case 'show': {
@@ -482,14 +486,14 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
           const top = Math.max(...e.sizes);
           game.units.forEach((u, slot) => setTimeout(() => {
             if (game?.state !== s) return;
-            pop(`${e.sizes[slot]}cm`, woolTop(u), e.sizes[slot] === top ? 'gold' : slot === 0 ? 'me' : '', 2400);
+            pop(`${e.sizes[slot]}cm`, woolTop(u), e.sizes[slot] === top ? 'gold' : slot === game.me ? 'me' : '', 2400);
           }, 500 + slot * 120));
           break;
         }
         case 'finished': {
           game.endTimer = 5;
-          const win = e.winner === 0;
-          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
+          const win = e.winner === game.me;
+          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(game.me) + 1}い`, 'small');
           const w = game.units[e.winner];
           confetti(new THREE.Vector3(w.holder.position.x, 2.6, 0.4), 60);
           w.win = true;
@@ -522,13 +526,13 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${CHARACTERS.find((c) => c.key === game.players[order[0]].character).name}の 勝ち!`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${CHARACTERS.find((c) => c.key === game.players[order[0]].character).name}の 勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const u = s.units[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       const sugar = u.zarame.filter((q) => q === 'perfect').length;
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
@@ -560,11 +564,11 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       // 大きさは じわっと おいつく
       if (Math.abs(u.shown - su.size) > 0.05) { u.shown += (su.size - u.shown) * Math.min(1, dt * 6); u.candy.userData.setSize(u.shown); }
       if (u.colorUntil && u.shown > u.colorUntil) { u.colorUntil = 0; u.candy.userData.setColor(0); }
-      if (slot === 0 && spinning) {
+      if (slot === game.me && spinning) {
         if (st > 0.3 && !u.warned) { u.warned = true; pop('ゆっくり!', woolTop(u), 'red', 900); }
         if (st < 0.05) u.warned = false;
       }
-      if (slot === 0 && spinning && st > 0.4) { u.strainT -= dt; if (u.strainT <= 0) { u.strainT = 0.25 - st * 0.15; sfx.squeak(st); } }
+      if (slot === game.me && spinning && st > 0.4) { u.strainT -= dt; if (u.strainT <= 0) { u.strainT = 0.25 - st * 0.15; sfx.squeak(st); } }
       // わたあめ機: つぼが 回って、糸が ボウルの 中を まわる
       mach.head.rotation.y += dt * (spinning ? 30 : 4);
       mach.threads.forEach((m, k) => { m.rotation.y += dt * (spinning ? 9 + k * 3 : 1); m.material.opacity = spinning ? 0.55 : 0.15; });
@@ -640,7 +644,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
     }
     // 自分が 1ばんに なった
     if (s.phase === 'spin' && lead !== game.lastLead) {
-      if (lead === 0 && game.lastLead !== undefined && time - (game.topAt || -9) > 3) { game.topAt = time; pop('トップ!', woolTop(game.units[0]), 'gold', 900); sfx.chance(); }
+      if (lead === game.me && game.lastLead !== undefined && time - (game.topAt || -9) > 3) { game.topAt = time; pop('トップ!', woolTop(game.units[game.me]), 'gold', 900); sfx.chance(); }
       game.lastLead = lead;
     }
     // 決着: 紙ふぶきを つづけて
@@ -655,15 +659,15 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
     for (const u of game.units) if (u.crown) { u.crown.rotation.y = time * 2; u.crown.position.y = u.headY + 0.05 + Math.sin(time * 4) * 0.03; }
     // ざらめ チャンス: 自分の ボウルの まわりの わが ちぢんで、ふちに かさなった ときが ぴったり(ボタンの わと おなじ)
     const ch = chanceNow(s);
-    const open = ch.i >= 0 && s.units[0].zarame[ch.i] === undefined;
+    const open = ch.i >= 0 && s.units[game.me].zarame[ch.i] === undefined;
     chanceRing.visible = open;
     if (open) {
       const k = clamp(ch.left / RULES.ring, 0, 1);
-      chanceRing.position.set(SEAT_X(0), TABLE_Y + 0.21, TABLE_Z);
+      chanceRing.position.set(SEAT_X(game.me), TABLE_Y + 0.21, TABLE_Z);
       chanceRing.scale.setScalar(1 + k * 2.2);
       chanceRing.material.color.setHex(Math.abs(ch.left) <= RULES.perfect ? 0xffe066 : WOOL_COLORS[ch.i + 1]);
       chanceRing.material.opacity = 0.5 + (1 - k) * 0.5;
-      stage.machines[0].userData.glow.material.color.setHex(WOOL_COLORS[ch.i + 1]);
+      stage.machines[game.me].userData.glow.material.color.setHex(WOOL_COLORS[ch.i + 1]);
     }
     stage.update(time);
   }
@@ -702,8 +706,8 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
     const close = s.phase === 'spin' ? 1 : 0;
     game.zoom = (game.zoom ?? 0) + (close - (game.zoom ?? 0)) * Math.min(1, dt * (close ? 2.5 : 2));
     if (game.zoom > 0.001) {
-      const mu = game.units[0];
-      const bx = SEAT_X(0);
+      const mu = game.units[game.me];
+      const bx = SEAT_X(game.me);
       const r = mu.candy.userData.r || 0.05;
       const z = game.zoom * game.zoom * (3 - 2 * game.zoom);
       // ななめ上から ボウルを のぞきこむ(顔は おくに 入る)
@@ -771,13 +775,13 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       if (intro >= 1) splash('よーい…');
     }
     sampleSpin(Math.min(rawDt, 0.5)); // 回った 角度は ほんとうの 時間で わる(重い ときに 速く 見えない ように)
-    if (game && mode === 'playing' && !paused && intro >= 1 && $('spinAskL').hidden) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1 && $('spinAskL').hidden) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
         const mi = myInput();
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : mi));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : mi));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       const left = spinLeft(s);
@@ -785,7 +789,7 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
       if (s.phase === 'spin' && left <= 5 && Math.ceil(left) !== game.tick) { game.tick = Math.ceil(left); sfx.ready(); }
       $('hudL').classList.toggle('spurt', s.phase === 'spin' && left <= 10);
       // ぶーん の 音(自分の わりばし)
-      const u = s.units[0];
+      const u = s.units[game.me];
       whirrT -= dt;
       if (s.phase === 'spin' && whirrT <= 0 && u.w > 0.4) { whirrT = 0.15; sfx.whirr(Math.min(1, u.w / 3)); }
       if (game.endTimer !== null) {
@@ -829,9 +833,9 @@ export async function createWataame({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

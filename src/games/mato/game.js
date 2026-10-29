@@ -12,6 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, VINES, VINE_Y, createGame, launch, fly, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { createTargets } from './targets.js';
 import { makeBasket, makeSling } from './sling.js';
 import { createPond } from './pond.js';
@@ -320,16 +321,19 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
   const INTRO_TIME = 2.4;
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const m of shotMeshes.values()) scene.remove(m);
     shotMeshes.clear();
     targets.clear();
-    targets.setColor(PLAYER_COLORS[0].hex);
+    targets.setColor(PLAYER_COLORS[me].hex);
     for (const f of fx.splice(0)) scene.remove(f.obj);
 
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -354,12 +358,12 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
       holder.add(basket);
       return { model, holder, size, sling, arms: [model.node('arm_L'), model.node('arm_R')], throwT: 0, pull: 0, yaw: 0, time: 0, stunT: 0 };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
 
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null };
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     aim.active = false;
@@ -497,7 +501,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     if (!on) { for (const d of dots) d.visible = false; landRing.visible = false; return; }
     const p = launch(aim);
     let t = 0, n = 0, next = 0;
-    const ox = STAND[0];
+    const ox = STAND[game.me];
     while (p.y > 0 && p.d < RULES.farD && t < 4) {
       fly(p, 0);
       t += STEP;
@@ -524,7 +528,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
   function buildScores() {
     $('scoresM').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = `<i></i><b>0</b>`;
       d.title = p.name;
@@ -555,7 +559,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     const el = $('windM');
     const txt = n === 0 ? 'なぎ' : (w > 0 ? '→'.repeat(n) : '←'.repeat(n));
     if (el.dataset.txt !== txt) { el.dataset.txt = txt; el.querySelector('b').textContent = txt; el.classList.toggle('calm', n === 0); }
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     // のこり5秒: チクタク鳴って、時計が赤く脈打つ
     const secs = Math.ceil(left);
     $('timerM').classList.toggle('hurry', s.phase === 'play' && secs <= 5);
@@ -590,12 +594,12 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
           const v = game.runners[e.slot];
           v.throwT = 0.35;
           v.yaw = e.aim.yaw;
-          if (e.slot === 0) { sfx.throw(); aim.pending = null; }
+          if (e.slot === game.me) { sfx.throw(); aim.pending = null; }
           break;
         }
         case 'hit': {
-          if (e.slot === 0) {
-            const at = new THREE.Vector3(STAND[0] + e.x, e.y, -e.d);
+          if (e.slot === game.me) {
+            const at = new THREE.Vector3(STAND[game.me] + e.x, e.y, -e.d);
             targets.hit(e.id, at);
             pop(`+${e.points + e.bonus}`, at.clone().setY(at.y + 0.6), e.kind === 'gold' ? 'gold me' : 'me');
             if (e.kind === 'gold') { sfx.gold(); splash('金の的!', 'gold'); cheer(); } else sfx.hit(e.combo);
@@ -609,16 +613,16 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
         case 'sting': {
           const v = game.runners[e.slot];
           v.stunT = RULES.stun;
-          if (e.slot === 0) {
-            targets.hit(e.id, new THREE.Vector3(STAND[0] + e.x, e.y, -e.d));
+          if (e.slot === game.me) {
+            targets.hit(e.id, new THREE.Vector3(STAND[game.me] + e.x, e.y, -e.d));
             sfx.sting();
             splash(`ハチの巣! -${RULES.hivePenalty}`, 'red');
           } else pop(`-${RULES.hivePenalty}`, tmp.copy(v.holder.position).setY(2.2), 'red');
           break;
         }
         case 'miss':
-          if (e.water) splashAt(STAND[e.slot] + e.x, -e.d, e.slot === 0 ? 12 : 6);
-          if (e.slot === 0) (e.water ? sfx.splash(false) : sfx.thud());
+          if (e.water) splashAt(STAND[e.slot] + e.x, -e.d, e.slot === game.me ? 12 : 6);
+          if (e.slot === game.me) (e.water ? sfx.splash(false) : sfx.thud());
           break;
         case 'wind':
           if (Math.abs(e.to) > 0.4) { splash(e.to > 0 ? 'かぜ →' : '← かぜ'); sfx.wind(); }
@@ -645,14 +649,14 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     }
     const order = ranking(s);
     const winner = game.players[s.winner];
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
-    if (s.winner === 0) sfx.fanfare(); else sfx.finish();
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
+    if (s.winner === game.me) sfx.fanfare(); else sfx.finish();
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${r.score}てん<small>あてた ${r.hits}/${r.throws}<br>れんぞく ${r.best}</small></span>`;
@@ -691,9 +695,9 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
       const cpu = game.cpus[i];
       const ready = s.phase === 'play' && r.reload <= 0 && r.stun <= 0;
       let pull = 0;
-      if (i === 0) pull = aim.active ? aim.power : 0;
+      if (i === game.me) pull = aim.active ? aim.power : 0;
       else if (ready && cpu) pull = Math.max(0, Math.min(1, 1 - cpu.wait / 0.45)) * 0.75;
-      if (i === 0 && aim.active) v.yaw = aim.yaw;
+      if (i === game.me && aim.active) v.yaw = aim.yaw;
       v.pull += (pull - v.pull) * Math.min(1, dt * 16);
       // 体は ねらう向きへ少し回る
       v.holder.rotation.y += (Math.PI - v.yaw * 0.8 - v.holder.rotation.y) * Math.min(1, dt * 8);
@@ -728,8 +732,8 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
     // 自分の右肩のうしろ・上から、池の向こうを見る(自分は左下に小さく。まん中は的のためにあける)
-    const pos = new THREE.Vector3(STAND[0] + 0.9, portrait ? 4.3 : 3.4, portrait ? 5.4 : 4.6);
-    const look = new THREE.Vector3(STAND[0] + 0.2, portrait ? 1.0 : 1.4, -12);
+    const pos = new THREE.Vector3(STAND[game?.me ?? 0] + 0.9, portrait ? 4.3 : 3.4, portrait ? 5.4 : 4.6);
+    const look = new THREE.Vector3(STAND[game?.me ?? 0] + 0.2, portrait ? 1.0 : 1.4, -12);
     camera.fov = portrait ? 58 : 46;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
@@ -777,7 +781,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     const dt = Math.min(rawDt, 0.1);
     if (draw && mode === 'playing' && intro >= 1) watchQuality(rawDt);
     if (intro < 1 && !paused) intro = Math.min(1, intro + dt / INTRO_TIME);
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       if (s.phase === 'ready') {
         const n = Math.ceil(RULES.readyTime - s.t);
@@ -791,8 +795,8 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
       if (aim.pending && (aim.pendingT -= dt) <= 0) aim.pending = null;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -807,7 +811,7 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     if (game && !paused) updateAmbience(dt, game.state.wind, performance.now() / 1000);
     if (game && !paused) {
       updateRunners(dt);
-      targets.sync(game.state, game.state.runners[0], STAND[0], camera, dt);
+      targets.sync(game.state, game.state.runners[game.me], STAND[game.me], camera, dt);
       updateShots(dt);
       updateFx(dt);
     }
@@ -854,9 +858,9 @@ export async function createMato({ renderer, settings, getAudio, onExit }) {
     camera,
     frame,
     // 大会から呼ぶときは lineup(顔ぶれ)と onFinish(順位を返す)をわたす。そのときは結果画面を出さない
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

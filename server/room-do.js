@@ -12,13 +12,15 @@
 //   ping
 // メッセージ(サーバー → 画面)
 //   joined { seat, code }   lobby { lobby }   start { key, lineup, seed, seat }
-//   snap { tick, s, ev, in }(競技の 状態。SNAP_EVERY 刻みごと)   end { result }   error { msg }
+//   snap { tick, ins, s? }(SNAP_EVERY 刻みごとに、その あいだの 刻みごとの みんなの 入力。FULL_EVERY 刻みごとに 状態 s も)
+//   end { result }   error { msg }
 
 import { RoomCore } from './room-core.js';
 import { MinigameSession } from '../src/net/session.js';
 import { ONLINE_GAMES } from '../src/net/games.js';
 
-const SNAP_EVERY = 2; // 2刻み(1/30 秒)ごとに 状態を くばる
+const SNAP_EVERY = 2; // 2刻み(1/30 秒)ごとに 入力を くばる
+const FULL_EVERY = 30; // 30刻み(0.5 秒)ごとに 状態も くばる(画面の 計算の ずれを なおす)
 const END_WAIT_MS = 600; // 競技が おわってから ロビーへ もどすまで(さいごの 状態を とどける)
 const IDLE_SWEEP_MS = 30 * 60 * 1000; // だれも いない 部屋を たたむまで
 
@@ -30,7 +32,7 @@ export class RoomDO {
     this.sockets = new Map(); // WebSocket → clientId
     this.session = null;
     this.timer = null;
-    this.pending = []; // まだ くばって いない できごと
+    this.pending = []; // まだ くばって いない 刻みごとの 入力
     this.ready = ctx.blockConcurrencyWhile(async () => {
       const saved = await ctx.storage.get('room');
       if (saved) {
@@ -192,9 +194,11 @@ export class RoomDO {
     while (Date.now() - this.clock >= stepMs && n < 8) {
       this.clock += stepMs;
       n++;
-      this.pending.push(...ses.step());
+      ses.step();
+      this.pending.push(ses.used);
       if (ses.tick % SNAP_EVERY === 0 || ses.done) {
-        this.broadcast({ t: 'snap', tick: ses.tick, s: ses.s, ev: this.pending, in: ses.used });
+        const full = ses.tick % FULL_EVERY === 0 || ses.done;
+        this.broadcast(full ? { t: 'snap', tick: ses.tick, ins: this.pending, s: ses.s } : { t: 'snap', tick: ses.tick, ins: this.pending });
         this.pending = [];
       }
       if (ses.done) { this.endGame(); return; }

@@ -79,7 +79,7 @@ export class NetClient {
       try { m = JSON.parse(e.data); } catch { return; }
       if (m.t === 'joined') { this.seat = m.seat; this.status('online'); this.h.joined?.(m); }
       else if (m.t === 'lobby') { this.lobby = m.lobby; this.h.lobby?.(m.lobby); }
-      else if (m.t === 'start') { this.seat = m.seat; this.h.start?.(m); }
+      else if (m.t === 'start') { this.seat = m.seat; this.started = m; this.h.start?.(m); }
       else if (m.t === 'snap') this.h.snap?.(m);
       else if (m.t === 'end') this.h.end?.(m);
       else if (m.t === 'error') {

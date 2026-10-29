@@ -10,6 +10,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, moverPhase, moverWarn, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { WALL_H, acornMesh, buildMaze, buildStage, chestMesh, ghostMesh, glowTex, toWorld } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -212,8 +213,10 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
   const input = { touch: null, stick: null, keys: new Set(), target: null };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) {
       for (const u of game.units) scene.remove(u.holder);
       scene.remove(game.maze.group);
@@ -222,6 +225,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     }
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const maze = buildMaze(scene, state);
     const units = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
@@ -249,12 +253,12 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       holder.add(stars);
       return { model, holder, yaw: 0, run: 0, stars, step: 0, air: false, trail: 0 };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    units[0].holder.add(marker);
-    units[0].marker = marker;
+    units[me].holder.add(marker);
+    units[me].marker = marker;
     const ghostMeshes = state.ghosts.map(() => { const g = ghostMesh(); scene.add(g); return g; });
-    game = { seed, players, state, maze, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, itemMeshes: new Map(), ghostMeshes, combo: { n: 0, t: 0 }, ready: false };
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, maze, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, itemMeshes: new Map(), ghostMeshes, combo: { n: 0, t: 0 }, ready: false };
     atmosphere.apply(params.get('time') || 'evening');
     atmosphere.setupShadows(units.map((u) => u.holder), [stage.group, maze.group]);
     Object.assign(input, { touch: null, stick: null, target: null });
@@ -369,11 +373,11 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     void el.offsetWidth;
     el.classList.add('show');
   }
-  const nameOf = (slot) => (slot === 0 ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[slot].character)?.name || '');
+  const nameOf = (slot) => (slot === game.me ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[slot].character)?.name || '');
   function buildChips() {
     $('chipsI').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i><b>0</b>';
       return d;
@@ -405,7 +409,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       el.hidden = inView;
       if (inView) return;
       // カメラの うしろでも 向きが あう ように、自分から みた 向きで きめる
-      const me = s.players[0];
+      const me = s.players[game.me];
       const a = Math.atan2(it.y + 0.5 - me.y, it.x + 0.5 - me.x); // 画面の 右 = +x、下 = +y
       const c = Math.cos(a), sn = Math.sin(a);
       const m = Math.max(Math.abs(c) / 0.42, Math.abs(sn) / 0.4);
@@ -461,11 +465,11 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
           if (e.kind === 'chest') {
             openChest(at, e.value > RULES.chestValue ? 1.7 : 1);
             ring(at, 0xffd24a, 1.4, 0.7);
-            if (e.value > RULES.chestValue) { beam(at, 0xffe070, { h: 9, r: 0.7, life: 1.2 }); confetti(at.clone().setY(1), 30); if (e.slot === 0) sfx.big(); else splash(`${nameOf(e.slot)}が 大きな たからばこ!`, 'small'); }
-            if (e.slot === 0) { sfx.open(); sfx.chest(); game.shake = 0.15; pop(`たからばこ +${e.value}!`, at.clone().setY(1.2), 'gold', 1000); }
+            if (e.value > RULES.chestValue) { beam(at, 0xffe070, { h: 9, r: 0.7, life: 1.2 }); confetti(at.clone().setY(1), 30); if (e.slot === game.me) sfx.big(); else splash(`${nameOf(e.slot)}が 大きな たからばこ!`, 'small'); }
+            if (e.slot === game.me) { sfx.open(); sfx.chest(); game.shake = 0.15; pop(`たからばこ +${e.value}!`, at.clone().setY(1.2), 'gold', 1000); }
           } else {
             flyTo(at.clone().setY(0.3), game.units[e.slot].holder);
-            if (e.slot === 0) {
+            if (e.slot === game.me) {
               // つづけて ひろうと れんさ
               const c = game.combo;
               c.n = c.t > 0 ? c.n + 1 : 0;
@@ -485,7 +489,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
           let gk = 0, gd = Infinity;
           s.ghosts.forEach((g, k) => { const d = Math.hypot(g.x - e.x, g.y - e.y); if (d < gd) { gd = d; gk = k; } });
           if (game.ghostMeshes[gk]) game.ghostMeshes[gk].userData.boo = 0.5;
-          if (e.slot === 0) { sfx.ghost(); game.shake = 0.3; pop('おばけだ〜!', at.clone().setY(1.4), 'red', 1000); }
+          if (e.slot === game.me) { sfx.ghost(); game.shake = 0.3; pop('おばけだ〜!', at.clone().setY(1.4), 'red', 1000); }
           game.units[e.slot].scared = 1.2;
           break;
         }
@@ -500,7 +504,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
           break;
         }
         case 'jump': {
-          if (e.slot === 0) sfx.jump();
+          if (e.slot === game.me) sfx.jump();
           const pd = game.maze.pads.find((q) => q.x === e.x && q.y === e.y);
           if (pd) pd.flash = 1;
           ring(toWorld(e.x + 0.5, e.y + 0.5), 0x8af0ff, 0.8, 0.4);
@@ -508,17 +512,17 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
           break;
         }
         case 'rise': {
-          const near = Math.hypot(e.x + 0.5 - s.players[0].x, e.y + 0.5 - s.players[0].y);
+          const near = Math.hypot(e.x + 0.5 - s.players[game.me].x, e.y + 0.5 - s.players[game.me].y);
           if (near < 4) sfx.rumble();
           if (near < 4) game.shake = Math.max(game.shake, 0.12);
           if (near < 9) dust(toWorld(e.x + 0.5, e.y + 0.5).setY(0.1), 10, { sp: 1.4, size: 1.2 });
           break;
         }
         case 'sink':
-          if (Math.hypot(e.x + 0.5 - s.players[0].x, e.y + 0.5 - s.players[0].y) < 9) dust(toWorld(e.x + 0.5, e.y + 0.5).setY(0.1), 5, { sp: 0.8, up: 0.2 });
+          if (Math.hypot(e.x + 0.5 - s.players[game.me].x, e.y + 0.5 - s.players[game.me].y) < 9) dust(toWorld(e.x + 0.5, e.y + 0.5).setY(0.1), 5, { sp: 0.8, up: 0.2 });
           break;
         case 'pushed':
-          if (e.slot === 0) pop('おしだされた!', toWorld(s.players[0].x, s.players[0].y).setY(1.2), 'red', 800);
+          if (e.slot === game.me) pop('おしだされた!', toWorld(s.players[game.me].x, s.players[game.me].y).setY(1.2), 'red', 800);
           break;
         case 'chest':
           splash('たからばこが でた!', 'small');
@@ -534,8 +538,8 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
           break;
         case 'finished': {
           game.endTimer = 4;
-          const win = e.winner === 0;
-          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
+          const win = e.winner === game.me;
+          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(game.me) + 1}い`, 'small');
           const w = game.units[e.winner];
           w.win = true;
           confetti(w.holder.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 50);
@@ -574,13 +578,13 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${nameOf(order[0])}の 勝ち!`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${nameOf(order[0])}の 勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const pl = s.players[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}${pl.chests ? `・たからばこ ${pl.chests}` : ''}</small></span><span class="dist">${pl.score}<small>こ</small></span>`;
@@ -657,7 +661,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       if (u.marker) u.marker.position.set(0, 2.6 + Math.sin(time * 5) * 0.1, 0);
       u.stars.visible = p.stun > 0;
       if (p.stun > 0) u.stars.rotation.y = time * 6;
-      const near = Math.hypot(p.x - s.players[0].x, p.y - s.players[0].y) < 9;
+      const near = Math.hypot(p.x - s.players[game.me].x, p.y - s.players[game.me].y) < 9;
       // はしると つちけむり
       if (u.run > 1.5 && !p.jump && near) {
         u.step -= dt;
@@ -671,7 +675,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       } else if (u.air) {
         u.air = false;
         if (near) { dust(u.holder.position.clone().setY(0.05), 7, { sp: 1.3 }); ring(u.holder.position, 0x8af0ff, 0.7, 0.35); }
-        if (slot === 0) sfx.land();
+        if (slot === game.me) sfx.land();
       }
     });
     stage.update(time);
@@ -769,13 +773,13 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
         const mi = myInput();
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : mi));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : mi));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -817,9 +821,9 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

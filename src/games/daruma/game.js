@@ -15,6 +15,7 @@ import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { MORA, RULES, STEP, TRACK, chantCount, createGame, inMud, lookAmount, ranking, step } from './rules.js';
 import { PERSONALITIES, cpuHold, createCpu } from './cpu.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERCH, buildStage, laneX } from './stage.js';
 import { createAudience } from './audience.js';
 import { createAtmosphere, windify } from './atmosphere.js';
@@ -133,8 +134,10 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
   const INTRO_TIME = 2.6;
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     // 前のゲームの片付け
     if (game) for (const r of game.runners) scene.remove(r.holder);
 
@@ -154,15 +157,19 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
       return { model, holder, shadow: sh, size: def.size || 1, x: 0 };
     }));
     // 自分の頭の上の目印
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
 
+    const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     game = {
+      me,
+      net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null,
       seed,
       players,
-      state: createGame(players, seed),
+      state,
       cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)),
       runners,
       acc: 0,
@@ -269,7 +276,7 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
   function buildTrackDots() {
     $('track').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'dot' + (slot === 0 ? ' me' : '');
+      d.className = 'dot' + (slot === game.me ? ' me' : '');
       d.style.background = css(PLAYER_COLORS[slot].hex);
       d.title = p.name;
       return d;
@@ -296,7 +303,7 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
     }
     const left = Math.max(0, RULES.timeLimit - Math.max(0, s.t - RULES.readyTime));
     $('timer').firstChild.nodeValue = String(Math.ceil(left));
-    $('acorns').lastChild.nodeValue = String(s.runners[0].acorns);
+    $('acorns').lastChild.nodeValue = String(s.runners[game.me].acorns);
     const dots = $('track').children;
     s.runners.forEach((r, i) => {
       dots[i].style.bottom = `calc(10px + (100% - 20px) * ${(game.runners[i].x / TRACK).toFixed(4)})`;
@@ -333,7 +340,7 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
           break;
         case 'rustle':
           rustleSound();
-          if (e.slot === 0) splash('ガサガサッ!');
+          if (e.slot === game.me) splash('ガサガサッ!');
           break;
         case 'pickup':
           beep(1046, 0.08, 'sine', 0.1); setTimeout(() => beep(1568, 0.12, 'sine', 0.1), 70);
@@ -343,12 +350,12 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
           break;
         case 'bonk':
           sweep(260, 90, 0.18, 'square', 0.08);
-          if (e.slot === 0) splash('ゴツン!');
+          if (e.slot === game.me) splash('ゴツン!');
           break;
         case 'caught':
           owl.play('flap', { fade: 0.1 });
           sweep(700, 120, 0.4, 'square', 0.07);
-          if (e.slot === 0) splash('みつかった!', true);
+          if (e.slot === game.me) splash('みつかった!', true);
           break;
         case 'back':
           owl.setFace('normal');
@@ -356,7 +363,7 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
           break;
         case 'goal':
           beep(784, 0.12); setTimeout(() => beep(1046, 0.25), 120);
-          splash(e.slot === 0 ? 'ゴール!' : `${game.players[e.slot].name} ゴール!`);
+          splash(e.slot === game.me ? 'ゴール!' : `${game.players[e.slot].name} ゴール!`);
           break;
         case 'timeup':
           splash('そこまで!');
@@ -385,13 +392,13 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
     }
     const order = ranking(s);
     const winner = game.players[s.winner];
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       const dist = (r.finishTime !== null ? 'ゴール' : `のこり ${(TRACK - r.x).toFixed(1)}m`) + `<small>どんぐり ${r.acorns}</small>`;
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
@@ -462,8 +469,8 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
       look = new THREE.Vector3(laneX(w) * 0.9, 1.3, wz - 1);
     } else if (mode === 'playing') {
       // 自分のうしろ。5レーン全部が入るよう引きぎみにして、少しだけ自分の側へ寄せる
-      z = -game.runners[0].x;
-      const bias = laneX(0) * 0.3;
+      z = -game.runners[game.me].x;
+      const bias = laneX(game.me) * 0.3;
       pos = new THREE.Vector3(bias, portrait ? 7.2 : 4.6, z + (portrait ? 11 : 7.5));
       look = new THREE.Vector3(bias, 0.4, Math.max(-TRACK - 1, z - (portrait ? 6 : 7.5)));
     } else {
@@ -531,12 +538,12 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const holds = game.players.map((p, slot) => (p.cpu ? cpuHold(game.cpus[slot], s, slot) : held));
-        onEvents(step(s, holds));
+        const holds = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuHold(game.cpus[slot], s, slot)) : held));
+        onEvents((game.net ? game.net.step : step)(s, holds));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -603,9 +610,9 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
     frame,
     // 会場に入る。fromSky: 空から降りてくる演出つき
     // 大会から呼ぶときは lineup(顔ぶれ)と onFinish(順位を返す)をわたす。そのときは結果画面を出さない
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

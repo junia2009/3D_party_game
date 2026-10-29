@@ -12,6 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, aliveCount, canFlick, createGame, halfDesk, launchSpeed, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { DESK_Y, ERASER_H, FLOOR_Y, buildStage, eraserMesh, glowTex, toWorld } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -225,12 +226,15 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
   const input = { keys: new Set(), target: null, hold: false, aim: null, spin: 0, drag: null };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const u of game.units) scene.remove(u.group, u.ring);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     stage.reset();
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const units = await Promise.all(players.map(async (p, slot) => {
       const b = state.bodies[slot];
       const group = new THREE.Group();
@@ -251,7 +255,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       const ring = chargeRing(PLAYER_COLORS[slot].hex);
       return { group, eraser, rider, model, ring, fall: null, face: 0, lean: 0, hurt: 0 };
     }));
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, lastAim: 0, kos: players.map(() => 0) };
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, lastAim: 0, kos: players.map(() => 0) };
     atmosphere.apply(params.get('time') || 'day');
     atmosphere.setupShadows(units.map((u) => u.group), [stage.group]);
     input.hold = false;
@@ -354,10 +358,10 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
 
   // ねらいが きまって いない ときは、いちばん ちかい 子へ
   function autoAim(s) {
-    const me = s.bodies[0];
+    const me = s.bodies[game.me];
     let best = null, bd = Infinity;
     s.bodies.forEach((b, i) => {
-      if (i === 0 || b.out) return;
+      if (i === game.me || b.out) return;
       const d = Math.hypot(b.x - me.x, b.y - me.y);
       if (d < bd) { bd = d; best = Math.atan2(b.y - me.y, b.x - me.x); }
     });
@@ -388,7 +392,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
   function buildChips() {
     $('chipsX').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = `<i></i><b>${CHARACTERS.find((c) => c.key === p.character)?.name || ''}</b>`;
       return d;
@@ -423,7 +427,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
     $('popsX').append(el);
     setTimeout(() => el.remove(), life);
   }
-  const nameOf = (slot) => (slot === 0 ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[slot].character)?.name || '');
+  const nameOf = (slot) => (slot === game.me ? 'あなた' : CHARACTERS.find((c) => c.key === game.players[slot].character)?.name || '');
 
   // ── できごと ────────────────────────────────────────
   function onEvents(events) {
@@ -436,7 +440,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
           setTimeout(() => game?.state === s && $('howtoX').classList.remove('show'), 5000);
           break;
         case 'flick': {
-          if (e.slot === 0) sfx.flick(e.power);
+          if (e.slot === game.me) sfx.flick(e.power);
           game.units[e.slot].face = 0.5;
           const b = s.bodies[e.slot];
           flickFinger(b, Math.atan2(b.vy, b.vx));
@@ -458,8 +462,8 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
           const u = game.units[e.slot];
           u.fall = { t: 0, vx: e.vx * 0.6, vz: -e.vy * 0.6, vy: 1.5, spin: (Math.random() - 0.5) * 8, rest: false };
           sfx.fall();
-          pop(e.slot === 0 ? 'おちた〜!' : `${nameOf(e.slot)} アウト!`, toWorld(e.x, e.y).add(new THREE.Vector3(0, 1.2, 0)), e.slot === 0 ? 'red' : '', 1300);
-          if (e.by === 0) setTimeout(() => game?.state === s && splash('おとした!', 'gold small'), 300);
+          pop(e.slot === game.me ? 'おちた〜!' : `${nameOf(e.slot)} アウト!`, toWorld(e.x, e.y).add(new THREE.Vector3(0, 1.2, 0)), e.slot === game.me ? 'red' : '', 1300);
+          if (e.by === game.me) setTimeout(() => game?.state === s && splash('おとした!', 'gold small'), 300);
           if (e.by !== null) { game.kos[e.by]++; toast(e.by, e.slot); }
           // のこり 2人: いっきうち
           if (aliveCount(s) === 2 && s.phase === 'battle') setTimeout(() => { if (game?.state === s && s.phase === 'battle') { splash('いっきうち!', 'red'); sfx.duel(); } }, 900);
@@ -475,8 +479,8 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
           break;
         case 'finished': {
           game.endTimer = 4;
-          const win = e.winner === 0;
-          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
+          const win = e.winner === game.me;
+          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(game.me) + 1}い`, 'small');
           const w = game.units[e.winner];
           w.win = true;
           confetti(w.group.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 60);
@@ -510,14 +514,14 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${nameOf(order[0])}の 勝ち!`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${nameOf(order[0])}の 勝ち!`;
     const kos = s.bodies.map((_, i) => s.bodies.filter((b) => b.outBy === i).length);
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const b = s.bodies[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}${kos[slot] ? `・おとした ${kos[slot]}` : ''}</small></span><span class="dist">${b.out ? 'アウト' : 'のこり'}</span>`;
@@ -548,7 +552,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
             p.y = FLOOR_Y;
             f.vy = -f.vy * 0.42;
             f.vx *= 0.6; f.vz *= 0.6; f.spin *= 0.5;
-            if (f.vy > 1.2) { spark(p.clone().setY(FLOOR_Y + 0.1), 5, 0xffffff, 2); if (slot === 0 || f.t < 1.4) sfx.hit(0.3); }
+            if (f.vy > 1.2) { spark(p.clone().setY(FLOOR_Y + 0.1), 5, 0xffffff, 2); if (slot === game.me || f.t < 1.4) sfx.hit(0.3); }
             else f.rest = true;
           }
         } else {
@@ -575,7 +579,7 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       u.model.update(dt);
       // のる キャラは ふだんは カメラの ほう、ためて いる あいだは ねらう 向きを 見る
       const camYaw = innerWidth < innerHeight && !u.win ? -Math.PI / 2 : 0;
-      const aimNow = slot === 0 ? game.lastAim : game.cpus[slot]?.plan?.aim;
+      const aimNow = slot === game.me ? game.lastAim : game.cpus[slot]?.plan?.aim;
       const want = b.charge > 0 && aimNow !== undefined ? Math.atan2(Math.cos(aimNow), -Math.sin(aimNow)) : camYaw;
       u.yaw = u.yaw === undefined ? want : u.yaw + Math.atan2(Math.sin(want - u.yaw), Math.cos(want - u.yaw)) * Math.min(1, dt * 8);
       u.rider.rotation.y = u.fall ? u.rider.rotation.y : u.yaw - b.a;
@@ -596,11 +600,11 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       }
     });
     // 自分: はじける ときの しるしと、ねらいの 点線(どこまで すべるか)
-    const me = s.bodies[0];
+    const me = s.bodies[game.me];
     const ready = !me.out && s.phase === 'battle' && (canFlick(s, me) || me.charge > 0);
     readyMark.visible = ready && me.charge === 0;
     if (readyMark.visible) {
-      readyMark.position.copy(game.units[0].group.position).setY(DESK_Y + 0.02);
+      readyMark.position.copy(game.units[game.me].group.position).setY(DESK_Y + 0.02);
       readyMark.material.opacity = 0.35 + Math.sin(time * 5) * 0.25;
     }
     const showAim = ready && (me.charge > 0 || input.drag);
@@ -720,17 +724,17 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
         const mi = myInput(STEP);
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : mi));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : mi));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       // ためる 音(自分)
-      const me = s.bodies[0];
+      const me = s.bodies[game.me];
       chargeT -= dt;
       if (me.charge > 0 && me.charge < 1 && chargeT <= 0) { chargeT = 0.09; sfx.charge(me.charge); }
       if (me.charge === 0 && !input.hold) game.keyAim = undefined;
@@ -774,9 +778,9 @@ export async function createKeshigomu({ renderer, settings, getAudio, onExit }) 
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

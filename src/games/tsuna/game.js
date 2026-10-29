@@ -10,6 +10,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, cheer, createGame, ranking, seenoOn, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { FRONT, GAP, HOST, SEATS, STREAM_W, STUMP_TOP, WATER_Y, buildStage, groundY } from './stage.js';
 import { createAtmosphere, windify } from '../daruma/atmosphere.js';
@@ -272,11 +273,14 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
   let pressed = false;
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const meSeat = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me: meSeat });
     if (game) for (const u of game.units) scene.remove(u.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     // 見た目の なかま(プレイヤーと すけっと)。チームの中の ならび順は teams の順
     const units = [];
     for (const side of ['L', 'R']) {
@@ -296,12 +300,12 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
         units.push({ id, side, k, helper, model, holder, body, size: helper ? 1 : def?.size || 1, yank: 0, fall: null, arms: [model.node('arm_L'), model.node('arm_R')] });
       }
     }
-    const me = units.find((u) => u.id === 0);
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const me = units.find((u) => u.id === meSeat);
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[meSeat].hex }));
     marker.rotation.x = Math.PI;
     me.holder.add(marker);
     me.marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, seenoPull: { L: 0, R: 0 }, myTaps: [], rate: 0, count: null, roll: 0, edgeSide: null, slow: 0 };
+    game = { me: meSeat, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me: meSeat }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, seenoPull: { L: 0, R: 0 }, myTaps: [], rate: 0, count: null, roll: 0, edgeSide: null, slow: 0 };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(units.map((u) => u.holder), []);
     pressed = false;
@@ -375,13 +379,13 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     for (const side of ['L', 'R']) {
       $(`team${side}N`).replaceChildren(...s.teams[side].map((id) => {
         const d = document.createElement('div');
-        d.className = 'chip' + (id === 0 ? ' me' : '') + (id < 0 ? ' helper' : '');
+        d.className = 'chip' + (id === game.me ? ' me' : '') + (id < 0 ? ' helper' : '');
         d.style.setProperty('--c', css(id < 0 ? HELPER_COLOR : PLAYER_COLORS[id].hex));
         d.innerHTML = id < 0 ? `<b>${HELPER_NAMES[s.helpers[-1 - id].kind]}</b>` : `<i></i>`;
         return d;
       }));
     }
-    const mySide = s.runners[0].side;
+    const mySide = s.runners[game.me].side;
     $('hudN').dataset.side = mySide;
   }
   function renderHud() {
@@ -445,7 +449,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
             for (const v of team) { v.yank = 1.5; puff(v.holder.position.x, 0.05, v.holder.position.z, 2); }
             tension = 1;
             const mid = team.reduce((a, v) => a + v.holder.position.x, 0) / team.length;
-            const mine = side === s.runners[0].side;
+            const mine = side === s.runners[game.me].side;
             pop('そろった!', mid, 2.3, 0, mine ? 'sync' : 'sync them');
             if (mine) sfx.sync();
           }
@@ -456,7 +460,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
           if (u) u.yank = Math.max(u.yank, e.seeno ? 1.2 : 0.7);
           tension = Math.min(1, tension + (e.seeno ? 0.12 : 0.05));
           if (e.seeno) game.seenoPull[e.side] += e.pull;
-          if (e.who === 0) {
+          if (e.who === game.me) {
             game.myTaps.push(s.t);
             sfx.tap(e.seeno);
             if (e.seeno && Math.random() < 0.5) pop('×2', u.holder.position.x + (Math.random() - 0.5) * 0.4, 1.9 * u.size, u.holder.position.z, 'gold');
@@ -467,20 +471,20 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
         case 'slip': {
           const u = unitOf(e.who);
           if (u) u.slip = true;
-          if (e.who === 0) { splash('つるっ!\n連打で ふんばれ!', 'red small'); sfx.slip(); }
+          if (e.who === game.me) { splash('つるっ!\n連打で ふんばれ!', 'red small'); sfx.slip(); }
           if (u) mudAt(u.holder.position.x, u.holder.position.z);
           break;
         }
         case 'save': {
           const u = unitOf(e.who);
           if (u) u.slip = false;
-          if (e.who === 0) { pop('ふんばった!', u.holder.position.x, 2.0, u.holder.position.z, 'gold'); sfx.save(); }
+          if (e.who === game.me) { pop('ふんばった!', u.holder.position.x, 2.0, u.holder.position.z, 'gold'); sfx.save(); }
           break;
         }
         case 'fall': {
           const u = unitOf(e.who);
           if (u) { u.slip = false; u.downT = RULES.slipDown; }
-          if (e.who === 0) { splash('すってんころりん…', 'red small'); sfx.fall(); }
+          if (e.who === game.me) { splash('すってんころりん…', 'red small'); sfx.fall(); }
           break;
         }
         case 'finished': {
@@ -489,7 +493,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
           $('meterN').classList.remove('edge');
           const lose = e.winner === 'L' ? 'R' : 'L';
           for (const u of game.units) if (u.side === lose) u.fall = { t: 0, delay: u.k * 0.18 };
-          const mine = s.runners[0].side === e.winner;
+          const mine = s.runners[game.me].side === e.winner;
           splash(mine ? 'かった!' : 'まけた…', mine ? 'gold' : 'red');
           if (mine) sfx.fanfare();
           confetti(e.winner === 'L' ? -3 : 3, 0);
@@ -509,14 +513,14 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    const mine = s.runners[0].side === s.winner;
+    const mine = s.runners[game.me].side === s.winner;
     $('resultTitle').textContent = mine ? 'あなたの チームの勝ち!' : 'あいての チームの勝ち!';
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}・${r.side === s.winner ? 'かち' : 'まけ'}</small></span><span class="dist">ちから ${Math.round(r.pull * 10)}<small>れんだ ${r.taps}</small></span>`;
@@ -611,7 +615,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     const s = game?.state;
     // つなの まん中を 追って、左右に 少し ずれる
     // 自分の チームの ほうへ 少し 寄せる
-    const cx = s ? s.p * 0.85 + (s.runners[0].side === 'L' ? -0.3 : 0.3) * (portrait ? 1 : 0.5) : 0;
+    const cx = s ? s.p * 0.85 + (s.runners[game.me].side === 'L' ? -0.3 : 0.3) * (portrait ? 1 : 0.5) : 0;
     const pos = portrait ? new THREE.Vector3(cx, 4.3, 13.0) : new THREE.Vector3(cx, 2.1, 6.4);
     const look = new THREE.Vector3(cx, portrait ? 0.9 : 1.15, -0.6);
     camera.fov = portrait ? 58 : 42;
@@ -684,13 +688,13 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : pressed));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : pressed));
         pressed = false;
-        onEvents(step(s, inputs));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (s.phase === 'play' && s.t > RULES.readyTime + 6) $('howtoN').classList.remove('show');
@@ -706,7 +710,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
         const near = s.p > 0 ? 'L' : 'R'; // 目じるしが 相手がわへ 行っている = 負けそうな チーム
         if (game.edgeSide !== near) {
           game.edgeSide = near;
-          const mine = s.runners[0].side;
+          const mine = s.runners[game.me].side;
           splash(near === mine ? 'ふんばれ!' : 'あと すこし!', near === mine ? 'red small' : 'gold small');
         }
       } else if (edge < 0.5) game.edgeSide = null;
@@ -776,9 +780,9 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

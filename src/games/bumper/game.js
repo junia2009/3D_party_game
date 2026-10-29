@@ -11,6 +11,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonGradient, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, onDisk, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { FLOOR_Y, SEATS, buildStage } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -106,7 +107,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
     },
   };
   function volFor(x, z) {
-    const me = game.state.runners[0];
+    const me = game.state.runners[game.me];
     return Math.max(0.2, 1 - Math.hypot(x - me.x, z - me.z) / 10);
   }
 
@@ -344,11 +345,14 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
   const input = { touch: null, stick: null, keys: new Set(), dash: false, target: null };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -368,11 +372,11 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
       return u;
     }));
     for (const k of skids) k.life = 0;
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, duel: false, slow: 0, count: 4, bulbT: 0, donut: 0 };
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, duel: false, slow: 0, count: 4, bulbT: 0, donut: 0 };
     $('hudQ').classList.remove('shrink');
     atmosphere.apply(params.get('time') || 'dusk');
     atmosphere.setupShadows([...runners.map((r) => r.holder)], [stage.group, ...stage.rings.map((r) => r.mesh), stage.disk]);
@@ -513,7 +517,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
   function buildChips() {
     $('chipsQ').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i><b></b>';
       return d;
@@ -523,7 +527,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
     const s = game.state;
     [...$('chipsQ').children].forEach((c, i) => c.classList.toggle('out', !s.runners[i].alive));
     $('timeQ').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     dashEl.hidden = s.phase === 'finished' || !me.alive;
     dashEl.style.setProperty('--k', String(1 - me.cool / RULES.cool));
     dashEl.classList.toggle('wait', me.cool > 0);
@@ -552,7 +556,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
           break;
         case 'windup': {
           const r = s.runners[e.slot];
-          if (e.slot === 0) sfx.rev();
+          if (e.slot === game.me) sfx.rev();
           puff(r.x - Math.sin(r.h) * 0.7, FLOOR_Y + 0.2, r.z - Math.cos(r.h) * 0.7, 2, 0x9a90b0, 0.8);
           break;
         }
@@ -569,7 +573,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
           stars(e.x, e.z, strong ? 12 : 6, strong ? 1.3 : 0.7);
           if (strong) pop(e.force > 6 ? 'ドカーン!' : 'ドン!', e.x, FLOOR_Y + 1.4, e.z, 'gold');
           else if (e.force > 2.5) pop('ボヨン', e.x, FLOOR_Y + 1.2, e.z);
-          if (e.a === 0 || e.b === 0) game.shake = Math.max(game.shake, strong ? 0.35 : 0.15);
+          if (e.a === game.me || e.b === game.me) game.shake = Math.max(game.shake, strong ? 0.35 : 0.15);
           for (const i of [e.a, e.b]) { game.runners[i].jolt = 0.3; game.runners[i].squash = Math.min(1, 0.4 + e.force / 8); }
           if (e.force > 1.5) shock(e.x, e.z, strong ? 0xffd23c : 0xffffff, strong ? 1.3 : 0.8);
           if (strong) for (const i of [e.a, e.b]) { const r = s.runners[i]; zap(r.x - Math.sin(r.h) * 0.55, FLOOR_Y + 2.25, r.z - Math.cos(r.h) * 0.55, 4); }
@@ -595,8 +599,8 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
           const d = Math.hypot(r.x, r.z) || 1;
           u.out = { t: 0, x: r.x, z: r.z, y: FLOOR_Y, vx: (r.x / d) * 3 + r.vx * 0.5, vz: (r.z / d) * 3 + r.vz * 0.5, vy: 4.5 };
           sfx.out(volFor(r.x, r.z));
-          pop(e.by !== null ? 'おしだし!' : 'あ〜っ!', r.x, FLOOR_Y + 1.5, r.z, e.slot === 0 ? 'red' : 'out');
-          if (e.slot === 0) splash('おちちゃった…', 'red small');
+          pop(e.by !== null ? 'おしだし!' : 'あ〜っ!', r.x, FLOOR_Y + 1.5, r.z, e.slot === game.me ? 'red' : 'out');
+          if (e.slot === game.me) splash('おちちゃった…', 'red small');
           game.slow = 0.6;
           for (const a of audience) a.until = time + 1.6 + Math.random();
           if (s.phase === 'play' && s.runners.filter((x) => x.alive).length === 2 && !game.duel) {
@@ -607,7 +611,7 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
         }
         case 'finished': {
           game.endTimer = 4.5;
-          const win = e.winner === 0;
+          const win = e.winner === game.me;
           splash(e.timeUp ? 'じかん ぎれ!' : win ? 'さいごの 1台!' : 'しゅうりょう!', win ? 'gold' : '');
           if (win) sfx.fanfare();
           const r = s.runners[e.winner];
@@ -631,13 +635,13 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${order.indexOf(0) + 1}位`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${order.indexOf(game.me) + 1}位`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${r.alive ? 'のこった!' : ''}<small>おしだし ${r.pushes}</small></span>`;
@@ -844,12 +848,12 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
     }
     // 落ちた 瞬間は 少し スロー
     if (game?.slow > 0) { game.slow = Math.max(0, game.slow - dt); dt *= 0.4; }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -898,9 +902,9 @@ export async function createBumper({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

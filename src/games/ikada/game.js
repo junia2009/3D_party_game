@@ -12,6 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonGradient, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, ranking, step } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { FALLS, LENGTH, LOGS, LOG_R, POND_END, TUNNEL, WHIRLS, currentAt, logX } from './course.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, buildStage, coursePoint, courseHeading, seatPoint } from './stage.js';
@@ -385,10 +386,13 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
   let owlCheer = 0;
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -423,11 +427,11 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
         arms: [node('arm_L'), node('arm_R')], legs: [node('leg_L'), node('leg_R')], head: node('head'),
       };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null };
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null };
     atmosphere.apply(params.get('time') || 'morning');
     // 朝もや: ふつうの朝より霧を近く
     scene.fog.near = 22;
@@ -529,7 +533,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
   function buildBoard() {
     $('trackK').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'dot' + (slot === 0 ? ' me' : '');
+      d.className = 'dot' + (slot === game.me ? ' me' : '');
       d.style.background = css(PLAYER_COLORS[slot].hex);
       return d;
     }));
@@ -595,10 +599,10 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
   // レースの盛り上げ: 順位の入れかわり・ラストスパート・水門の扉・鳥の声
   function updateRace(dt) {
     const s = game.state;
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     if (s.phase === 'race' && me.finish === null) {
       const order = ranking(s);
-      const rank = order.indexOf(0);
+      const rank = order.indexOf(game.me);
       if (game.lastRank === undefined) game.lastRank = rank;
       // 入れかわってから 0.4 秒たっても そのままなら知らせる(ならんで押しあうと、行ったり来たりするので)
       if (rank !== game.lastRank) {
@@ -623,7 +627,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     const lead = Math.max(...s.runners.map((r) => r.s));
     for (const d of stage.doors) {
       const want = lead > LENGTH - 20 ? 1 : 0;
-      if (want && !d.userData.opening) { d.userData.opening = true; if (near(game.runners[0], 40)) sfx.creak(); }
+      if (want && !d.userData.opening) { d.userData.opening = true; if (near(game.runners[game.me], 40)) sfx.creak(); }
       d.userData.open += (want - d.userData.open) * Math.min(1, dt * 1.6);
       d.children[0].rotation.y = -d.userData.side * 1.45 * d.userData.open;
     }
@@ -632,7 +636,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
   }
   function renderHud() {
     const s = game.state;
-    const rank = ranking(s).indexOf(0);
+    const rank = ranking(s).indexOf(game.me);
     const el = $('rankK');
     if (el.dataset.rank !== String(rank)) {
       el.dataset.rank = String(rank);
@@ -641,7 +645,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       void el.offsetWidth;
       el.classList.add('up');
     }
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     $('timeK').textContent = (me.finish ?? Math.max(0, s.t - RULES.readyTime)).toFixed(1);
     const dots = $('trackK').children;
     s.runners.forEach((r, i) => {
@@ -668,7 +672,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
           v.strokeT = 0;
           v.planted = false;
           v.strokeSide = e.side || (v.strokeSide > 0 ? -1 : 1);
-          if (e.slot === 0) { sfx.paddle(v.strokeSide); rhythm(e); }
+          if (e.slot === game.me) { sfx.paddle(v.strokeSide); rhythm(e); }
           else if (Math.random() < 0.15) sfx.paddle(v.strokeSide, 0.35);
           break;
         }
@@ -678,12 +682,12 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
           // ぶつかったところ(いかだと岩のあいだ)に、しぶきと波紋。いかだは大きくゆれる
           const hitAt = coursePoint(e.s, e.x, 0.25).lerp(v.holder.position, 0.5);
           hitAt.y = v.holder.position.y + 0.3;
-          spray(hitAt, e.slot === 0 ? 22 : 12, 2.8, 1.2);
+          spray(hitAt, e.slot === game.me ? 22 : 12, 2.8, 1.2);
           ripple(tmp.copy(hitAt).setY(v.holder.position.y), 2.2);
           v.roll = (v.roll || 0) + v.spinDir * 0.35;
           v.pitch = -0.2;
-          if (e.slot === 0 || near(v, 12)) pop(e.kind === 'log' ? 'ゴツン!' : 'ガツン!', tmp.copy(hitAt).setY(hitAt.y + 0.8), 'bang');
-          if (e.slot === 0) { sfx.crash(); game.shake = 0.4; }
+          if (e.slot === game.me || near(v, 12)) pop(e.kind === 'log' ? 'ゴツン!' : 'ガツン!', tmp.copy(hitAt).setY(hitAt.y + 0.8), 'bang');
+          if (e.slot === game.me) { sfx.crash(); game.shake = 0.4; }
           break;
         }
         case 'bump':
@@ -698,37 +702,37 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
           A.roll = (A.roll || 0) - side * 0.18 * Math.min(2, e.hard);
           B.roll = (B.roll || 0) + side * 0.3 * Math.min(2, e.hard);
           A.surprise = B.surprise = 0.6;
-          if (e.a === 0 || e.b === 0 || near(A, 10)) pop('ドン!', mid.clone().setY(mid.y + 0.9), 'don');
-          if (e.a === 0 || e.b === 0) { sfx.bump(); game.shake = 0.2 + Math.min(0.2, e.hard * 0.08); }
+          if (e.a === game.me || e.b === game.me || near(A, 10)) pop('ドン!', mid.clone().setY(mid.y + 0.9), 'don');
+          if (e.a === game.me || e.b === game.me) { sfx.bump(); game.shake = 0.2 + Math.min(0.2, e.hard * 0.08); }
         }
           break;
         case 'whirlIn':
-          if (e.slot === 0) { sfx.whirl(); splash('うずだ!', 'red'); showTip('れんだで ぬけだせ!', 'warn'); }
+          if (e.slot === game.me) { sfx.whirl(); splash('うずだ!', 'red'); showTip('れんだで ぬけだせ!', 'warn'); }
           break;
         case 'whirlOut':
-          if (e.slot === 0) showTip('ぬけた!', 'good');
+          if (e.slot === game.me) showTip('ぬけた!', 'good');
           break;
         case 'fall':
-          if (e.slot === 0) { sfx.fall(); }
+          if (e.slot === game.me) { sfx.fall(); }
           break;
         case 'splash': {
           const v = game.runners[e.slot];
           spray(tmp.copy(v.holder.position).setY(v.holder.position.y + 0.2), 22, 3, 1.4);
-          if (e.slot === 0) { sfx.splash(); splash('ざぶーん!', 'gold'); game.sprayT = 1.2; game.shake = 0.3; }
+          if (e.slot === game.me) { sfx.splash(); splash('ざぶーん!', 'gold'); game.sprayT = 1.2; game.shake = 0.3; }
           break;
         }
         case 'goal': {
           const v = game.runners[e.slot];
-          if (e.slot === 0) {
-            const rank = ranking(s).indexOf(0);
+          if (e.slot === game.me) {
+            const rank = ranking(s).indexOf(game.me);
             splash(`ゴール! ${rank + 1}位`, rank === 0 ? 'gold' : '');
             sfx.fanfare();
           }
           for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 2; }
-          sfx.cheer(e.slot === 0 ? 0.07 : 0.035);
+          sfx.cheer(e.slot === game.me ? 0.07 : 0.035);
           spray(tmp.copy(v.holder.position).setY(v.holder.position.y + 0.5), 10, 2);
           cheerBeavers();
-          if (e.slot === 0 || s.runners.filter((o) => o.finish !== null).length === 1) confetti();
+          if (e.slot === game.me || s.runners.filter((o) => o.finish !== null).length === 1) confetti();
           owl.play('cheer');
           owlCheer = 2.5;
           break;
@@ -750,14 +754,14 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     }
     const order = ranking(s);
     const winner = game.players[s.winner];
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
-    if (s.winner === 0) sfx.fanfare(); else sfx.finish();
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
+    if (s.winner === game.me) sfx.fanfare(); else sfx.finish();
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       const time = r.finish !== null ? `${r.finish.toFixed(1)}びょう` : `のこり ${Math.max(0, LENGTH - r.s).toFixed(0)}m`;
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
@@ -843,8 +847,8 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
         const tip = v.paddle.localToWorld(tmp.set(-v.strokeSide * PADDLE_TIP, 0, 0));
         const wy = coursePoint(r.s, r.x, 0).y;
         tip.y = wy + 0.05;
-        if (i === 0 || v.holder.position.distanceTo(camera.position) < 12) ripple(tip, 0.9);
-        if (i === 0 || v.holder.position.distanceTo(camera.position) < 14) spray(tip, i === 0 ? 5 : 2, 0.8, 0.7);
+        if (i === game.me || v.holder.position.distanceTo(camera.position) < 12) ripple(tip, 0.9);
+        if (i === game.me || v.holder.position.distanceTo(camera.position) < 14) spray(tip, i === game.me ? 5 : 2, 0.8, 0.7);
       }
       // 引き波: 進む速さで こく、長く
       const sp = Math.max(0, r.v) + (r.finish === null ? 0.5 : 0);
@@ -863,7 +867,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     }
     // 川の音: 自分のいるところの流れの速さで
     if (river) {
-      const me = s.runners[0];
+      const me = s.runners[game.me];
       const u = currentAt(me.s);
       river.g.gain.value += ((paused ? 0 : 0.035 + (u - 2.2) * 0.02) - river.g.gain.value) * Math.min(1, dt * 3);
       river.f.frequency.value = 500 + u * 150;
@@ -875,7 +879,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    const me = game ? game.state.runners[0] : { s: 0, x: 0, air: 0 };
+    const me = game ? game.state.runners[game.me] : { s: 0, x: 0, air: 0 };
     let pos, look;
     if (game && me.finish !== null && game.state.phase !== 'finished' && mode === 'playing') {
       // 自分がゴールしたあと: いかだの前へ ゆっくりまわりこんで、よろこぶ顔を見る
@@ -953,7 +957,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     const dt = Math.min(rawDt, 0.1);
     if (draw && mode === 'playing' && intro >= 1) watchQuality(rawDt);
     if (intro < 1 && !paused) intro = Math.min(1, intro + dt / INTRO_TIME);
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       if (s.phase === 'ready') {
         const n = Math.ceil(RULES.readyTime - s.t);
@@ -961,8 +965,8 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
       }
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -1025,9 +1029,9 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

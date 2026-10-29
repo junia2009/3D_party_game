@@ -10,6 +10,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, ranking, step } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { AXIS_Y, TURN_X, YAGURA, benchSpot, buildStage, slotX } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -299,11 +300,14 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   let latch = false; // すごく みじかい タップ(フレームの あいだに はなした)も 1回は とどける
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const meSeat = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me: meSeat });
     if (game) for (const u of game.units) scene.remove(u.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const units = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -317,12 +321,12 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
       const def = CHARACTERS.find((c) => c.key === p.character);
       return { slot, model, holder, size: def?.size || 1, home: holder.position.x, out: null, squash: 0 };
     }));
-    const me = units[0];
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.28, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const me = units[meSeat];
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.28, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[meSeat].hex }));
     marker.rotation.x = Math.PI;
     me.holder.add(marker);
     me.marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, benchN: 0, holdT: 0 };
+    game = { me: meSeat, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me: meSeat }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, benchN: 0, holdT: 0 };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(units.map((u) => u.holder), []);
     frog.visible = false;
@@ -403,7 +407,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
   function buildChips() {
     $('chipsJ').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i>';
       return d;
@@ -413,7 +417,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     const s = game.state;
     [...$('chipsJ').children].forEach((c, i) => c.classList.toggle('out', !s.alive[i]));
     // 長おしの 輪(大ジャンプまで)
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     const k = me.air && me.holdT >= 0 ? Math.min(1, me.holdT / RULES.holdTime) : me.air && game.bigAt === me.jumps ? 1 : 0;
     $('holdJ').style.setProperty('--k', k.toFixed(3));
     $('holdJ').classList.toggle('full', k >= 1);
@@ -454,12 +458,12 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
           const u = game.units[e.who];
           u.stretch = 1; // ふみきりで ぐっと のびる
           puff(u.holder.position.x, 0.04, 0, 1);
-          if (e.who === 0) sfx.jump();
+          if (e.who === game.me) sfx.jump();
           break;
         }
         case 'big': {
           const u = game.units[e.who];
-          if (e.who === 0) { sfx.big(); game.bigAt = s.runners[0].jumps; }
+          if (e.who === game.me) { sfx.big(); game.bigAt = s.runners[game.me].jumps; }
           puff(u.holder.position.x, 0.05, 0, 3, 0xffe8a8);
           u.spin = 1; // 大ジャンプは くるりんと 1回転
           break;
@@ -486,11 +490,11 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
             const u = game.units[i];
             if (e.redo) { pop('あっ!', u.holder.position.x, 1.6 * u.size, 0, 'out'); continue; }
             u.out = { t: 0, bench: benchSpot(game.benchN++) };
-            pop('あうっ!', u.holder.position.x, 1.6 * u.size, 0, i === 0 ? 'red' : 'out');
+            pop('あうっ!', u.holder.position.x, 1.6 * u.size, 0, i === game.me ? 'red' : 'out');
             puff(u.holder.position.x, 0.05, 0, 4);
           }
           // 10回ごとに「すごい!」
-          if (!e.redo && e.n % 10 === 0 && !e.caught.includes(0)) {
+          if (!e.redo && e.n % 10 === 0 && !e.caught.includes(game.me)) {
             splash(`${e.n}かい! すごい!`, 'gold small');
             sfx.combo();
             fans.forEach((f) => { f.hop = 1; f.model.play('cheer'); });
@@ -504,7 +508,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
             game.duel = true;
           }
           if (e.redo) { splash('みんな ひっかかった!\nもう1回', 'small'); sfx.safe(); }
-          else if (e.caught.includes(0)) { splash('ひっかかった…', 'red small'); sfx.caught(); }
+          else if (e.caught.includes(game.me)) { splash('ひっかかった…', 'red small'); sfx.caught(); }
           else if (e.caught.length) sfx.caught();
           break;
         }
@@ -522,7 +526,7 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
           break;
         case 'finished': {
           game.endTimer = 6.0;
-          const win = e.winner === 0;
+          const win = e.winner === game.me;
           splash(win ? 'さいごの 1人!' : 'しゅうりょう!', win ? 'gold' : '');
           if (win) sfx.fanfare();
           confetti(game.units[e.winner].holder.position.x, 0);
@@ -551,13 +555,13 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${order.indexOf(0) + 1}位`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${order.indexOf(game.me) + 1}位`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${r.clears}<small>かい とんだ</small></span>`;
@@ -720,13 +724,13 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && !frozen && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && !frozen && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : held || latch));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : held || latch));
         latch = false;
-        onEvents(step(s, inputs));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (s.phase === 'play' && s.t > RULES.readyTime + 7) $('howtoJ').classList.remove('show');
@@ -807,9 +811,9 @@ export async function createNawa({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

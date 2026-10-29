@@ -11,6 +11,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { HALL_W, RULES, STEP, TOP, createGame, doorAt, hintOn, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { DOOR_COLORS, DOOR_H, buildStage, floorY, makeDoor } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -203,11 +204,14 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
   await preload(CHARACTERS.map((c) => c.key));
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     buildDoors(state);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
@@ -221,11 +225,11 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
       return { model, holder, size: def.size || 1, face: Math.PI, lastAct: null, happyT: 0 };
     }));
     // 引きの絵でも 自分が分かるように、しるしは 大きめ
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.48, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.48, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastHint: false };
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastHint: false };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), [stage.group]);
     Object.assign(input, { touch: null, stick: null, target: null, open: false });
@@ -339,7 +343,7 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
     const open = input.open;
     input.open = false;
     if (input.target) return { ...input.target, open: input.target.open ?? open };
-    const me = game.state.runners[0];
+    const me = game.state.runners[game.me];
     let sx = 0, sy = 0;
     if (input.keys.size) {
       for (const k of input.keys) { sx += KEYS[k][0]; sy += KEYS[k][1]; }
@@ -372,7 +376,7 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
   function buildChips() {
     $('chipsD').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = `<i></i><b></b>`;
       d.title = p.name;
@@ -390,7 +394,7 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
       c.lastChild.textContent = r.done ? `${s.finished.indexOf(slot) + 1}位` : `${r.floor + 1}F`;
       c.classList.toggle('done', r.done);
     });
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     $('floorD').firstChild.nodeValue = me.done ? 'ゴール' : `${me.floor + 1}`;
     $('floorD').classList.toggle('done', me.done);
     $('timeD').textContent = s.phase === 'play' ? `のこり ${Math.ceil(timeLeft(s))}` : '';
@@ -414,8 +418,8 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
 
   // ── できごと ────────────────────────────────────────
   function volFor(slot, floor) {
-    if (slot === 0) return 1;
-    const me = game.state.runners[0];
+    if (slot === game.me) return 1;
+    const me = game.state.runners[game.me];
     return floor === me.floor ? 0.4 : 0.12;
   }
   function onEvents(events) {
@@ -436,19 +440,19 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
           break;
         case 'out': {
           sfx.fushigi(volFor(e.slot, e.floor));
-          pop(e.slot === 0 ? 'あれれ? もどってきた…' : '?', r.x, floorY(e.floor) + 2.0, r.z, e.slot === 0 ? 'me' : '');
+          pop(e.slot === game.me ? 'あれれ? もどってきた…' : '?', r.x, floorY(e.floor) + 2.0, r.z, e.slot === game.me ? 'me' : '');
           break;
         }
         case 'down':
           sfx.stairs(volFor(e.slot, e.floor));
-          if (e.slot === 0) pop('あたり!', r.x, floorY(e.floor) + 2.0, 0.4, 'gold');
+          if (e.slot === game.me) pop('あたり!', r.x, floorY(e.floor) + 2.0, 0.4, 'gold');
           break;
         case 'arrive':
-          if (e.slot === 0) splash(floorName(e.floor));
+          if (e.slot === game.me) splash(floorName(e.floor));
           break;
         case 'goal': {
           game.runners[e.slot].happyT = 99;
-          if (e.slot === 0) { splash(e.rank === 1 ? 'いちばんで だっしゅつ!' : `${e.rank}ばんめに だっしゅつ!`, 'gold'); sfx.fanfare(); }
+          if (e.slot === game.me) { splash(e.rank === 1 ? 'いちばんで だっしゅつ!' : `${e.rank}ばんめに だっしゅつ!`, 'gold'); sfx.fanfare(); }
           else notice(`${game.players[e.slot].name}が ${e.rank}ばんめに だっしゅつ!`, e.slot);
           if (e.rank === 1) confetti(0, 0, 1.2);
           break;
@@ -471,13 +475,13 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
     }
     const order = ranking(s);
     const winner = game.players[s.winner];
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${r.done ? `${r.time.toFixed(1)}びょう` : `${r.floor + 1}かい`}<small>まちがい ${r.wrong}</small></span>`;
@@ -542,7 +546,7 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
       });
     }
     // ヒントの印
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     for (const sp of hintSprites) {
       const on = hintOn(s, sp.userData.floor);
       sp.material.opacity += ((on ? 1 : 0) - sp.material.opacity) * (1 - Math.exp(-dt * 12));
@@ -558,7 +562,7 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
     const s = game?.state;
-    const me = s?.runners[0];
+    const me = s?.runners[game.me];
     let pos, look;
     // いつも マンションぜんたいを 引いて見せる(ほかの階の子の ようすも 見える)。
     // あそんでいるあいだは、自分の階のほうへ ほんの少しだけ 寄せる
@@ -617,12 +621,12 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -672,9 +676,9 @@ export async function createDasshutsu({ renderer, settings, getAudio, onExit }) 
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

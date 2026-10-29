@@ -12,6 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { MOSS, RULES, STEP, aliveSlots, bodyR, createGame, mossAlive, ranking, step } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, WATER_Y, buildPieces, buildStage, shakyMat } from './stage.js';
 import { createAtmosphere, windify } from '../daruma/atmosphere.js';
@@ -104,7 +105,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     plop(vol = 1) { voice({ pts: [[0, 900], [0.06, 400]], len: 0.08, gain: 0.04 * vol }); },
   };
   function volFor(x, z) {
-    const me = game.state.runners[0];
+    const me = game.state.runners[game.me];
     return Math.max(0.15, 1 - Math.hypot(x - me.x, z - me.z) / 9);
   }
 
@@ -429,12 +430,15 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
   const input = { touch: null, stick: null, keys: new Set(), target: null, hold: false, holdPointer: null, holdKey: false };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const id of [...items.keys()]) removeItem(id);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -459,15 +463,15 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       return { model, holder, body, shadow: sh, ring, size, scale: 1, fall: null, happyT: 0, lean: 0, dustAcc: 0, spinV: 0, spinA: 0, suckAcc: 0, full: false };
     }));
     // 自分の頭の上に しるし
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
 
     // くずれる かけら(試合ごとに 切れめが ちがう)
     for (const m of pieceMeshes.splice(0)) { stage.stump.remove(m); m.geometry.dispose(); }
     pieceMeshes.push(...buildPieces(state, stage.stump));
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastR: RULES.r0, shake: 0, hitstop: 0, slow: 0, focus: null, warned: false, lastTwo: false };
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastR: RULES.r0, shake: 0, hitstop: 0, slow: 0, focus: null, warned: false, lastTwo: false };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     Object.assign(input, { touch: null, stick: null, target: null, hold: false, holdPointer: null, holdKey: false });
@@ -594,7 +598,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
   function myInput() {
     const hold = input.hold || input.holdKey;
     if (input.target) return { ...input.target, hold: input.target.hold ?? hold };
-    const me = game.state.runners[0];
+    const me = game.state.runners[game.me];
     let sx = 0, sy = 0;
     if (input.keys.size) {
       for (const k of input.keys) { sx += KEYS[k][0]; sy += KEYS[k][1]; }
@@ -623,7 +627,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
   function buildChips() {
     $('chipsU').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = `<i></i><b></b>`;
       d.title = p.name;
@@ -651,7 +655,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       c.lastChild.textContent = r.alive ? '' : `${s.out.length - s.out.indexOf(slot) + aliveSlots(s).length}位`;
     });
     // ためるボタン: たまり具合(いっぱいで金色)
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     const k = Math.min(1, me.charge / RULES.chargeMax);
     tameEl.style.setProperty('--k', k.toFixed(3));
     tameEl.classList.toggle('full', k >= 1);
@@ -716,24 +720,24 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
           removeItem(e.id);
           const v = game.runners[e.slot];
           sparkle(v.holder.position.clone().setY(1.2), 0xffd24a, 10, 0.45);
-          sfx.kiran(e.slot === 0 ? 1 : volFor(v.holder.position.x, v.holder.position.z));
+          sfx.kiran(e.slot === game.me ? 1 : volFor(v.holder.position.x, v.holder.position.z));
           v.happyT = 1;
-          if (e.slot === 0) splash('どんぐりパワー!', 'gold');
+          if (e.slot === game.me) splash('どんぐりパワー!', 'gold');
           break;
         }
         case 'charge':
-          if (e.slot === 0) sfx.charge();
+          if (e.slot === game.me) sfx.charge();
           break;
         case 'dash': {
           const v = game.runners[e.slot];
-          sfx.dash(e.power, e.slot === 0 ? 1 : 0.5);
+          sfx.dash(e.power, e.slot === game.me ? 1 : 0.5);
           puff(v.holder.position.x, v.holder.position.z, 4);
           break;
         }
         case 'bump': {
           if (e.force < 2.2) break;
           impact(e.x, 0.9, e.z, e.force);
-          const near = e.a === 0 || e.b === 0;
+          const near = e.a === game.me || e.b === game.me;
           sfx.don(e.force, near ? 1 : volFor(e.x, e.z));
           if (e.force > 4.5) {
             pop(e.by !== null ? 'ドーン!' : 'ドン!', e.x, 1.8, e.z, e.by !== null ? 'don' : 'bang');
@@ -755,8 +759,8 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
           const sp = Math.max(2.5, Math.hypot(e.vx, e.vz));
           const d = Math.hypot(e.x, e.z) || 1;
           v.fall = { t: 0, x: e.x, z: e.z, vx: (e.x / d) * sp * 0.7 + e.vx * 0.3, vz: (e.z / d) * sp * 0.7 + e.vz * 0.3, vy: 3.2, y: 0, inWater: false };
-          if (e.slot === 0) splash('おちた…', 'red');
-          else if (e.by === 0) splash('おしだし!', 'gold');
+          if (e.slot === game.me) splash('おちた…', 'red');
+          else if (e.by === game.me) splash('おしだし!', 'gold');
           cheer();
           // スローにして、落ちる子を カメラで追う(勝負が決まる 落ち方は 長めに)
           const last = aliveSlots(s).length <= 1;
@@ -798,13 +802,13 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     }
     const order = ranking(s);
     const winner = game.players[s.winner];
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">おしだし ${r.pushes}<small>とっしん ${r.dashes}</small></span>`;
@@ -835,7 +839,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
           if (f.y < WATER_Y - 0.2) {
             f.inWater = true;
             splashAt(f.x, f.z, 1);
-            sfx.splash(i === 0 ? 1 : volFor(f.x, f.z));
+            sfx.splash(i === game.me ? 1 : volFor(f.x, f.z));
           }
         } else {
           f.x += f.vx * dt * 0.15; f.z += f.vz * dt * 0.15;
@@ -880,7 +884,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
           if (ck >= 1 && !v.full) {
             v.full = true;
             sparkle(new THREE.Vector3(r.x, 1.2 * v.scale, r.z), 0xffd24a, 8, 0.4);
-            if (i === 0) [1568, 2093].forEach((f, n) => voice({ pts: [[0, f]], len: 0.25, gain: 0.06, at: n * 0.06 }));
+            if (i === game.me) [1568, 2093].forEach((f, n) => voice({ pts: [[0, f]], len: 0.25, gain: 0.06, at: n * 0.06 }));
           }
         } else v.full = false;
         // とっしん中は土ぼこりと 風のすじ
@@ -963,7 +967,7 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       look = new THREE.Vector3(w.x, 0.9, w.z);
     } else {
       // 自分を追いかける(落ちたら まん中)。土俵が小さくなるほど 寄る
-      const me = s && s.runners[0].alive ? s.runners[0] : { x: 0, z: 0 };
+      const me = s && s.runners[game.me].alive ? s.runners[game.me] : { x: 0, z: 0 };
       const R = s ? s.radius : RULES.r0;
       const fx = me.x * 0.55, fz = me.z * 0.55;
       const far = 0.75 + 0.25 * (R / RULES.r0);
@@ -1037,12 +1041,12 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
       game.slow -= rawDt;
       dt *= 0.3;
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -1105,9 +1109,9 @@ export async function createSumo({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

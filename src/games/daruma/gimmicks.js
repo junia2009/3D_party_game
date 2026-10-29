@@ -281,6 +281,7 @@ export function createGimmicks(scene, laneX) {
       acorn.scale.setScalar(2.4);
       root.add(shadow, ring, acorn);
       const d = s.drops[s.drops.length - 1];
+      if (!d) return; // オンラインで できごとが まとめて とどいた ときは もう ない ことも ある
       st.drops.set(d, { shadow, ring, acorn, lane: e.lane, x: e.x, spin: Math.random() * 6 });
     } else if (e.type === 'drop') {
       for (const [d, v] of st.drops) {

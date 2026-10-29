@@ -14,6 +14,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonGradient, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { CELL, FIELD_R, N, RULES, STEP, cellX, createGame, inField, ranking, share, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, buildStage } from './stage.js';
 import { createAtmosphere, windify } from '../daruma/atmosphere.js';
@@ -121,7 +122,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     boyon(vol = 1) { voice({ pts: [[0, 160], [0.08, 420], [0.3, 150]], len: 0.36, gain: 0.14 * vol, vib: 30, vibRate: 16 }); },
   };
   function volFor(x, z) {
-    const me = game.state.runners[0];
+    const me = game.state.runners[game.me];
     return Math.max(0, 0.6 * (1 - Math.hypot(x - me.x, z - me.z) / 8));
   }
 
@@ -853,7 +854,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
   function updateWinds(dt) {
     const s = game.state;
     const byId = new Map(s.winds.map((w) => [w.id, w]));
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     for (const [id, v] of winds) {
       v.t += dt;
       const w = byId.get(id);
@@ -937,8 +938,10 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
   const input = { touch: null, stick: null, keys: new Set(), target: null };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const id of [...items.keys()]) removeItem(id);
     for (const [id, v] of winds) { scene.remove(v.path, v.twister, v.mark); disposeTwister(v.twister); winds.delete(id); }
@@ -947,6 +950,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     for (const p of pours.splice(0)) scene.remove(p.can, p.bow);
 
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -968,14 +972,14 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     const foot = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.58, 36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }));
     foot.position.y = 0.3;
     foot.renderOrder = 4;
-    runners[0].holder.add(foot);
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    runners[me].holder.add(foot);
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
 
     for (const f of fx.splice(0)) scene.remove(f.obj);
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastSec: null, leader: null, leadAt: 0, finT: 0, fin: {} };
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, lastSec: null, leader: null, leadAt: 0, finT: 0, fin: {} };
     resetFlowers();
     syncFlowers(1);
     atmosphere.apply(params.get('time') || state.timeOfDay);
@@ -1086,7 +1090,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
   const fwd = new THREE.Vector3();
   function myInput() {
     if (input.target) return input.target;
-    const me = game.state.runners[0];
+    const me = game.state.runners[game.me];
     let sx = 0, sy = 0;
     if (input.keys.size) {
       for (const k of input.keys) { sx += KEYS[k][0]; sy += KEYS[k][1]; }
@@ -1129,7 +1133,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
   function buildScores() {
     $('scoresH').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = `${flowerSvg(slot)}<b>0</b><small>%</small>`;
       d.title = p.name;
@@ -1150,7 +1154,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
       const v = String(pct(share(s, slot)));
       if (b.textContent !== v) {
         b.textContent = v;
-        if (slot === 0) {
+        if (slot === game.me) {
           c.classList.remove('up');
           void c.offsetWidth;
           c.classList.add('up');
@@ -1177,10 +1181,10 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
         const before = game.leader;
         game.leader = lead;
         game.leadAt = s.t;
-        if (lead === 0) {
+        if (lead === game.me) {
           notice('トップ!', 'up');
           tone(988, 0.08); tone(1318, 0.18, 'triangle', 0.1, 0.08);
-        } else if (before === 0) notice('トップを とられた!', 'down');
+        } else if (before === game.me) notice('トップを とられた!', 'down');
         else notice(`${game.players[lead].name}が トップ!`, '', lead);
       }
     }
@@ -1202,7 +1206,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
       i.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       return i;
     }));
-    el.querySelector('.labels').innerHTML = order.map((slot) => `<span class="${slot === 0 ? 'me' : ''}">${flowerSvg(slot)}${pct(share(s, slot))}%</span>`).join('');
+    el.querySelector('.labels').innerHTML = order.map((slot) => `<span class="${slot === game.me ? 'me' : ''}">${flowerSvg(slot)}${pct(share(s, slot))}%</span>`).join('');
     const win = el.querySelector('.win');
     win.textContent = '';
     win.className = 'win';
@@ -1214,7 +1218,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
   function showWinner() {
     const s = game.state;
     const win = $('tallyH').querySelector('.win');
-    win.textContent = s.winner === 0 ? 'あなたの勝ち!' : `${game.players[s.winner].name}の勝ち!`;
+    win.textContent = s.winner === game.me ? 'あなたの勝ち!' : `${game.players[s.winner].name}の勝ち!`;
     void win.offsetWidth;
     win.classList.add('show');
   }
@@ -1273,18 +1277,18 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
           removeItem(e.id);
           waves.push({ x: e.x, z: e.z, r: RULES.canR });
           pourCan(e.x, e.z);
-          sfx.shower(e.slot === 0 ? 1 : Math.max(0.2, volFor(e.x, e.z)));
+          sfx.shower(e.slot === game.me ? 1 : Math.max(0.2, volFor(e.x, e.z)));
           game.runners[e.slot].happyT = 1;
-          if (e.slot === 0) { splash('じょうろ!'); pop(`+${e.n}`, e.x, 1.6, e.z, 'me'); }
+          if (e.slot === game.me) { splash('じょうろ!'); pop(`+${e.n}`, e.x, 1.6, e.z, 'me'); }
           cheer(e.x, e.z);
           break;
         }
         case 'bee':
           removeItem(e.id);
-          sfx.buzz(e.slot === 0 ? 1 : Math.max(0.2, volFor(e.x, e.z)));
+          sfx.buzz(e.slot === game.me ? 1 : Math.max(0.2, volFor(e.x, e.z)));
           game.runners[e.slot].happyT = 1;
           sparkle(new THREE.Vector3(e.x, 0.9, e.z), 0xffd24a, 7, 0.4);
-          if (e.slot === 0) splash('ミツバチ!', 'gold');
+          if (e.slot === game.me) splash('ミツバチ!', 'gold');
           break;
         case 'wind':
           addWind(e);
@@ -1292,18 +1296,18 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
         case 'blown': {
           const r = game.runners[e.slot];
           r.spinT = 0.9;
-          sfx.blown(e.slot === 0 ? 1 : volFor(e.x, e.z));
-          if (e.slot === 0) splash('ひゅーん!', 'red');
+          sfx.blown(e.slot === game.me ? 1 : volFor(e.x, e.z));
+          if (e.slot === game.me) splash('ひゅーん!', 'red');
           break;
         }
         case 'bump': {
-          sfx.boyon(Math.max(e.by === 0 || e.hit === 0 ? 1 : 0, volFor(e.x, e.z)));
+          sfx.boyon(Math.max(e.by === game.me || e.hit === game.me ? 1 : 0, volFor(e.x, e.z)));
           game.runners[e.hit].spinT = 0.5;
           game.runners[e.by].happyT = 0.6;
           sparkle(new THREE.Vector3(e.x, 1.1, e.z), 0xffffff, 6, 0.4);
           scatterPetals(e.x, e.z, e.by, 14, 2.5);
-          if (e.by === 0) { splash('ドーン!'); pop(`+${e.n}`, e.x, 1.6, e.z, 'me'); }
-          else if (e.hit === 0) splash('とられた!', 'red');
+          if (e.by === game.me) { splash('ドーン!'); pop(`+${e.n}`, e.x, 1.6, e.z, 'me'); }
+          else if (e.hit === game.me) splash('とられた!', 'red');
           cheer(e.x, e.z);
           break;
         }
@@ -1330,13 +1334,13 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     }
     const order = ranking(s);
     const winner = game.players[s.winner];
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       const extra = [r.cans ? `じょうろ${r.cans}` : '', r.bees ? `ハチ${r.bees}` : ''].filter(Boolean).join('・');
       li.innerHTML = `<span class="no">${i + 1}</span>${flowerSvg(slot).replace('class="fl"', 'class="fl dot"')}` +
@@ -1408,7 +1412,7 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    const me = game ? game.state.runners[0] : { x: 0, z: 0 };
+    const me = game ? game.state.runners[game.me] : { x: 0, z: 0 };
     let pos, look;
     if (game && (game.state.phase === 'finished' || mode === 'result')) {
       // 決着: 真上に近いところへ上がって、花畑ぜんぶを見せる
@@ -1473,12 +1477,12 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (s.phase === 'finished') {
@@ -1569,9 +1573,9 @@ export async function createHana({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

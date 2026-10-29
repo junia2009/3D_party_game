@@ -9,6 +9,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonGradient } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { KINDS, RULES, STEP, createGame, ranking, stability, stackTop, step, swingX, tryPlace } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { BRANCH_Y, SEATS, STUMP_H, STUMP_R, buildStage, waitSpot } from './stage.js';
 import { pieceMeshes } from './pieces.js';
@@ -331,11 +332,14 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
   const INTRO_TIME = 2.4;
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     clearPieces();
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const n = players.length;
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
@@ -353,11 +357,11 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       const head = model.node('head');
       return { model, holder, size: def.size || 1, home: holder.position.clone(), arms: [model.node('arm_L'), model.node('arm_R')], head, headRest: head?.rotation.clone(), faceIn: holder.quaternion.clone(), time: 0, droop: 0 };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null, lastTick: null, best: 0, resets: 0, recordShown: false, beatT: 0.3, birdT: 3, finalCall: null };
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null, lastTick: null, best: 0, resets: 0, recordShown: false, beatT: 0.3, birdT: 3, finalCall: null };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     tapped = false;
@@ -401,7 +405,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
 
   // ── 入力: タップで落とす ─────────────────────────────
   let tapped = false;
-  const myTurn = () => game && game.state.phase === 'play' && game.state.cur === 0 && game.state.stage === 'aim';
+  const myTurn = () => game && game.state.phase === 'play' && game.state.cur === game.me && game.state.stage === 'aim';
   const canPress = (e) => mode === 'playing' && !paused && intro >= 1 && !e.target.closest('button, a');
   window.addEventListener('pointerdown', (e) => {
     if (!canPress(e)) return;
@@ -436,9 +440,9 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     const s = game.state;
     $('chipsT').replaceChildren(...s.order.map((slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
-      d.innerHTML = `<i></i><b>${slot === 0 ? 'あなた' : game.players[slot].name}</b>`;
+      d.innerHTML = `<i></i><b>${slot === game.me ? 'あなた' : game.players[slot].name}</b>`;
       d.dataset.slot = slot;
       return d;
     }));
@@ -469,9 +473,9 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
   function showOutCard({ slot, left }) {
     const el = $('outT');
     el.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
-    el.querySelector('b').textContent = slot === 0 ? 'あなた' : game.players[slot].name;
+    el.querySelector('b').textContent = slot === game.me ? 'あなた' : game.players[slot].name;
     el.querySelector('span').textContent = left >= 2 ? `のこり ${left}人` : '';
-    el.classList.toggle('me', slot === 0);
+    el.classList.toggle('me', slot === game.me);
     el.classList.remove('show');
     void el.offsetWidth;
     el.classList.add('show');
@@ -479,7 +483,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
   }
 
   // ── できごと ────────────────────────────────────────
-  const name = (slot) => (slot === 0 ? 'あなた' : game.players[slot].name);
+  const name = (slot) => (slot === game.me ? 'あなた' : game.players[slot].name);
   function onEvents(events) {
     const s = game.state;
     for (const e of events) {
@@ -497,7 +501,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
           scene.add(obj);
           hanging = { obj, kind: e.kind, t: 0 };
           game.lastTick = null;
-          if (e.slot === 0) { splash('あなたの番!', 'gold'); sfx.myTurn(); } else { splash(`${name(e.slot)}の番`); sfx.turn(); }
+          if (e.slot === game.me) { splash('あなたの番!', 'gold'); sfx.myTurn(); } else { splash(`${name(e.slot)}の番`); sfx.turn(); }
           break;
         }
         case 'drop':
@@ -554,7 +558,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
           game.recordShown = false;
           break;
         case 'finished':
-          splash(e.winner === 0 ? 'あなたの勝ち!' : `${name(e.winner)}の勝ち!`, 'gold');
+          splash(e.winner === game.me ? 'あなたの勝ち!' : `${name(e.winner)}の勝ち!`, 'gold');
           sfx.whistle();
           react('cheer', 'happy', 3);
           owl.play('flap', { fade: 0.1 });
@@ -573,14 +577,14 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       done({ ranking: order, picked: null });
       return;
     }
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${game.players[s.winner].name}の勝ち!`;
-    if (s.winner === 0) sfx.fanfare(); else sfx.finish();
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${game.players[s.winner].name}の勝ち!`;
+    if (s.winner === game.me) sfx.fanfare(); else sfx.finish();
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${s.alive[slot] ? 'のこった!' : `${s.out.indexOf(slot) + 1}ばんめに脱落`}<small>のせた ${r.placed}こ</small></span>`;
@@ -827,7 +831,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     cam.x = (cam.x ?? 0) + (xOff - (cam.x ?? 0)) * (snap ? 1 : 1 - Math.exp(-dt * 3));
     let d = Math.max(halfW / tanH, ((hi - lo) / 2) / tanV * (game?.showAll > 0 ? 1.18 : 1.05), 5);
     // 自分の番でねらっているときは、少し寄る
-    const mine = s && s.phase === 'play' && s.cur === 0 && s.stage === 'aim';
+    const mine = s && s.phase === 'play' && s.cur === game.me && s.stage === 'aim';
     if (mine) d *= 0.93;
     // はじまる前・おわったあとは、切り株とみんなが入るくらい引く
     if (!s || s.phase !== 'play') d = Math.max(d, portrait ? 11 : 8.5);
@@ -882,7 +886,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     const dt = Math.min(rawDt, 0.1);
     if (draw && mode === 'playing' && intro >= 1) watchQuality(rawDt);
     if (intro < 1 && !paused) intro = Math.min(1, intro + dt / INTRO_TIME);
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       if (s.phase === 'ready') {
         const n = Math.ceil(RULES.readyTime - s.t);
@@ -890,8 +894,8 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       }
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.outCard && (game.outCard.at -= dt) <= 0) { showOutCard(game.outCard); game.outCard = null; }
@@ -905,7 +909,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
       // ドキドキ: ぐらぐらしている・高いとき、ねらっているあいだ(高いほど速く)
       if (s.phase === 'play' && s.stage === 'aim' && (wobble || s.stack.length >= 8)) {
         game.beatT -= dt;
-        if (game.beatT <= 0) { game.beatT = Math.max(0.42, 0.8 - s.stack.length * 0.025); sfx.heart(s.cur === 0 ? 1 : 0.6); }
+        if (game.beatT <= 0) { game.beatT = Math.max(0.42, 0.8 - s.stack.length * 0.025); sfx.heart(s.cur === game.me ? 1 : 0.6); }
       } else game.beatT = 0.3;
       // 森の鳥
       if ((game.birdT -= dt) <= 0) { game.birdT = 4 + Math.random() * 6; sfx.bird(); }
@@ -967,9 +971,9 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

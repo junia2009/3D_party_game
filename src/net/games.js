@@ -1,3 +1,5 @@
-// オンラインで あそべる 競技(画面が「自分の 席 = me」と サーバーの 状態に 対応した もの)。
-// 競技を 対応させたら ここに 足す。部屋で えらべるのも、おまかせで 出るのも ここに ある ものだけ。
-export const ONLINE_GAMES = ['bowl'];
+// オンラインで あそべる 競技(画面が「自分の 席 = game.me」と サーバーの 状態に 対応した もの)。
+// 部屋で えらべるのも、おまかせで 出るのも ここに ある ものだけ。いまは ぜんぶの 競技。
+import { MINIGAMES } from '../board/rules.js';
+
+export const ONLINE_GAMES = [...MINIGAMES];

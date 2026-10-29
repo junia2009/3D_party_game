@@ -12,6 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, aimPoint, canDo, createGame, idealY, landing, ranking, shotKind, step, timeLeft, timeToY } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { TEAM_COLORS, buildStage } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -354,11 +355,14 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
   const input = { touch: null, stick: null, keys: new Set(), hit: false, target: null };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const meSeat = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me: meSeat });
     if (game) for (const u of game.units) scene.remove(u.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const units = await Promise.all(state.units.map(async (su) => {
       const helper = su.slot < 0;
       const key = helper ? su.kind : players[su.slot].character;
@@ -376,15 +380,15 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       const def = helper ? null : CHARACTERS.find((c) => c.key === key);
       return { model, holder, ring, size: def?.size || 1, hitT: 0, hitKind: null, arms: [model.node('arm_L'), model.node('arm_R')], cheer: 0 };
     }));
-    const meIdx = state.units.findIndex((u) => u.slot === 0);
+    const meIdx = state.units.findIndex((u) => u.slot === meSeat);
     const me = units[meIdx];
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[meSeat].hex }));
     marker.rotation.x = Math.PI;
     me.holder.add(marker);
     me.marker = marker;
     await buildFans(state, players);
     $('hudP').classList.remove('mp', 'spurt');
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, meIdx, focus: new THREE.Vector3() };
+    game = { me: meSeat, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me: meSeat }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, meIdx, focus: new THREE.Vector3() };
     atmosphere.apply(params.get('time') || 'day');
     atmosphere.setupShadows([...units.map((u) => u.holder), ball], [stage.group]);
     Object.assign(input, { touch: null, stick: null, hit: false, target: null });
@@ -536,7 +540,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       $(`team${side}P`).querySelector('.mem').replaceChildren(...s.teams[side].map((i) => {
         const u = s.units[i];
         const d = document.createElement('div');
-        d.className = 'chip' + (u.slot === 0 ? ' me' : '') + (u.slot < 0 ? ' helper' : '');
+        d.className = 'chip' + (u.slot === game.me ? ' me' : '') + (u.slot < 0 ? ' helper' : '');
         d.style.setProperty('--c', css(u.slot < 0 ? 0xb8a890 : PLAYER_COLORS[u.slot].hex));
         d.innerHTML = u.slot < 0 ? `<b>${HELPER_NAMES[u.kind]}</b>` : '<i></i>';
         return d;
@@ -707,7 +711,7 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
           game.lastBy = e.by;
           if (s.phase !== 'finished') {
             const by = e.by !== null ? s.units[e.by] : null;
-            const name = by && by.slot === 0 ? 'ナイス!' : '';
+            const name = by && by.slot === game.me ? 'ナイス!' : '';
             if (e.rally >= 8) {
               splash(`ロングラリー ${e.rally}回!`, 'gold small');
               for (const f of fans) f.cheer = 2.4 + Math.random() * 0.6;
@@ -756,8 +760,8 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       const p = game.players[slot];
       const u = s.units.find((x) => x.slot === slot);
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}・${u.side === s.winner ? 'かち' : 'まけ'}</small></span><span class="dist">${u.points}<small>きめた</small></span>`;
@@ -1032,12 +1036,12 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -1091,9 +1095,9 @@ export async function createVolley({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

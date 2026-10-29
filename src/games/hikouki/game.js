@@ -12,6 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { buildCourse, buildStage, pathAt, toWorld } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -239,12 +240,15 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
   const input = { touch: null, stick: null, keys: new Set(), target: null, tilt: null, useTilt: false, zero: null };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const u of game.units) { scene.remove(u.holder); for (const t of u.trails) scene.remove(t.m); }
     for (const f of fx.splice(0)) scene.remove(f.obj);
     course?.dispose();
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     course = buildCourse(scene, state);
     const units = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
@@ -266,11 +270,11 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       return { model, holder, plane, spin: 0, wob: 0, stars, trails: [makeTrail(PLAYER_COLORS[slot].hex), makeTrail(PLAYER_COLORS[slot].hex)], arms: [model.node('arm_L'), model.node('arm_R')], trailT: 0 };
     }));
     // 自分の 目じるし
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.32, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.32, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    units[0].holder.add(marker);
-    units[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, combo: 0, camRoll: 0 };
+    units[me].holder.add(marker);
+    units[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, combo: 0, camRoll: 0 };
     atmosphere.apply(params.get('time') || 'morning');
     atmosphere.setupShadows(units.map((u) => u.holder), [stage.group]);
     Object.assign(input, { touch: null, stick: null, target: null });
@@ -433,7 +437,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
   function buildChips() {
     $('chipsA').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i><b>0</b>';
       return d;
@@ -449,7 +453,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
     });
     $('timeA').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
     // のこりの きょり
-    const me = s.planes[0];
+    const me = s.planes[game.me];
     $('progA').style.setProperty('--k', String(clamp(me.s / RULES.length, 0, 1)));
     // かたむきの めやす(自分の 入力)
     const inp = game.lastInput || { x: 0, y: 0 };
@@ -489,7 +493,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
           break;
         case 'ring': {
           const u = game.units[e.slot];
-          if (e.slot !== 0) break;
+          if (e.slot !== game.me) break;
           const r = course.rings[e.id];
           r.done = true;
           game.combo++;
@@ -501,13 +505,13 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
           break;
         }
         case 'missRing':
-          if (e.slot === 0) game.combo = 0;
+          if (e.slot === game.me) game.combo = 0;
           break;
         case 'hit': {
           const u = game.units[e.slot];
           u.spin = 1;
-          burstBits(u.holder.position, e.what === 'bird' ? 0xf4f0e8 : 0x6ab84a, e.slot === 0 ? 18 : 8);
-          if (e.slot === 0) {
+          burstBits(u.holder.position, e.what === 'bird' ? 0xf4f0e8 : 0x6ab84a, e.slot === game.me ? 18 : 8);
+          if (e.slot === game.me) {
             sfx.hit();
             game.shake = 0.35;
             game.combo = 0;
@@ -518,11 +522,11 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
         case 'splash': {
           const u = game.units[e.slot];
           splashAt(toWorld(e.s, e.x, 0.1, new THREE.Vector3()));
-          if (e.slot === 0) { sfx.splash(); game.shake = 0.25; pop('ばしゃっ!', u.holder.position, 'red', 800); }
+          if (e.slot === game.me) { sfx.splash(); game.shake = 0.25; pop('ばしゃっ!', u.holder.position, 'red', 800); }
           break;
         }
         case 'lift':
-          if (e.slot === 0) { sfx.lift(); pop('ふわっ!', game.units[0].holder.position, 'me', 700); }
+          if (e.slot === game.me) { sfx.lift(); pop('ふわっ!', game.units[game.me].holder.position, 'me', 700); }
           break;
         case 'windSoon':
           splash(e.dir > 0 ? 'かぜが くる! →' : '← かぜが くる!', 'small');
@@ -532,20 +536,20 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
           break;
         case 'goal': {
           const u = game.units[e.slot];
-          confettiAt(toWorld(RULES.length, s.planes[e.slot].x, 11, new THREE.Vector3()), e.slot === 0 ? 90 : 30);
-          if (e.slot === 0) {
+          confettiAt(toWorld(RULES.length, s.planes[e.slot].x, 11, new THREE.Vector3()), e.slot === game.me ? 90 : 30);
+          if (e.slot === game.me) {
             sfx.goal();
             u.loop = 1; // くるっと 宙がえり
-            const rank = ranking(s).indexOf(0) + 1;
-            splash(`ゴール! ${s.planes[0].points}てん`, 'gold');
+            const rank = ranking(s).indexOf(game.me) + 1;
+            splash(`ゴール! ${s.planes[game.me].points}てん`, 'gold');
             setTimeout(() => game?.state === s && s.phase === 'play' && splash(`いま ${rank}い`, 'small'), 1300);
           }
           break;
         }
         case 'finished': {
           game.endTimer = 5;
-          const win = e.winner === 0;
-          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
+          const win = e.winner === game.me;
+          if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(game.me) + 1}い`, 'small');
           // 勝った 子に 王冠、アーチから 紙ふぶきを なんども
           const w = game.units[e.winner];
           const cr = crownMesh();
@@ -569,13 +573,13 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${CHARACTERS.find((c) => c.key === game.players[order[0]].character).name}の 勝ち!`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${CHARACTERS.find((c) => c.key === game.players[order[0]].character).name}の 勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const pl = s.planes[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}・わっか ${pl.rings}(きん ${pl.golds})</small></span><span class="dist">${pl.points}<small>てん</small></span>`;
@@ -627,18 +631,18 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
           tipR.copy(tipL).add(up);
           tipL.sub(up);
           pushTrail(u.trails[k], tipL, tipR);
-          u.trails[k].m.material.uniforms.k.value = (fast ? 1.25 : 0.85) * (slot === 0 ? 1 : 0.6);
+          u.trails[k].m.material.uniforms.k.value = (fast ? 1.25 : 0.85) * (slot === game.me ? 1 : 0.6);
           u.trails[k].m.visible = u.holder.visible;
         }
       } else for (const t of u.trails) t.m.visible = u.holder.visible;
       // 上昇気流の 中: まわりで 葉っぱが まいあがる(自分だけ)
-      if (slot === 0 && p.lifting && Math.random() < dt * 14) liftLeaf(u.holder.position);
+      if (slot === game.me && p.lifting && Math.random() < dt * 14) liftLeaf(u.holder.position);
       if (u.marker) u.marker.position.set(0, 1.25 + Math.sin(time * 5) * 0.08, 0);
       // ほかの 子が カメラの すぐ 前に いると じゃまなので、近いほど 小さく(みんな おなじ ところを とぶ)
-      if (slot !== 0) {
+      if (slot !== game.me) {
         // 自分より うしろ(カメラがわ)の 子は 消す。前の 子は 見える
         const d = u.holder.position.distanceTo(camera.position);
-        const dMe = game.units[0].holder.position.distanceTo(camera.position);
+        const dMe = game.units[game.me].holder.position.distanceTo(camera.position);
         const k = clamp((d - dMe - 0.5) / 2.5, 0, 1);
         u.holder.scale.setScalar(0.9 * k);
         u.holder.visible = k > 0.02;
@@ -646,7 +650,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
     });
     course.update(s, time);
     // つぎに くぐる わっか(自分の)を 光らせて、画面の 外なら はしに 矢じるし
-    const nx = course.rings[s.planes[0].next];
+    const nx = course.rings[s.planes[game.me].next];
     for (const r of course.rings) if (!r.done) r.m.scale.setScalar(r === nx ? 1 + Math.sin(time * 6) * 0.06 : 1);
     const arrow = $('arrowA');
     if (nx && s.phase === 'play') {
@@ -665,30 +669,30 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       }
     } else arrow.hidden = true;
     // 自分の 順位が あがった
-    const myRank = ranking(s).indexOf(0) + 1;
-    if (s.phase === 'play' && game.rank && myRank < game.rank && time - (game.rankT || 0) > 1.5 && s.planes[0].points > 0) {
+    const myRank = ranking(s).indexOf(game.me) + 1;
+    if (s.phase === 'play' && game.rank && myRank < game.rank && time - (game.rankT || 0) > 1.5 && s.planes[game.me].points > 0) {
       game.rankT = time;
-      pop(`${myRank}い に あがった!`, game.units[0].holder.position, myRank === 1 ? 'gold' : 'me', 1000);
+      pop(`${myRank}い に あがった!`, game.units[game.me].holder.position, myRank === 1 ? 'gold' : 'me', 1000);
     }
     game.rank = myRank;
     // ラストスパート(のこり 50 m)
-    if (s.phase === 'play' && !game.spurt && s.planes[0].s > RULES.length - 50 && s.planes[0].finished === null) {
+    if (s.phase === 'play' && !game.spurt && s.planes[game.me].s > RULES.length - 50 && s.planes[game.me].finished === null) {
       game.spurt = true;
       splash('ラストスパート!', 'gold small');
       sfx.gold();
       $('hudA').classList.add('spurt');
     }
-    if (s.planes[0].finished !== null) $('hudA').classList.remove('spurt');
+    if (s.planes[game.me].finished !== null) $('hudA').classList.remove('spurt');
     // 決着の あと: アーチから 紙ふぶきを なんども
     if (s.phase === 'finished' && game.fete !== undefined) {
       game.fete -= dt;
       if (game.fete <= 0) { game.fete = 0.6; confettiAt(toWorld(RULES.length, (Math.random() - 0.5) * 8, 13, new THREE.Vector3()), 40); }
     }
     // スピード線(急降下)
-    $('hudA').classList.toggle('fast', s.planes[0].v > RULES.speed + 2 && s.phase === 'play');
+    $('hudA').classList.toggle('fast', s.planes[game.me].v > RULES.speed + 2 && s.phase === 'play');
     stage.update(time, camera);
     // 風の すじ: よこかぜの とき、自分の まわりを よこへ ながれる
-    const me = s.planes[0];
+    const me = s.planes[game.me];
     const wk = Math.min(1, Math.abs(s.wind.x) / RULES.wind);
     for (const st of streaks) {
       st.x += Math.sign(s.wind.x || 1) * dt * 14;
@@ -707,7 +711,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
     const s = game.state;
-    const me = s.planes[0];
+    const me = s.planes[game.me];
     const back = portrait ? 6.8 : 5.8;
     // 自分の うしろ・すこし 上から 前を 見る(よこの うごきに すこし おくれて ついていく)
     toWorld(me.s - back, me.x * 0.85, me.y + (portrait ? 2.4 : 1.8), camPos);
@@ -775,7 +779,7 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       // まだ かたむきを えらんで いない あいだは はじめない
       if ($('tiltA').hidden) {
@@ -783,8 +787,8 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
         while (game.acc >= STEP && s.phase !== 'finished') {
           const mi = myInput();
           game.lastInput = mi;
-          const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : mi));
-          onEvents(step(s, inputs));
+          const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : mi));
+          onEvents((game.net ? game.net.step : step)(s, inputs));
           game.acc -= STEP;
         }
       }
@@ -830,9 +834,9 @@ export async function createHikouki({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

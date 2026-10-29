@@ -126,3 +126,50 @@ test('人の 入力で 投げた ボウリングが、ローカルと おなじ 
   }
   assert.deepEqual(ses.s.players.map((p) => p.score), local.players.map((p) => p.score));
 });
+
+// ── 画面の がわ(src/net/drive.js) ─────────────────────────
+import { createNetDriver, replaceState } from '../src/net/drive.js';
+
+test('とどいた 状態は 中の 物を そのままに 中身だけ かえる', () => {
+  const a = { list: [{ x: 1 }, { x: 2 }], byId: [{ id: 5, v: 1 }, { id: 6, v: 2 }], gone: 1 };
+  const keep = a.list[0], keepId = a.byId[1];
+  replaceState(a, { list: [{ x: 9 }], byId: [{ id: 6, v: 3 }], add: 2 });
+  assert.equal(a.list[0], keep);
+  assert.equal(keep.x, 9);
+  assert.equal(a.list.length, 1);
+  assert.equal(a.byId[0], keepId, 'id で あわせる');
+  assert.equal(keepId.v, 3);
+  assert.ok(!('gone' in a) && a.add === 2);
+});
+
+test('サーバーの 入力で 画面も おなじ ように すすみ、さいごは サーバーと おなじ 状態', () => {
+  for (const key of ['meiro', 'keshigomu', 'daruma', 'tsumi']) {
+    const players = lineup(2);
+    const ses = new MinigameSession({ key, players, seed: 21 });
+    const sent = [];
+    const client = { seat: 1, h: {}, started: { tick: 0 }, sendInputs: (v) => sent.push(...v) };
+    const g = GAMES[key];
+    const local = g.rules.createGame(players.map((p, i) => ({ id: `p${i}`, character: p.character, name: p.name })), 21);
+    replaceState(local, JSON.parse(JSON.stringify(ses.s)));
+    const drv = createNetDriver({ client, rules: g.rules, state: local, me: 1 });
+    let pend = [];
+    let evLocal = 0, n = 0;
+    while (!ses.done || drv.lag) {
+      if (!ses.done) {
+        ses.step();
+        pend.push(JSON.parse(JSON.stringify(ses.used)));
+        if (ses.tick % 2 === 0 || ses.done) {
+          const full = ses.tick % 30 === 0 || ses.done;
+          client.h.snap(JSON.parse(JSON.stringify({ tick: ses.tick, ins: pend, ...(full ? { s: ses.s } : {}) })));
+          pend = [];
+        }
+      }
+      evLocal += drv.step(local, { 1: null }).length;
+      if (++n > 700 / g.rules.STEP) throw new Error(`${key} が おわらない`);
+    }
+    assert.equal(local.phase, 'finished', key);
+    assert.deepEqual(g.rules.ranking(local), ses.result().ranking, key);
+    assert.ok(evLocal > 0, `${key}: 画面でも できごとが 出る`);
+    assert.ok(sent.length > 100, '自分の 入力を 送って いる');
+  }
+});

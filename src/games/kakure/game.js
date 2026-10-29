@@ -11,6 +11,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { ROUNDS, RULES, STEP, createGame, ranking, roundInfo, step } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { HOST, LANTERN_OFF, LANTERN_ON, LINE_Z, buildStage, slotX } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -279,11 +280,14 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
   let myPick = null;
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const n = players.length;
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
@@ -298,15 +302,15 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
       const def = CHARACTERS.find((c) => c.key === p.character);
       return { model, holder, size: def.size || 1, react: null, reactT: 0 };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, darkK: 0, lastSec: null, leader: null, swapSeen: -1 };
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, darkK: 0, lastSec: null, leader: null, swapSeen: -1 };
     atmosphere.apply(params.get('time') || 'night');
     atmosphere.setupShadows(runners.map((r) => r.holder), []);
     myPick = null;
-    for (const b of baskets) { b.g.visible = false; b.pins.clear(); b.mine.visible = false; b.lift = 0; }
+    for (const b of baskets) { b.g.visible = false; b.pins.clear(); b.mine.visible = false; b.mine.material.color.setHex(PLAYER_COLORS[me].hex); b.lift = 0; }
     risu.root.visible = fox.visible = false;
     buildChips();
     setMode('playing');
@@ -353,7 +357,7 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
   }
   function choose(slot) {
     const s = game.state;
-    if (s.phase !== 'ask' || s.answers[0] || myPick !== null) return;
+    if (s.phase !== 'ask' || s.answers[game.me] || myPick !== null) return;
     myPick = slot;
     sfx.tap();
   }
@@ -395,14 +399,14 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
   function notice(text, slot) {
     const el = $('noticeZ');
     el.innerHTML = `<i style="background:${css(PLAYER_COLORS[slot].hex)}"></i>${text}`;
-    el.className = 'notice ' + (slot === 0 ? 'up' : '');
+    el.className = 'notice ' + (slot === game.me ? 'up' : '');
     void el.offsetWidth;
     el.classList.add('show');
   }
   function buildChips() {
     $('chipsZ').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = `<i></i><b>0</b>`;
       d.title = p.name;
@@ -484,13 +488,13 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
           const k = b.pins.children.length;
           m.position.set((k % 3 - 1) * 0.2, Math.floor(k / 3) * 0.2, 0);
           b.pins.add(m);
-          if (e.slot === 0) b.mine.visible = true;
+          if (e.slot === game.me) b.mine.visible = true;
           break;
         }
         case 'reveal': {
           ask('');
           sfx.drum();
-          const me = e.answers[0];
+          const me = e.answers[game.me];
           if (me?.result === 'hit') sfx.hit(); else if (me?.result === 'fox') sfx.kon(); else sfx.miss();
           setTimeout(() => {
             if (!game || game.state !== s) return;
@@ -510,7 +514,7 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
             // トップが 入れかわったら「ぎゃくてん!」
             const lead = ranking(game.state)[0];
             if (game.leader !== null && lead !== game.leader && game.state.runners[lead].score > game.state.runners[game.leader].score) {
-              setTimeout(() => notice(lead === 0 ? 'ぎゃくてん! トップ!' : `${game.players[lead].name}が ぎゃくてん!`, lead), 600);
+              setTimeout(() => notice(lead === game.me ? 'ぎゃくてん! トップ!' : `${game.players[lead].name}が ぎゃくてん!`, lead), 600);
             }
             game.leader = lead;
           }, 1050);
@@ -520,7 +524,7 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
           game.endTimer = 3.4;
           const w = game.runners[e.winner].holder.position;
           confetti(w.x, w.z);
-          splash(e.winner === 0 ? 'あなたの勝ち!' : `${game.players[e.winner].name}の勝ち!`, 'gold');
+          splash(e.winner === game.me ? 'あなたの勝ち!' : `${game.players[e.winner].name}の勝ち!`, 'gold');
           break;
         }
       }
@@ -537,13 +541,13 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
     }
     const order = ranking(s);
     const winner = game.players[s.winner];
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${r.score}点<small>あたり ${r.hits}/${ROUNDS.length}${r.firsts ? `・いちばん ${r.firsts}` : ''}</small></span>`;
@@ -742,12 +746,12 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
     time += dt;
     if (mode === 'playing' && intro >= 1) watchQuality(rawDt);
     if (intro < 1 && !paused) intro = Math.min(1, intro + dt / INTRO_TIME);
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myPick));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myPick));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -806,9 +810,9 @@ export async function createKakure({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

@@ -11,6 +11,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonGradient, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { LAVA_Y, buildPieces, buildStage } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -380,8 +381,10 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
   await preload(CHARACTERS.map((c) => c.key));
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     for (const id of [...drops.keys()]) removeDrop(id);
@@ -392,6 +395,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
     for (const u of items.values()) scene.remove(u);
     items.clear();
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     pieceGroup.clear();
     pieces = buildPieces(state, pieceGroup);
     const runners = await Promise.all(players.map(async (p, slot) => {
@@ -410,11 +414,11 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       const def = CHARACTERS.find((c) => c.key === p.character);
       return { model, holder, shield, size: def.size || 1, out: null };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, quake: 0, duel: false };
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, quake: 0, duel: false };
     $('hudV').classList.remove('erupt');
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows([...runners.map((r) => r.holder), pieceGroup], [stage.group, pieceGroup]);
@@ -553,7 +557,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
   function buildChips() {
     $('chipsV').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i><b></b>';
       return d;
@@ -567,7 +571,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       c.classList.toggle('shield', r.alive && r.shield > 0);
     });
     $('timeV').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
-    $('jumpV').hidden = s.phase === 'finished' || !s.runners[0].alive;
+    $('jumpV').hidden = s.phase === 'finished' || !s.runners[game.me].alive;
   }
   const tmpV = new THREE.Vector3();
   function pop(text, x, y, z, cls = '', life = 800) {
@@ -632,7 +636,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
           const r = s.runners[e.who];
           pop('かさ!', r.x, 2.0, r.z, 'gold');
           game.runners[e.who].shieldPop = 0;
-          if (e.who === 0) sfx.pick();
+          if (e.who === game.me) sfx.pick();
           break;
         }
         case 'block': {
@@ -643,7 +647,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
           break;
         }
         case 'jump':
-          if (e.who === 0) sfx.jump();
+          if (e.who === game.me) sfx.jump();
           puff(s.runners[e.who].x, 0.05, s.runners[e.who].z, 2);
           break;
         case 'shaky': {
@@ -671,8 +675,8 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
           const u = game.runners[e.who];
           const r = s.runners[e.who];
           u.out = { t: 0, cause: e.cause, x: r.x, z: r.z, vx: r.x * 0.6, vz: r.z * 0.6 + 0.5, vy: e.cause === 'fall' ? 0 : 7, y: r.y };
-          pop(CAUSE[e.cause] || 'あっ!', r.x, 2.0, r.z, e.who === 0 ? 'red' : 'out');
-          if (e.who === 0) { splash('あたっちゃった…', 'red small'); sfx.out(); }
+          pop(CAUSE[e.cause] || 'あっ!', r.x, 2.0, r.z, e.who === game.me ? 'red' : 'out');
+          if (e.who === game.me) { splash('あたっちゃった…', 'red small'); sfx.out(); }
           // のこり 2人: いっきうち
           if (s.phase === 'play' && s.runners.filter((x) => x.alive).length === 2 && !game.duel) {
             game.duel = true;
@@ -682,7 +686,7 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
         }
         case 'finished': {
           game.endTimer = 4.5;
-          const win = e.winner === 0;
+          const win = e.winner === game.me;
           splash(e.timeUp ? 'じかん ぎれ!' : win ? 'さいごの 1人!' : 'しゅうりょう!', win ? 'gold' : '');
           if (win) sfx.fanfare();
           const r = s.runners[e.winner];
@@ -705,13 +709,13 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${order.indexOf(0) + 1}位`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${order.indexOf(game.me) + 1}位`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${r.alive ? 'のこった!' : ''}<small>かさ ${r.shields}</small></span>`;
@@ -910,12 +914,12 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -978,9 +982,9 @@ export async function createKazan({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

@@ -12,6 +12,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, ranking, step } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { ACORNS, LENGTH, halfWidthAt } from './course.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, buildStage, coursePoint, courseHeading } from './stage.js';
@@ -394,7 +395,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     return { m, s: -1e9, x: 0, h: 0 };
   });
   function updateWind(dt) {
-    const me = game.state.runners[0];
+    const me = game.state.runners[game.me];
     const k = mode === 'playing' && me.air <= 0 && me.finish === null ? Math.max(0, Math.min(1, (me.v - 8) / 5)) + (me.boost > 0 ? 0.6 : 0) : 0;
     windMat.opacity += (Math.min(0.55, k * 0.4) - windMat.opacity) * Math.min(1, dt * 6);
     const head = courseHeading(me.s);
@@ -423,8 +424,10 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
   const input = { pointers: new Map(), keys: new Set() };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     leaves.length = 0;
     for (const w of winds) w.s = -1e9;
@@ -432,6 +435,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     acornMeshes.forEach((m) => { m.visible = true; });
 
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -457,12 +461,12 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
         arms: [node('arm_L'), node('arm_R')], legs: [node('leg_L'), node('leg_R')], head: node('head'),
       };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
 
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null };
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, countdown: null };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.sun.target.position.copy(coursePoint(LENGTH / 2, 0));
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
@@ -556,7 +560,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
   function buildBoard() {
     $('trackS').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'dot' + (slot === 0 ? ' me' : '');
+      d.className = 'dot' + (slot === game.me ? ' me' : '');
       d.style.background = css(PLAYER_COLORS[slot].hex);
       return d;
     }));
@@ -565,7 +569,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
   function renderHud() {
     const s = game.state;
     const order = ranking(s);
-    const rank = order.indexOf(0);
+    const rank = order.indexOf(game.me);
     const el = $('rankS');
     if (el.dataset.rank !== String(rank)) {
       el.dataset.rank = String(rank);
@@ -575,7 +579,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       el.classList.add('up');
     }
     const t = Math.max(0, s.t - RULES.readyTime);
-    const me = s.runners[0];
+    const me = s.runners[game.me];
     $('timeS').textContent = (me.finish ?? t).toFixed(1);
     const dots = $('trackS').children;
     s.runners.forEach((r, i) => {
@@ -598,7 +602,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
           sfx.beep(true);
           break;
         case 'acorn':
-          if (e.slot === 0) {
+          if (e.slot === game.me) {
             acornMeshes[e.i].visible = false;
             sfx.koron();
             // 加速のシュイーンは、続けて拾ったときに鳴りすぎないように間をあける
@@ -608,31 +612,31 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
           break;
         case 'jump': {
           const r = game.runners[e.slot];
-          if (e.slot === 0) { sfx.jump(); splash('ジャンプ!', 'gold'); }
+          if (e.slot === game.me) { sfx.jump(); splash('ジャンプ!', 'gold'); }
           spray(r.holder.position.clone().setY(r.holder.position.y + 0.3), 8, 3);
           break;
         }
         case 'land': {
           const r = game.runners[e.slot];
-          if (e.slot === 0) sfx.land();
+          if (e.slot === game.me) sfx.land();
           spray(r.holder.position.clone().setY(r.holder.position.y + 0.1), 10, 2);
           break;
         }
         case 'bump':
-          if (e.a === 0 || e.b === 0) sfx.bump();
+          if (e.a === game.me || e.b === game.me) sfx.bump();
           break;
         case 'goal': {
           const r = game.runners[e.slot];
-          if (e.slot === 0) {
-            const rank = ranking(s).indexOf(0);
+          if (e.slot === game.me) {
+            const rank = ranking(s).indexOf(game.me);
             splash(`ゴール! ${rank + 1}位`, rank === 0 ? 'gold' : '');
             sfx.fanfare();
           }
           for (const a of audience) { a.model.play('cheer'); a.model.setFace('happy'); a.until = 2; }
           // 1位がテープを切る。紙吹雪は1位と自分のときに
-          sfx.cheer(e.slot === 0 || !tape.broken ? 0.07 : 0.035);
+          sfx.cheer(e.slot === game.me || !tape.broken ? 0.07 : 0.035);
           if (!tape.broken) { sfx.snap(); tape.cut(); spray(r.holder.position.clone().setY(r.holder.position.y + 0.9), 6, 2); }
-          if (e.slot === 0 || ranking(s)[0] === e.slot && s.runners.filter((o) => o.finish !== null).length === 1) confetti(e.slot === 0 ? 90 : 60);
+          if (e.slot === game.me || ranking(s)[0] === e.slot && s.runners.filter((o) => o.finish !== null).length === 1) confetti(e.slot === game.me ? 90 : 60);
           owl.play('cheer');
           owlCheer = 2.5;
           break;
@@ -655,13 +659,13 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     }
     const order = ranking(s);
     const winner = game.players[s.winner];
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       const time = r.finish !== null ? `${r.finish.toFixed(1)}びょう` : `のこり ${Math.max(0, LENGTH - r.s).toFixed(0)}m`;
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
@@ -740,13 +744,13 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       if (v.sit > 0.01) seatedPose(v, r);
       // ふちにこすっていると、落ち葉が舞う
       if (r.scrape && Math.random() < dt * 20) spray(tmp.copy(v.holder.position).setY(v.holder.position.y + 0.2), 2, 1.5);
-      trail(v, r, i === 0, dt);
+      trail(v, r, i === game.me, dt);
       if (v.marker) v.marker.position.set(0, 2.1 * v.size + 0.08 * Math.sin(performance.now() / 180), 0);
     });
     // どんぐりはくるくる回る
     for (const m of acornMeshes) m.rotation.y += dt * 2;
     // すべる音: 自分の速さ・曲がり・こすれで
-    updateSlide(dt, s.runners[0], game.runners[0].lean);
+    updateSlide(dt, s.runners[game.me], game.runners[game.me].lean);
   }
 
   let freeCamera = false;
@@ -754,7 +758,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    const me = game ? game.state.runners[0] : { s: 0, x: 0, air: 0 };
+    const me = game ? game.state.runners[game.me] : { s: 0, x: 0, air: 0 };
     let pos, look;
     if (game && (game.state.phase === 'finished' || mode === 'result')) {
       // 決着: ゴールの門の前から、勝った子を映す
@@ -817,7 +821,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     const dt = Math.min(rawDt, 0.1);
     if (draw && mode === 'playing' && intro >= 1) watchQuality(rawDt);
     if (intro < 1 && !paused) intro = Math.min(1, intro + dt / INTRO_TIME);
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       // 3・2・1
       if (s.phase === 'ready') {
@@ -830,8 +834,8 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
       }
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -895,9 +899,9 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
     camera,
     frame,
     // 大会から呼ぶときは lineup(顔ぶれ)と onFinish(順位を返す)をわたす。そのときは結果画面を出さない
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

@@ -10,6 +10,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonGradient } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { LEAF_H, LEAF_X, buildStage, stalkX } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
@@ -105,7 +106,7 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       scene.add(mesh);
       const l = { mesh, grow: i === top ? 0 : 1, i };
       map.set(i, l);
-      if (slot === 0 && i === top && game?.state.phase === 'play') sfx.grow();
+      if (slot === game.me && i === top && game?.state.phase === 'play') sfx.grow();
     }
     for (const [i, l] of map) {
       // 生えたばかりの 葉っぱは ぷくっと ひらく
@@ -208,12 +209,15 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
   await preload(CHARACTERS.map((c) => c.key));
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const f of fx.splice(0)) scene.remove(f.obj);
     clearLeaves();
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -227,11 +231,11 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       const def = CHARACTERS.find((c) => c.key === p.character);
       return { model, holder, size: def.size || 1, anim: null, side: 'R', shown: 0 };
     }));
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.4, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, count: 4, camY: 0, tick: 0, lastSec: 99, shake: 0 };
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, count: 4, camY: 0, tick: 0, lastSec: 99, shake: 0 };
     atmosphere.apply('day');
     atmosphere.setupShadows([], []);
     Object.assign(input, { side: null, target: null });
@@ -319,7 +323,7 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
   function buildChips() {
     $('chipsF').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = '<i></i><b>0</b>';
       return d;
@@ -363,7 +367,7 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
           const from = u.holder.position.clone();
           u.side = e.side;
           u.anim = { from, to: standAt(e.slot, e.leaf, e.side), t: 0, time: RULES.jumpTime * 1.1, hop: true };
-          if (e.slot === 0) { sfx.hop(e.leaf); flashBtn(e.side, true); }
+          if (e.slot === game.me) { sfx.hop(e.leaf); flashBtn(e.side, true); }
           // 乗った 葉っぱが しなる(着いた ときに)
           const lf = stalks[e.slot].get(e.leaf);
           if (lf) lf.dip = -RULES.jumpTime * 1.1;
@@ -372,9 +376,9 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
           if (u.combo % 10 === 0) {
             const p = u.holder.position.clone().add(tmpV.set(0, 1, 0));
             sparkle(standAt(e.slot, e.leaf, e.side).add(tmpV.set(0, 0.6, 0)), u.combo >= 30 ? 14 : 8, u.combo >= 30 ? 0xffd23c : 0xfff2a0);
-            if (e.slot === 0) { pop(`${u.combo} れんぞく!`, p.x, p.y + 0.8, 0.6, u.combo >= 30 ? 'gold' : ''); sfx.combo(u.combo); }
+            if (e.slot === game.me) { pop(`${u.combo} れんぞく!`, p.x, p.y + 0.8, 0.6, u.combo >= 30 ? 'gold' : ''); sfx.combo(u.combo); }
           }
-          if (e.leaf % 50 === 0) pop(`${e.leaf}まい!`, from.x, from.y + 1.6, 0.6, e.slot === 0 ? 'gold' : '');
+          if (e.leaf % 50 === 0) pop(`${e.leaf}まい!`, from.x, from.y + 1.6, 0.6, e.slot === game.me ? 'gold' : '');
           break;
         }
         case 'miss': {
@@ -384,12 +388,12 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
           u.combo = 0;
           // まちがえた ほうに 葉っぱは ないので、空を ふんで「すかっ」と 足が ばたばた
           u.flail = 0.4;
-          if (e.slot === 0) { sfx.miss(); flashBtn(e.side, false); pop('すべった!', from.x, from.y + 1.4, 0.6, 'red'); game.shake = 0.25; }
+          if (e.slot === game.me) { sfx.miss(); flashBtn(e.side, false); pop('すべった!', from.x, from.y + 1.4, 0.6, 'red'); game.shake = 0.25; }
           break;
         }
         case 'finished': {
           game.endTimer = 4.5;
-          const win = e.winner === 0;
+          const win = e.winner === game.me;
           splash(win ? 'いちばん 高い!' : 'しゅうりょう!', win ? 'gold' : '');
           if (win) sfx.fanfare();
           confetti(game.runners[e.winner].holder.position);
@@ -409,13 +413,13 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       return;
     }
     const order = ranking(s);
-    $('resultTitle').textContent = order[0] === 0 ? 'あなたの 勝ち!' : `${order.indexOf(0) + 1}位`;
+    $('resultTitle').textContent = order[0] === game.me ? 'あなたの 勝ち!' : `${order.indexOf(game.me) + 1}位`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">${r.leaf}まい<small>すべった ${r.falls}</small></span>`;
@@ -468,7 +472,7 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       const h = game.runners[lead].holder;
       crown.position.set(h.position.x, h.position.y + 1.55 * game.runners[lead].size, h.position.z);
       crown.rotation.y = time * 2;
-      if (game.lead !== lead && s.phase === 'play') { game.lead = lead; if (lead === 0) pop('トップ!', h.position.x, h.position.y + 2.2, 0.6, 'gold'); }
+      if (game.lead !== lead && s.phase === 'play') { game.lead = lead; if (lead === game.me) pop('トップ!', h.position.x, h.position.y + 2.2, 0.6, 'gold'); }
     }
     [...$('chipsF').children].forEach((c, i) => c.classList.toggle('lead', showCrown && i === lead));
     // のこり 10 秒: ラストスパート
@@ -487,7 +491,7 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
     const portrait = aspect < 1;
     // 自分の 高さを 追う。決着したら いちばん 高い 子へ
     const s = game?.state;
-    let y = game ? game.runners[0].holder.position.y : 0;
+    let y = game ? game.runners[game.me].holder.position.y : 0;
     if (s && s.phase === 'finished') y = game.runners[ranking(s)[0]].holder.position.y;
     const want = y + 1.8;
     game && (game.camY += (want - game.camY) * (snap ? 1 : Math.min(1, dt * 5)));
@@ -533,12 +537,12 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
       const n = Math.ceil(RULES.readyTime - game.state.t);
       if (n < game.count && n >= 1) { game.count = n; splash(String(n), 'small'); sfx.beep(false); }
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -581,9 +585,9 @@ export async function createMame({ renderer, settings, getAudio, onExit }) {
     scene,
     camera,
     frame,
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });

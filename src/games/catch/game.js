@@ -13,6 +13,7 @@ import { CHARACTERS, PLAYER_COLORS } from '../../characters.js';
 import { createModel, preload, toonMaterial } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { ARENA_R, ITEMS, RULES, STEP, createGame, isHazard, ranking, step, timeLeft } from './rules.js';
+import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { PERCH, SEATS, STUMP_TOP, buildStage } from './stage.js';
 import { createAtmosphere, windify } from '../daruma/atmosphere.js';
@@ -131,8 +132,8 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   };
   // 自分のことは大きく、ほかの子のことは近いほど大きく(遠くは聞こえない)
   function volFor(slot, x, z) {
-    if (slot === 0) return 1;
-    const me = game.state.runners[0];
+    if (slot === game.me) return 1;
+    const me = game.state.runners[game.me];
     return Math.max(0, 0.45 * (1 - Math.hypot(x - me.x, z - me.z) / 6));
   }
 
@@ -491,12 +492,15 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   const input = { touch: null, stick: null, keys: new Set(), target: null };
 
   async function startGame({ fromSky = false } = {}) {
-    const seed = params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
-    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS });
+    const net = tour?.net ?? null; // オンライン: { client, start }。席・種・顔ぶれは サーバーが きめる
+    const me = net ? net.start.seat : 0;
+    const seed = net ? net.start.seed : params.has('seed') ? seedFrom(params.get('seed')) : (Date.now() | 0);
+    const players = makePlayers({ picked, lineup: tour?.lineup, seed, kinds: Object.keys(PERSONALITIES), slots: SLOTS, me });
     if (game) for (const r of game.runners) scene.remove(r.holder);
     for (const id of [...items.keys()]) removeItem(id);
 
     const state = createGame(players, seed);
+    if (net) replaceState(state, net.start.s);
     const runners = await Promise.all(players.map(async (p, slot) => {
       const model = await createModel(p.character);
       model.setPlayerColor(PLAYER_COLORS[slot].hex);
@@ -519,18 +523,18 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       return { model, holder, basket, shadow: sh, size, face: model.root.rotation.y, bob: 0, arms: [model.node('arm_L'), model.node('arm_R')], catchT: 0, happyT: 0, spinT: 0, worm: null };
     }));
     // 自分の足もとに、自分の色の輪
-    const foot = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.58, 36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex, transparent: true, opacity: 0.9, depthWrite: false }));
+    const foot = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.58, 36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex, transparent: true, opacity: 0.9, depthWrite: false }));
     foot.position.y = 0.025;
     foot.renderOrder = 2;
-    runners[0].holder.add(foot);
-    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
+    runners[me].holder.add(foot);
+    const marker = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.26, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
-    runners[0].holder.add(marker);
-    runners[0].marker = marker;
+    runners[me].holder.add(marker);
+    runners[me].marker = marker;
 
     for (const f of fx.splice(0)) scene.remove(f.obj);
     stopRain();
-    game = { seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, cheered: false };
+    game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, cheered: false };
     atmosphere.apply(params.get('time') || state.timeOfDay);
     atmosphere.setupShadows(runners.map((r) => r.holder), runners.map((r) => r.holder));
     input.touch = null;
@@ -644,7 +648,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   const fwd = new THREE.Vector3();
   function myInput() {
     if (input.target) return input.target; // E2E 用
-    const me = game.state.runners[0];
+    const me = game.state.runners[game.me];
     let sx = 0, sy = 0;
     if (input.keys.size) {
       for (const k of input.keys) { sx += KEYS[k][0]; sy += KEYS[k][1]; }
@@ -677,7 +681,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
   function buildScores() {
     $('scoresC').replaceChildren(...game.players.map((p, slot) => {
       const d = document.createElement('div');
-      d.className = 'chip' + (slot === 0 ? ' me' : '');
+      d.className = 'chip' + (slot === game.me ? ' me' : '');
       d.style.setProperty('--c', css(PLAYER_COLORS[slot].hex));
       d.innerHTML = `<i></i><b>0</b>`;
       d.title = p.name;
@@ -772,9 +776,9 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
             else sfx.koron(vol);
             if (gold) sfx.kiran(Math.max(vol, 0.5));
           }
-          if (e.slot === 0 || gold) {
+          if (e.slot === game.me || gold) {
             const p = r.holder.position;
-            pop(`+${ITEMS[e.kind].value}`, p.x, 2.2 * r.size, p.z, (gold ? 'gold' : '') + (e.slot === 0 ? ' me' : ''));
+            pop(`+${ITEMS[e.kind].value}`, p.x, 2.2 * r.size, p.z, (gold ? 'gold' : '') + (e.slot === game.me ? ' me' : ''));
           }
           if (gold) cheer(r.holder.position.x, r.holder.position.z, 6);
           break;
@@ -807,7 +811,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
             if (e.kind === 'cone') sfx.gotsun(vol);
             sfx.guruguru(vol);
           }
-          if (e.slot === 0) splash(e.kind === 'worm' ? 'けむし!' : 'ゴツン!', 'red');
+          if (e.slot === game.me) splash(e.kind === 'worm' ? 'けむし!' : 'ゴツン!', 'red');
           break;
         }
         case 'bump': {
@@ -820,8 +824,8 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
           game.runners[e.hit].spinT = 0.5;
           game.runners[e.by].happyT = 0.6;
           sparkle(new THREE.Vector3(e.x, 1.1, e.z), 0xffffff, 6, 0.4);
-          if (e.hit === 0 && e.spilled) splash('こぼれた!', 'red');
-          else if (e.by === 0 && e.spilled) splash('ドーン!');
+          if (e.hit === game.me && e.spilled) splash('こぼれた!', 'red');
+          else if (e.by === game.me && e.spilled) splash('ドーン!');
           cheer(e.x, e.z, 5);
           break;
         }
@@ -868,13 +872,13 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     }
     const order = ranking(s);
     const winner = game.players[s.winner];
-    $('resultTitle').textContent = s.winner === 0 ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
+    $('resultTitle').textContent = s.winner === game.me ? 'あなたの勝ち!' : `${winner.name}の勝ち!`;
     $('ranks').replaceChildren(...order.map((slot, i) => {
       const p = game.players[slot];
       const r = s.runners[slot];
       const li = document.createElement('li');
-      if (slot === 0) li.className = 'me';
-      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : 'あなた';
+      if (slot === game.me) li.className = 'me';
+      const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
         `<span>${def.name}<small>${who}</small></span><span class="dist">どんぐり ${r.acorns}<small>${r.golds ? `金どんぐり ${r.golds}` : ''}</small></span>`;
@@ -1035,7 +1039,7 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     if (freeCamera) return;
     const aspect = innerWidth / innerHeight;
     const portrait = aspect < 1;
-    const me = game ? game.state.runners[0] : { x: 0, z: 0 };
+    const me = game ? game.state.runners[game.me] : { x: 0, z: 0 };
     let pos, look;
     if (game && (game.state.phase === 'finished' || mode === 'result')) {
       // 決着: 勝った子に寄る
@@ -1105,12 +1109,12 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
       intro = Math.min(1, intro + dt / INTRO_TIME);
       if (intro >= 1) splash('よーい…');
     }
-    if (game && mode === 'playing' && !paused && intro >= 1) {
+    if (game && mode === 'playing' && (!paused || game.net) && intro >= 1) {
       const s = game.state;
       game.acc += dt;
       while (game.acc >= STEP && s.phase !== 'finished') {
-        const inputs = game.players.map((p, slot) => (p.cpu ? cpuInput(game.cpus[slot], s, slot) : myInput()));
-        onEvents(step(s, inputs));
+        const inputs = game.players.map((p, slot) => (p.cpu ? (game.net ? null : cpuInput(game.cpus[slot], s, slot)) : myInput()));
+        onEvents((game.net ? game.net.step : step)(s, inputs));
         game.acc -= STEP;
       }
       if (game.endTimer !== null) {
@@ -1189,9 +1193,9 @@ export async function createCatch({ renderer, settings, getAudio, onExit }) {
     camera,
     frame,
     // 大会から呼ぶときは lineup(顔ぶれ)と onFinish(順位を返す)をわたす。そのときは結果画面を出さない
-    async enter(character, { fromSky = true, lineup = null, onFinish = null } = {}) {
+    async enter(character, { fromSky = true, lineup = null, onFinish = null, net = null } = {}) {
       picked = character;
-      tour = onFinish ? { lineup, onFinish } : null;
+      tour = onFinish ? { lineup, onFinish, net } : null;
       unlockAudio();
       applyQuality();
       await startGame({ fromSky });
