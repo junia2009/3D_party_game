@@ -478,6 +478,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       if (u.marker) u.marker.position.set(0, 2.6 + Math.sin(time * 5) * 0.1, 0);
     });
     stage.update(time);
+    game.maze.update(time);
   }
 
   let freeCamera = false;
