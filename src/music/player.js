@@ -125,6 +125,30 @@ export function createMusic({ manual = false } = {}) {
       osc('sine', f * 2.76, t, 0.4, h);
       g.connect(out); h.connect(out);
     },
+    // おもちゃの オルガン(回転木馬の カリオペ): 四角い 音を まるめて、ゆらゆら
+    calliope(out, f, t, dur, v) {
+      const lp = audio.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = Math.min(4000, f * 5);
+      const g = audio.createGain();
+      const end = t + Math.max(0.08, dur - 0.04);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.16 * v, t + 0.015);
+      g.gain.setValueAtTime(0.14 * v, end);
+      g.gain.exponentialRampToValueAtTime(0.0001, end + 0.07);
+      const lfo = audio.createOscillator();
+      const depth = audio.createGain();
+      lfo.frequency.value = 6.5;
+      depth.gain.value = f * 0.006;
+      lfo.connect(depth);
+      for (const [type, mul, det] of [['square', 1, 0], ['triangle', 2, 4], ['square', 1, -6]]) {
+        const o = osc(type, f * mul, t, dur + 0.15, lp);
+        o.detune.value = det;
+        depth.connect(o.frequency);
+      }
+      lfo.start(t); lfo.stop(end + 0.1);
+      lp.connect(g).connect(out);
+    },
     // ぽこぽこ たいこ・シェイカー
     drum(out, kind, t, dur, v) {
       const hard = kind === kind.toUpperCase();

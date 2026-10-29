@@ -60,7 +60,7 @@ function unlockAudio() {
 // いまの 場面の BGM(競技の あいだは まだ 曲が ないので しずかに)
 function musicFor() {
   if (active === 'title') return 'title';
-  if (playing && playing === taikaiBoard) return 'board';
+  if (playing && playing === taikaiBoard) return taikai.stage; // ステージごとの 曲
   return null;
 }
 function updateMusic() { music.play(musicFor()); }

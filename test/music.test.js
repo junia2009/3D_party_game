@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SONGS, STEPS_PER_BAR, fromChords, noteFreq } from '../src/music/songs.js';
 import { createMusic } from '../src/music/player.js';
+import { LIST as STAGES } from '../src/board/stages/index.js';
 
 test('音の 名前から 高さ', () => {
   assert.equal(noteFreq('A4'), 440);
@@ -42,6 +43,10 @@ test('どの 曲も 楽譜が ととのって いる(小節の 長さ・音の �
   }
 });
 
+test('大会の ステージには それぞれの 曲が ある', () => {
+  for (const st of STAGES.filter((x) => x.ready)) assert.ok(SONGS[st.key], `${st.name} の 曲が ない`);
+});
+
 // 音を 出さない にせの AudioContext。いつ どの 高さを 鳴らしたかを おぼえる
 function fakeAudio() {
   const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} });
@@ -52,7 +57,7 @@ function fakeAudio() {
     createBuffer: (c, n) => ({ getChannelData: () => new Float32Array(n) }),
     createBufferSource: () => node({ start() {} }),
     createOscillator: () => {
-      const o = node({ start() {}, stop() {} });
+      const o = node({ start() {}, stop() {}, detune: param() });
       o.frequency.setValueAtTime = (f, t) => ctx.played.push([f, t]);
       return o;
     },
@@ -78,9 +83,9 @@ test('えらんだ 曲の メロディを 拍に あわせて 鳴らし、止め
   music.play(null);
   assert.equal(music.playing, null);
   music.setVolume('off');
-  music.play('board');
+  music.play('yuen');
   assert.equal(music.playing, null, '音量 0 の ときは 鳴らさない');
   music.setVolume('low');
-  assert.equal(music.playing, 'board');
+  assert.equal(music.playing, 'yuen');
   music.play(null);
 });
