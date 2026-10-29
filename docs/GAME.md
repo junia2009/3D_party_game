@@ -78,3 +78,4 @@
 | 森の学校の けしごむ大戦 | 作成中 | [minigames/keshigomu.md](minigames/keshigomu.md) |
 | お正月の だるまおとし | 作成中 | [minigames/otoshi.md](minigames/otoshi.md) |
 | 森の いせきの どんぐり めいろ | 作成中 | [minigames/meiro.md](minigames/meiro.md) |
+| 森の 倒れ木の どんぐりボウリング | 作成中 | [minigames/bowl.md](minigames/bowl.md) |

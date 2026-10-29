@@ -625,6 +625,20 @@
   #hudI .chestarrow.big i { background: radial-gradient(circle, #fff1a0 0 30%, #ffb020 31% 55%, transparent 56%); filter: drop-shadow(0 0 8px #ffd24a); }
   #hudI .chestarrow.big i::after { border-left-color: #ffb020; }
   #hudI .chestarrow.big b { font-size: 28px; }
+  #hudBo .scores { display: flex; gap: 4px; flex-wrap: wrap; }
+  #hudBo .chip { padding: 4px 8px 4px 4px; position: relative; }
+  #hudBo .chip i { width: 18px; height: 18px; }
+  #hudBo .chip b { font-size: 14px; }
+  #hudBo .chip.lead { box-shadow: 0 3px 0 rgba(31,42,51,.18), 0 0 0 3px #ffd24a; }
+  #hudBo .chip.lead::after { content: '👑'; position: absolute; top: -12px; left: -2px; font-size: 13px; }
+  #hudBo .framebox { display: grid; justify-items: center; line-height: 1.05; }
+  #hudBo .framebox b:empty, #hudBo .framebox small:empty { display: none; }
+  #hudBo .framebox small { font-size: 11px; font-weight: 800; }
+  #hudBo .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); font-size: 14px; }
+  #hudBo .splash.small { font-size: clamp(24px, 8vw, 46px); }
+  #hudBo .aimbar { position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); width: 160px; height: 10px; margin-left: -80px; border-radius: 6px; background: rgba(255,255,255,.55); box-shadow: 0 2px 0 rgba(0,0,0,.15); overflow: hidden; }
+  #hudBo .aimbar[hidden] { display: none; }
+  #hudBo .aimbar i { position: absolute; inset: 0; background: #ffb43a; transform-origin: left; }
   #hudI.hurry::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,140,40,.3); animation: eruptglow .6s ease-in-out infinite alternate; }
   /* 森の谷まの かみひこうき: 上に みんなの 点(順位で ならぶ)と のこり時間。下に のこりの きょりと かたむきの めやす */
   #hudA .scores { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -1618,6 +1632,11 @@
       <span class="name">森の いせきの どんぐり めいろ</span>
       <span class="meta"><span>60びょう</span><span>あつめて</span></span>
     </button>
+    <button class="card" type="button" data-open="bowl">
+      <span class="thumb"><img src="./assets/thumbs/bowl.jpg" alt="" width="640" height="360"><span class="ribbon">第27競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">森の 倒れ木の どんぐりボウリング</span>
+      <span class="meta"><span>3フレーム</span><span>はじいて 投げる</span></span>
+    </button>
   </div>
 </section>
 
@@ -1933,6 +1952,18 @@
   <div class="splash" id="splashI"></div>
   <p class="howto" id="howtoI">ゆびを おいて ずらすと はしる。<br><b>どんぐり</b>は 1こ、<b>たからばこ</b>は 5こ!<br><b>おばけ</b>に ぶつかると おとすよ。ひかる <b>矢じるし</b>は ジャンプ</p>
   <div class="stick" id="stickI" hidden><i></i></div>
+</div>
+
+<div class="hud" id="hudBo" hidden>
+  <div class="top">
+    <div class="scores" id="chipsBo" aria-label="みんなの 点"></div>
+    <div class="timer framebox" aria-label="フレーム"><b id="frameBo"></b><small id="throwBo"></small></div>
+    <button class="pausebtn" id="pauseBtnBo" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsBo"></div>
+  <div class="splash" id="splashBo"></div>
+  <div class="aimbar" id="aimBo" hidden><i></i></div>
+  <p class="howto" id="howtoBo">画面を <b>上へ シュッと</b> はじいて 投げる。<br>はやく はじくほど <b>つよく</b>、さいごに まげると <b>カーブ</b>!<br><b>金の ピン</b>は +3点</p>
 </div>
 
 <div class="hud" id="hudE" hidden>

@@ -399,6 +399,8 @@ export const GAME_MUSIC = {
   meiro: 'tanken', kazan: 'tanken',
   // 夏の 浜べ
   volley: 'natsu',
+  // ころがす
+  bowl: 'nonbiri',
   // 遊園地は 大会の 遊園地と おなじ 曲
   bumper: 'yuen',
 };
