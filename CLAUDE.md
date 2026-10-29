@@ -48,6 +48,14 @@
   CPU どうしで何百回も回すテストが、決着すること・偏りすぎないことを見張っている。
 - 仕様は `docs/minigames/<名前>.md`。ルールを変えたら仕様も直す。
 
+## BGM
+
+- `src/music/songs.js` が楽譜(データだけ)、`src/music/player.js` が WebAudio でその場で演奏する。音のファイルは使わない。
+  森の木のおもちゃの音(木琴・オカリナ・木のベース・てっきん・ぽこぽこたいこ)でそろえる。
+- 曲をきりかえるのは `src/title/title.js` の `musicFor()`。設定の「おんがく」(ふつう/ちいさめ/けす)は効果音と別。
+- 曲を足したら `npm test`(`test/music.test.js` が小節の長さや音の名前を見張る)。
+  耳で確かめるときは、スクラッチパッドで OfflineAudioContext に録音して mp3 にし、ユーザーに聞いてもらう。
+
 ## キャラクター
 
 - モデルの元は `src/characters.js`。`models/*.glb` は書き出した結果なので、手で編集しない。

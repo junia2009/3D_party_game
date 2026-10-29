@@ -15,6 +15,7 @@ import { recordBuild, release } from './release.js';
 import { clearTaikai, loadTaikai } from '../board/save.js';
 import { createAtmosphere } from '../games/daruma/atmosphere.js';
 import { loadSettings, saveSettings } from '../settings.js';
+import { createMusic } from '../music/player.js';
 import { ROLES, buildIsland, islandHeight } from './island.js';
 import { buildSign, drawSign } from './sign.js';
 import { woodPlank } from './wood.js';
@@ -39,14 +40,30 @@ document.documentElement.style.setProperty('--wood-cover', `url(${woodPlank(720,
 
 // ── 音 ─────────────────────────────────────────────
 let audio = null;
+const music = createMusic();
+music.setVolume(settings.bgm);
 function unlockAudio() {
-  if (audio || !settings.sound) return;
+  if (!settings.sound && settings.bgm === 'off') return;
+  if (audio) {
+    if (audio.state === 'suspended') audio.resume().catch(() => {});
+    return;
+  }
   try {
     audio = new (window.AudioContext || window.webkitAudioContext)();
   } catch {
     audio = null;
+    return;
   }
+  music.attach(audio);
+  setTimeout(updateMusic, 900); // はじめの ジングルの あとから
 }
+// いまの 場面の BGM(競技の あいだは まだ 曲が ないので しずかに)
+function musicFor() {
+  if (active === 'title') return 'title';
+  if (playing && playing === taikaiBoard) return 'board';
+  return null;
+}
+function updateMusic() { music.play(musicFor()); }
 function tone(freq, start, len, type = 'triangle', gain = 0.12) {
   if (!audio || !settings.sound) return;
   const t = audio.currentTime + start;
@@ -709,6 +726,7 @@ async function enterGame() {
   await playing.enter(picked, current === 'taikai' ? { fromSky: true, turns: taikai.turns, stage: taikai.stage, resume } : undefined);
   taikaiBoard = current === 'taikai' ? playing : null;
   active = 'game';
+  updateMusic();
   dive.dir = 0;
   dive.k = 1;
   whoosh(0.8, false);
@@ -728,6 +746,7 @@ async function leaveGame(to) {
   // 大会から もどったら、大会の 盤と 競技を 片づける
   if (wasTaikai) for (const k of Object.keys(built)) releaseGame(k);
   active = 'title';
+  updateMusic();
   applyQuality();
   go(to);
   // 葉の中から、うしろへ引いて島へもどる
@@ -750,6 +769,7 @@ async function playMinigame(key, lineup, character) {
   const done = new Promise((r) => { finish = r; });
   await g.enter(character, { fromSky: true, lineup, onFinish: (res) => finish(res) });
   playing = g;
+  updateMusic();
   whoosh(0.8, false);
   await curtain.reveal();
   busy = false;
@@ -759,6 +779,7 @@ async function playMinigame(key, lineup, character) {
   await curtain.cover();
   g.exit();
   playing = home;
+  updateMusic();
   releaseGame(key); // 大会の 競技は 遊びおわったら すぐ 片づける
   home.resume?.();
   await curtain.reveal();
@@ -870,6 +891,7 @@ $('turnSeg').addEventListener('click', (e) => {
 // せってい
 function renderSettings() {
   for (const b of $('optSound').children) b.setAttribute('aria-pressed', String((b.dataset.v === 'on') === settings.sound));
+  for (const b of $('optBgm').children) b.setAttribute('aria-pressed', String(b.dataset.v === settings.bgm));
   for (const b of $('optQuality').children) b.setAttribute('aria-pressed', String(b.dataset.v === settings.quality));
 }
 $('optSound').addEventListener('click', (e) => {
@@ -881,6 +903,16 @@ $('optSound').addEventListener('click', (e) => {
     unlockAudio();
     knock();
   }
+  renderSettings();
+});
+$('optBgm').addEventListener('click', (e) => {
+  const v = e.target.closest('button')?.dataset.v;
+  if (!v) return;
+  settings.bgm = v;
+  saveSettings(settings);
+  music.setVolume(v);
+  unlockAudio();
+  knock();
   renderSettings();
 });
 $('optQuality').addEventListener('click', (e) => {

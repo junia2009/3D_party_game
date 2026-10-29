@@ -1,9 +1,10 @@
-// せってい(音・画質)。端末の中にだけ保存する。
+// せってい(音・BGM・画質)。端末の中にだけ保存する。
 //
 // quality: 'auto'(重ければ自動で下げる)/ 'high'(下げない)/ 'light'(はじめから軽く: 影なし・解像度低め)
 
 const KEY = 'dongurinpic.settings';
-export const DEFAULTS = { sound: true, quality: 'auto' };
+// bgm: 'on' / 'low'(ちいさめ)/ 'off'。sound は 効果音
+export const DEFAULTS = { sound: true, bgm: 'on', quality: 'auto' };
 
 export function loadSettings() {
   try {
