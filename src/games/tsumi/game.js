@@ -505,6 +505,8 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
           break;
         }
         case 'drop':
+          // オンラインで 「つるの先へ」を 見のがして いても 落とせる ように
+          if (!hanging) { const obj = makePiece(e.kind); scene.add(obj); hanging = { obj, kind: e.kind, t: 0 }; }
           falling = { obj: hanging.obj, kind: e.kind, from: hanging.obj.position.clone(), x: e.x, t: 0 };
           hanging = null;
           sfx.drop();
