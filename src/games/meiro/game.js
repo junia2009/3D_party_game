@@ -11,7 +11,7 @@ import { createModel, preload } from '../../runtime/models.js';
 import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, moverPhase, moverWarn, ranking, step, timeLeft } from './rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
-import { WALL_H, acornMesh, buildMaze, buildStage, chestMesh, ghostMesh, toWorld } from './stage.js';
+import { WALL_H, acornMesh, buildMaze, buildStage, chestMesh, ghostMesh, glowTex, toWorld } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 
 const $ = (id) => document.getElementById(id);
@@ -66,11 +66,15 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     src.start(t);
   }
   const sfx = {
-    get() { voice({ type: 'triangle', pts: [[0, 880], [0.06, 1320]], len: 0.09, gain: 0.04 }); },
+    // つづけて ひろうと だんだん 高く
+    get(n = 0) { const f = 880 * 2 ** (Math.min(n, 8) / 12); voice({ type: 'triangle', pts: [[0, f], [0.06, f * 1.5]], len: 0.09, gain: 0.04 }); },
+    open() { voice({ type: 'square', pts: [[0, 220], [0.12, 330]], len: 0.14, gain: 0.03 }); noise({ len: 0.15, gain: 0.03, freq: [900, 300], q: 1.5 }); },
+    appear() { [[0, 1568], [0.07, 2093], [0.14, 2637]].forEach(([at, f]) => voice({ pts: [[0, f]], len: 0.25, gain: 0.025, at })); },
+    land() { noise({ len: 0.12, gain: 0.04, freq: [400, 120], type: 'lowpass' }); },
     chest() { [[0, 784], [0.08, 988], [0.16, 1175], [0.24, 1568]].forEach(([at, f]) => voice({ type: 'triangle', pts: [[0, f]], len: 0.12, gain: 0.05, at })); },
     ghost() { voice({ type: 'sine', pts: [[0, 600], [0.4, 200]], len: 0.45, gain: 0.06 }); noise({ len: 0.3, gain: 0.04, freq: [1200, 300], q: 2 }); },
     jump() { voice({ type: 'square', pts: [[0, 300], [0.25, 900]], len: 0.28, gain: 0.04 }); },
-    rumble() { noise({ len: 0.4, gain: 0.04, freq: [200, 80], type: 'lowpass' }); },
+    rumble() { noise({ len: 0.5, gain: 0.06, freq: [220, 60], type: 'lowpass', attack: 0.05 }); voice({ type: 'sawtooth', pts: [[0, 55], [0.4, 45]], len: 0.45, gain: 0.02 }); },
     go() { voice({ type: 'square', pts: [[0, 880]], len: 0.18, gain: 0.05 }); },
     ready() { voice({ type: 'square', pts: [[0, 440]], len: 0.12, gain: 0.04 }); },
     whistle() { voice({ pts: [[0, 1800], [0.5, 900]], len: 0.6, gain: 0.04 }); },
@@ -100,18 +104,99 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 2.4, vel: new THREE.Vector3(Math.cos(a) * 2 * Math.random(), 3 + Math.random() * 2.5, Math.sin(a) * Math.random()), kind: 'paper', spin: Math.random() * 8 });
     }
   }
+  // つちけむり(ゆかに ふわっと ひろがって きえる)
+  const puffGeo = new THREE.IcosahedronGeometry(0.12, 0);
+  function dust(at, n = 6, { color = 0xcfc2a2, sp = 1.2, size = 1, up = 0.4, life = 0.6 } = {}) {
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, depthWrite: false }));
+      m.position.copy(at);
+      m.scale.setScalar(size * (0.6 + Math.random() * 0.6));
+      scene.add(m);
+      const a = (i / n) * 6.28 + Math.random() * 0.5;
+      fx.push({ obj: m, t: 0, life: life * (0.8 + Math.random() * 0.4), vel: new THREE.Vector3(Math.cos(a) * sp, up * (0.5 + Math.random()), Math.sin(a) * sp), kind: 'puff', grow: size * 1.8 });
+    }
+  }
+  // ゆかに ひろがる わ
+  const ringGeo = new THREE.RingGeometry(0.8, 1, 32).rotateX(-Math.PI / 2);
+  function ring(at, color, size = 1, life = 0.5) {
+    const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    m.position.copy(at).setY(0.04);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life, vel: new THREE.Vector3(), kind: 'ring', size });
+  }
+  // 空から おりる ひかりの はしら
+  function beam(at, color, { h = 7, r = 0.45, life = 1.4 } = {}) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16, 1, true).translate(0, h / 2, 0), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    m.position.copy(at).setY(0);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life, vel: new THREE.Vector3(), kind: 'beam' });
+  }
+  // ひろった どんぐりが キャラへ すいこまれる
+  function flyTo(from, holder) {
+    const m = acornMesh();
+    m.position.copy(from);
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.32, vel: new THREE.Vector3(), kind: 'fly', from: from.clone(), holder });
+  }
+  // たからばこが ひらいて きんかが とびだす
+  function openChest(at) {
+    const m = chestMesh();
+    m.position.copy(at).setY(0);
+    m.getObjectByName('glow').visible = false;
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 1.3, vel: new THREE.Vector3(), kind: 'chest', lid: m.getObjectByName('lid') });
+    const shine = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe070, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    shine.position.copy(at).setY(0.5);
+    scene.add(shine);
+    fx.push({ obj: shine, t: 0, life: 0.9, vel: new THREE.Vector3(), kind: 'shine' });
+    const coinGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.02, 10).rotateX(Math.PI / 2);
+    for (let i = 0; i < 12; i++) {
+      const c = new THREE.Mesh(coinGeo, new THREE.MeshBasicMaterial({ color: i % 4 ? 0xffd24a : 0xfff4b0, transparent: true }));
+      c.position.copy(at).setY(0.4);
+      scene.add(c);
+      const a = Math.random() * 6.28;
+      fx.push({ obj: c, t: -0.15, life: 0.9, vel: new THREE.Vector3(Math.cos(a) * 1.2, 3.5 + Math.random() * 2, Math.sin(a) * 1.2), kind: 'drop', spin: 10 + Math.random() * 10 });
+    }
+  }
   function updateFx(dt) {
     for (let i = fx.length - 1; i >= 0; i--) {
       const f = fx[i];
       f.t += dt;
+      if (f.t < 0) { f.obj.visible = false; continue; } // まだ でない
+      f.obj.visible = true;
       const k = f.t / f.life;
+      if (f.kind === 'fly') {
+        const to = f.holder.position;
+        const e = Math.min(1, k);
+        f.obj.position.lerpVectors(f.from, to, e * e);
+        f.obj.position.y = f.from.y + (to.y + 0.6 - f.from.y) * e + Math.sin(e * Math.PI) * 0.8;
+        f.obj.scale.setScalar(1.6 * (1 - e * 0.7));
+        f.obj.rotation.y += dt * 20;
+        if (k >= 1) { scene.remove(f.obj); f.obj.material.dispose(); fx.splice(i, 1); }
+        continue;
+      }
+      if (f.kind === 'chest') {
+        const o = Math.min(1, f.t / 0.25);
+        f.lid.rotation.x = -(1 - (1 - o) ** 3) * 1.9;
+        f.obj.scale.setScalar(k < 0.75 ? 1 + Math.sin(Math.min(1, f.t / 0.2) * Math.PI) * 0.15 : 1 - (k - 0.75) * 4);
+        if (k >= 1) { scene.remove(f.obj); fx.splice(i, 1); }
+        continue;
+      }
+      if (f.kind === 'ring') f.obj.scale.setScalar(f.size * (0.3 + k * 1.2));
+      if (f.kind === 'beam') { f.obj.scale.set(1 - k * 0.6, 1, 1 - k * 0.6); f.obj.material.opacity = 0.5 * Math.sin(Math.min(1, k * 3) * Math.PI / 2) * (1 - k); }
+      if (f.kind === 'shine') f.obj.scale.setScalar(0.5 + k * 3);
+      if (f.kind === 'puff') { f.vel.multiplyScalar(1 - dt * 4); f.obj.scale.addScalar(f.grow * dt); }
+      if (f.spin) { f.obj.rotation.y += f.spin * dt; f.obj.rotation.x += f.spin * 0.3 * dt; }
       f.obj.position.addScaledVector(f.vel, dt);
       if (f.kind === 'drop') f.vel.y -= 8 * dt;
       if (f.kind === 'paper') { f.vel.multiplyScalar(1 - dt * 1.2); f.vel.y -= 4 * dt; f.obj.rotation.x += f.spin * dt; f.obj.rotation.y += f.spin * 0.7 * dt; }
-      f.obj.material.opacity = 1 - k * k;
+      if (f.kind !== 'beam') f.obj.material.opacity = (f.kind === 'puff' ? 0.8 : 1) * (1 - k * k);
       if (k >= 1) { scene.remove(f.obj); f.obj.material.dispose(); fx.splice(i, 1); }
     }
   }
+
+  const starGeo = new THREE.OctahedronGeometry(0.16, 0);
+  const starMat = new THREE.MeshBasicMaterial({ color: 0xffe066 });
 
   // ── ゲームの進行 ────────────────────────────────────
   let mode = 'idle';
@@ -148,14 +233,24 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       ring.position.y = 0.02;
       ring.scale.setScalar(1 / SCALE);
       holder.add(ring);
-      return { model, holder, yaw: 0, run: 0 };
+      // ふらふらの ほし(おばけに ぶつかった あと)
+      const stars = new THREE.Group();
+      for (let i = 0; i < 3; i++) {
+        const st = new THREE.Mesh(starGeo, starMat);
+        st.position.set(Math.cos((i / 3) * 6.28) * 0.5, 0, Math.sin((i / 3) * 6.28) * 0.5);
+        stars.add(st);
+      }
+      stars.position.y = 2.9;
+      stars.visible = false;
+      holder.add(stars);
+      return { model, holder, yaw: 0, run: 0, stars, step: 0, air: false, trail: 0 };
     }));
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.3, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[0].hex }));
     marker.rotation.x = Math.PI;
     units[0].holder.add(marker);
     units[0].marker = marker;
     const ghostMeshes = state.ghosts.map(() => { const g = ghostMesh(); scene.add(g); return g; });
-    game = { seed, players, state, maze, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, itemMeshes: new Map(), ghostMeshes };
+    game = { seed, players, state, maze, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), units, acc: 0, endTimer: null, shake: 0, itemMeshes: new Map(), ghostMeshes, combo: { n: 0, t: 0 }, ready: false };
     atmosphere.apply(params.get('time') || 'evening');
     atmosphere.setupShadows(units.map((u) => u.holder), [stage.group, maze.group]);
     Object.assign(input, { touch: null, stick: null, target: null });
@@ -166,6 +261,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     $('howtoI').classList.add('show');
     if (!fromSky) splash('よーい…');
     syncItems();
+    game.ready = true;
     updateCamera(0, true);
   }
 
@@ -331,7 +427,8 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       if (!game.itemMeshes.has(k)) {
         const m = it.kind === 'chest' ? chestMesh() : acornMesh();
         toWorld(it.x + 0.5, it.y + 0.5, m.position);
-        m.userData = { born: time, ph: Math.random() * 6 };
+        m.userData = { born: time, ph: Math.random() * 6, drop: it.kind === 'chest' && game.ready };
+        if (m.userData.drop) { beam(m.position, 0xffd860); sfx.appear(); }
         scene.add(m);
         game.itemMeshes.set(k, m);
       }
@@ -352,14 +449,31 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
         case 'get': {
           const at = toWorld(e.x + 0.5, e.y + 0.5).setY(0.5);
           if (e.kind === 'chest') {
-            spark(at, 18, 0xffd24a, 3);
-            if (e.slot === 0) { sfx.chest(); pop(`たからばこ +${e.value}!`, at.clone().setY(1.2), 'gold', 1000); }
-          } else if (e.slot === 0) { sfx.get(); spark(at, 4, 0xc8843a, 1.5); pop('+1', at.clone().setY(1), 'me', 500); }
+            openChest(at);
+            ring(at, 0xffd24a, 1.4, 0.7);
+            if (e.slot === 0) { sfx.open(); sfx.chest(); game.shake = 0.15; pop(`たからばこ +${e.value}!`, at.clone().setY(1.2), 'gold', 1000); }
+          } else {
+            flyTo(at.clone().setY(0.3), game.units[e.slot].holder);
+            if (e.slot === 0) {
+              // つづけて ひろうと れんさ
+              const c = game.combo;
+              c.n = c.t > 0 ? c.n + 1 : 0;
+              c.t = 1.1;
+              sfx.get(c.n);
+              spark(at, 4 + Math.min(c.n, 6), c.n >= 4 ? 0xffe066 : 0xc8843a, 1.5);
+              pop(c.n >= 2 ? `+1 れんさ${c.n + 1}` : '+1', at.clone().setY(1), c.n >= 4 ? 'gold' : 'me', 500);
+            }
+          }
           break;
         }
         case 'ghost': {
           const at = toWorld(e.x, e.y).setY(0.6);
           spark(at, 10, 0x9ab8ff, 2.5);
+          ring(at, 0x9a7aff, 1, 0.5);
+          // ぶつかった おばけは 「ばあ!」と ふくらむ
+          let gk = 0, gd = Infinity;
+          s.ghosts.forEach((g, k) => { const d = Math.hypot(g.x - e.x, g.y - e.y); if (d < gd) { gd = d; gk = k; } });
+          if (game.ghostMeshes[gk]) game.ghostMeshes[gk].userData.boo = 0.5;
           if (e.slot === 0) { sfx.ghost(); game.shake = 0.3; pop('おばけだ〜!', at.clone().setY(1.4), 'red', 1000); }
           game.units[e.slot].scared = 1.2;
           break;
@@ -374,11 +488,23 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
           fx.push({ obj: m, t: 0, life: 0.5, vel: to.clone().sub(from).multiplyScalar(2).setY(3), kind: 'drop' });
           break;
         }
-        case 'jump':
-          if (e.slot === 0) { sfx.jump(); }
+        case 'jump': {
+          if (e.slot === 0) sfx.jump();
+          const pd = game.maze.pads.find((q) => q.x === e.x && q.y === e.y);
+          if (pd) pd.flash = 1;
+          ring(toWorld(e.x + 0.5, e.y + 0.5), 0x8af0ff, 0.8, 0.4);
           break;
-        case 'rise':
-          if (Math.hypot(e.x + 0.5 - s.players[0].x, e.y + 0.5 - s.players[0].y) < 4) sfx.rumble();
+          break;
+        }
+        case 'rise': {
+          const near = Math.hypot(e.x + 0.5 - s.players[0].x, e.y + 0.5 - s.players[0].y);
+          if (near < 4) sfx.rumble();
+          if (near < 4) game.shake = Math.max(game.shake, 0.12);
+          if (near < 9) dust(toWorld(e.x + 0.5, e.y + 0.5).setY(0.1), 10, { sp: 1.4, size: 1.2 });
+          break;
+        }
+        case 'sink':
+          if (Math.hypot(e.x + 0.5 - s.players[0].x, e.y + 0.5 - s.players[0].y) < 9) dust(toWorld(e.x + 0.5, e.y + 0.5).setY(0.1), 5, { sp: 0.8, up: 0.2 });
           break;
         case 'pushed':
           if (e.slot === 0) pop('おしだされた!', toWorld(s.players[0].x, s.players[0].y).setY(1.2), 'red', 800);
@@ -434,7 +560,15 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     for (const m of game.itemMeshes.values()) {
       const d = m.userData;
       const k = Math.min(1, (time - d.born) / 0.3);
-      m.scale.setScalar((m.children.length ? 1 : 1.6) * k);
+      m.scale.setScalar((m.children.length ? 1 : 1.6) * (d.drop ? 1 : k));
+      if (d.drop) {
+        // ひかりの はしらを とおって どすんと おちて くる
+        const t = time - d.born - 0.35;
+        const y = t < 0 ? 6 : Math.max(0, 6 - 0.5 * 26 * t * t);
+        m.position.y = y;
+        m.visible = t >= 0;
+        if (y === 0) { d.drop = false; dust(m.position.clone().setY(0.1), 8, { sp: 1.6 }); ring(m.position, 0xffd860, 1.2); }
+      }
       if (!m.children.length) { m.rotation.y = time * 2 + d.ph; m.position.y = 0.25 + Math.sin(time * 3 + d.ph) * 0.05; }
       else m.rotation.y = Math.sin(time + d.ph) * 0.3;
     }
@@ -447,13 +581,21 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       o.mesh.position.y = WALL_H / 2 + o.cur + (warn ? 0.06 + Math.abs(Math.sin(time * 30)) * 0.05 : 0);
       o.mesh.position.x = toWorld(mv.x + 0.5, 0).x + (warn ? Math.sin(time * 40) * 0.03 : 0);
     });
-    for (const [k, pd] of game.maze.pads.entries()) pd.glow.material.opacity = 0.35 + Math.sin(time * 4 + k) * 0.2;
+    for (const [k, pd] of game.maze.pads.entries()) {
+      pd.flash = Math.max(0, pd.flash - dt * 2.5);
+      pd.glow.material.opacity = 0.35 + Math.sin(time * 4 + k) * 0.2 + pd.flash * 0.6;
+      pd.glow.scale.setScalar(1.3 + pd.flash * 1.2);
+    }
+    if (game.combo.t > 0) game.combo.t -= dt;
     // おばけ: ふわふわ
     s.ghosts.forEach((g, k) => {
       const m = game.ghostMeshes[k];
       const target = toWorld(g.x, g.y);
       m.position.x = target.x; m.position.z = target.z;
       m.position.y = 0.1 + Math.sin(time * 3 + k) * 0.1;
+      const boo = m.userData.boo || 0;
+      if (boo > 0) m.userData.boo = boo - dt;
+      m.scale.setScalar(1 + Math.sin(Math.max(0, boo) / 0.5 * Math.PI) * 0.5);
       const dx = (g.tx ?? 0) + 0.5 - g.x, dy = (g.ty ?? 0) + 0.5 - g.y;
       if (Math.hypot(dx, dy) > 0.01) m.rotation.y = Math.atan2(dx, dy);
     });
@@ -476,6 +618,24 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       // おばけに ぶつかった あとは ちかちか
       u.holder.visible = !(p.safe > 0 && p.stun <= 0 && Math.sin(time * 30) > 0.3);
       if (u.marker) u.marker.position.set(0, 2.6 + Math.sin(time * 5) * 0.1, 0);
+      u.stars.visible = p.stun > 0;
+      if (p.stun > 0) u.stars.rotation.y = time * 6;
+      const near = Math.hypot(p.x - s.players[0].x, p.y - s.players[0].y) < 9;
+      // はしると つちけむり
+      if (u.run > 1.5 && !p.jump && near) {
+        u.step -= dt;
+        if (u.step <= 0) { u.step = 0.16; dust(u.holder.position.clone().setY(0.05), 1, { sp: 0.3, size: 0.6, up: 0.6, life: 0.45 }); }
+      }
+      // とんで いる あいだは ひかる しっぽ、おりたら どすん
+      if (p.jump) {
+        u.air = true;
+        u.trail -= dt;
+        if (u.trail <= 0) { u.trail = 0.04; spark(u.holder.position.clone().setY(u.holder.position.y + 0.5), 1, 0x8af0ff, 0.3); }
+      } else if (u.air) {
+        u.air = false;
+        if (near) { dust(u.holder.position.clone().setY(0.05), 7, { sp: 1.3 }); ring(u.holder.position, 0x8af0ff, 0.7, 0.35); }
+        if (slot === 0) sfx.land();
+      }
     });
     stage.update(time);
     game.maze.update(time);
@@ -582,6 +742,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
         onEvents(step(game.state, game.players.map((p, slot) => cpuInput(slot ? game.cpus[slot] : me, game.state, slot))));
       }
     },
+    events: (evs) => onEvents(evs),
     get paused() { return paused; },
     camera, renderer, scene,
     freeCamera: (on) => { freeCamera = on; },

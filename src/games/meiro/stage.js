@@ -206,7 +206,7 @@ export function buildMaze(scene, s) {
     glow.scale.setScalar(1.3);
     glow.position.copy(m.position).setY(0.2);
     g.add(m, glow);
-    return { mesh: m, glow };
+    return { mesh: m, glow, x: p.x, y: p.y, flash: 0 };
   });
   // うごく かべ(しずむ ときは ゆかの 下へ)
   const movers = s.movers.map((mv) => {
@@ -245,16 +245,25 @@ export function chestMesh() {
   const wood = toonMaterial(0x9a5a2a), gold = new THREE.MeshToonMaterial({ color: 0xffcf3a, emissive: 0x5a3a00, gradientMap: toonGradient });
   const box = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.36, 0.42), wood);
   box.position.y = 0.18;
-  const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.6, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), wood);
-  lid.position.y = 0.36;
-  const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.44), gold);
-  band.position.y = 0.3;
+  // ふたは うしろの ふちを じくに ひらく
+  const lid = new THREE.Group();
+  lid.name = 'lid';
+  lid.position.set(0, 0.36, -0.21);
+  const lidTop = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.6, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), wood);
+  lidTop.position.z = 0.21;
+  lid.add(lidTop);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.36, 0.44), gold);
+  band.position.y = 0.18;
+  const lidBand = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.08, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2), gold);
+  lidBand.position.z = 0.21;
+  lid.add(lidBand);
   const lock = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.05), gold);
   lock.position.set(0, 0.3, 0.23);
   g.add(box, lid, band, lock);
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffd860, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
   glow.scale.setScalar(1.4);
   glow.position.y = 0.35;
+  glow.name = 'glow';
   g.add(glow);
   g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return g;
