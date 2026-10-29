@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GAME_MUSIC, SONGS, STEPS_PER_BAR, fromChords, noteFreq } from '../src/music/songs.js';
-import { createMusic } from '../src/music/player.js';
+import { CARVE, GAME_MUSIC, SONGS, STEPS_PER_BAR, fromChords, noteFreq } from '../src/music/songs.js';
+import { SFX_BAND, createMusic } from '../src/music/player.js';
 import { LIST as STAGES } from '../src/board/stages/index.js';
 import { MINIGAMES } from '../src/board/rules.js';
 
@@ -93,4 +93,28 @@ test('えらんだ 曲の メロディを 拍に あわせて 鳴らし、止め
   music.setVolume('low');
   assert.equal(music.playing, 'yuen');
   music.play(null);
+});
+
+test('競技の 効果音は べつの 入口を とおり、BGM は 効果音の 帯域を けずれる', () => {
+  const ctx = fakeAudio();
+  const filters = [];
+  ctx.createBiquadFilter = () => {
+    const f = { connect: (n) => n, frequency: { value: 0 }, Q: { value: 0 }, gain: { value: 0, setTargetAtTime(v) { this.value = v; } } };
+    filters.push(f);
+    return f;
+  };
+  const music = createMusic({ manual: true });
+  music.attach(ctx);
+  const fx = music.sfx();
+  assert.notEqual(fx.destination, ctx.destination);
+  ctx.currentTime = 3;
+  assert.equal(fx.currentTime, 3, 'ほかは そのまま');
+  assert.equal(typeof fx.createOscillator().start, 'function');
+  const carve = filters.filter((f) => f.type === 'peaking');
+  assert.equal(carve.length, 2);
+  for (const f of carve) assert.ok(f.frequency.value > SFX_BAND[0] && f.frequency.value < SFX_BAND[1]);
+  music.setCarve(CARVE.daruma);
+  assert.ok(carve.every((f) => f.gain.value === -CARVE.daruma));
+  music.setCarve(0);
+  assert.ok(carve.every((f) => f.gain.value === 0));
 });

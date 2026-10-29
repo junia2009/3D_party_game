@@ -6,10 +6,18 @@
 //                               2つめは 曲の 大きさ(競技では 効果音が 聞こえる ように 下げる)
 //   music.setVolume('low')    … 'on' / 'low' / 'off'
 //   music.setRate(1.15)       … テンポを かえる(のこり すこしで いそぐ ときなど)
+//   music.setCarve(12)        … 効果音の 帯域(SFX_BAND)を BGM から この dB だけ けずる(0 で もとどおり)
+//   music.sfx()               … 競技に わたす AudioContext。destination に つなぐと 効果音として 聞かれて、
+//                               鳴って いる あいだ BGM が すこし さがる(ダッキング)
+//
+// 効果音と BGM は おなじ 帯域で ぶつけない。効果音の 基本の 高さは SFX_BAND の 中に おき、
+// BGM は 競技の あいだ その 帯域を けずって、低い ベース・たいこ と 高い 倍音・てっきん で きかせる。
 
 import { SONGS, STEPS_PER_BAR, noteFreq } from './songs.js';
 
 const VOLUME = { on: 0.32, low: 0.13, off: 0 };
+export const SFX_BAND = [450, 1600]; // 効果音の 基本の 高さ(Hz)。BGM は ここを あける
+const DUCK = 0.5; // 効果音が 鳴って いる あいだの BGM(-6dB)
 const LOOKAHEAD = 0.18; // この 秒 さきまで 予約する
 const FADE = 0.7;
 
@@ -24,6 +32,7 @@ export function createMusic({ manual = false } = {}) {
   let rate = 1;
   let timer = null;
   let noiseBuf = null;
+  let carve = [], duck = null, sfxIn = null, meter = null, sfxCtx = null, meterBuf = null, ducking = false;
 
   function attach(ctx) {
     if (!ctx || audio === ctx) return;
@@ -34,7 +43,30 @@ export function createMusic({ manual = false } = {}) {
     const comp = audio.createDynamicsCompressor();
     comp.threshold.value = -18;
     comp.ratio.value = 4;
-    bus.connect(comp).connect(audio.destination);
+    // 効果音の 帯域を けずる へこみ(2つの ピーキングで SFX_BAND を おおう)
+    const [lo, hi] = SFX_BAND;
+    carve = [lo * 1.35, hi / 1.35].map((f) => {
+      const eq = audio.createBiquadFilter();
+      eq.type = 'peaking';
+      eq.frequency.value = f;
+      eq.Q.value = 1.3;
+      eq.gain.value = 0;
+      return eq;
+    });
+    duck = audio.createGain();
+    bus.connect(carve[0]).connect(carve[1]).connect(duck).connect(comp).connect(audio.destination);
+    // 効果音の 入口。音の 大きさを はかって ダッキング する
+    sfxIn = audio.createGain();
+    sfxIn.connect(audio.destination);
+    meter = audio.createAnalyser?.() ?? null;
+    if (meter) { meter.fftSize = 512; meterBuf = new Float32Array(meter.fftSize); sfxIn.connect(meter); }
+    sfxCtx = new Proxy(audio, {
+      get(t, k) {
+        if (k === 'destination') return sfxIn;
+        const v = t[k];
+        return typeof v === 'function' ? v.bind(t) : v;
+      },
+    });
     noiseBuf = audio.createBuffer(1, audio.sampleRate, audio.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -197,8 +229,20 @@ export function createMusic({ manual = false } = {}) {
       }
     }
   }
+  // 効果音が 鳴って いれば BGM を さげる。きえたら ゆっくり もどす
+  function watchSfx() {
+    if (!meter || !duck?.gain.setTargetAtTime) return;
+    meter.getFloatTimeDomainData(meterBuf);
+    let sum = 0;
+    for (const v of meterBuf) sum += v * v;
+    const on = Math.sqrt(sum / meterBuf.length) > 0.004;
+    if (on === ducking) return;
+    ducking = on;
+    duck.gain.setTargetAtTime(on ? DUCK : 1, audio.currentTime, on ? 0.015 : 0.25);
+  }
   function tick() {
     if (!audio || !cur) return;
+    watchSfx();
     const until = audio.currentTime + LOOKAHEAD;
     while (cur.at < until) {
       // 裏の 8分は すこし はねる
@@ -251,6 +295,8 @@ export function createMusic({ manual = false } = {}) {
       sync();
     },
     setRate(r) { rate = r; },
+    setCarve(db) { for (const eq of carve) eq.gain.setTargetAtTime(-Math.abs(db), audio.currentTime, 0.3); },
+    sfx: () => sfxCtx,
     pump: tick,
     get playing() { return cur?.name ?? null; },
   };

@@ -380,6 +380,9 @@ const natsu = {
 
 export const SONGS = { title, shiki, yuen, kakekko, matsuri, dokidoki, shoubu, nonbiri, tanken, natsu };
 
+// 競技の あいだ BGM から 効果音の 帯域を けずる 深さ(dB)。合図の 音を 聞きとる 競技は ふかく
+export const CARVE = { default: 12, board: 9, daruma: 22 };
+
 // 競技 → 曲。競技を 足したら ここにも 足す(test/music.test.js が 見張る)
 export const GAME_MUSIC = {
   // 走る・すべる・とぶ

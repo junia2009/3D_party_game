@@ -16,7 +16,7 @@ import { clearTaikai, loadTaikai } from '../board/save.js';
 import { createAtmosphere } from '../games/daruma/atmosphere.js';
 import { loadSettings, saveSettings } from '../settings.js';
 import { createMusic } from '../music/player.js';
-import { GAME_MUSIC } from '../music/songs.js';
+import { CARVE, GAME_MUSIC } from '../music/songs.js';
 import { ROLES, buildIsland, islandHeight } from './island.js';
 import { buildSign, drawSign } from './sign.js';
 import { woodPlank } from './wood.js';
@@ -64,8 +64,12 @@ function musicFor() {
   if (playing && playing === taikaiBoard) return taikai.stage; // ステージごとの 曲
   return GAME_MUSIC[playingKey] ?? null; // 競技は 雰囲気ごとの 曲
 }
-// 盤や 競技の あいだは 効果音が 聞こえる ように 小さめ
-function updateMusic() { music.play(musicFor(), active === 'title' ? 1 : playing === taikaiBoard ? 0.8 : 0.6); }
+// 盤や 競技の あいだは 効果音が 聞こえる ように 小さめにして、効果音の 帯域を あける
+function updateMusic() {
+  const where = active === 'title' ? 'title' : playing === taikaiBoard ? 'board' : 'game';
+  music.play(musicFor(), where === 'title' ? 1 : where === 'board' ? 0.8 : 0.6);
+  if (audio) music.setCarve(where === 'title' ? 0 : where === 'board' ? CARVE.board : CARVE[playingKey] ?? CARVE.default);
+}
 function tone(freq, start, len, type = 'triangle', gain = 0.12) {
   if (!audio || !settings.sound) return;
   const t = audio.currentTime + start;
@@ -700,7 +704,7 @@ function ensureGame(key) {
     .then((create) => recordBuild(() => create({
       renderer,
       settings,
-      getAudio: () => { unlockAudio(); return audio; },
+      getAudio: () => { unlockAudio(); return audio && music.sfx(); }, // 効果音は BGM の ダッキングを とおす
       onExit: (to) => leaveGame(to),
       playMinigame: (key2, lineup, character) => playMinigame(key2, lineup, character),
     })))
