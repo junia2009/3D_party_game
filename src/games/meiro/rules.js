@@ -31,6 +31,8 @@ export const RULES = {
   chests: 3,
   chestValue: 5,
   chestRegrow: 9, // たからばこが また でる まで
+  bigAt: 15, // のこり この 秒で 大きな たからばこが 1こ でる
+  bigValue: 10,
   movers: 8, // うごく かべの 数
   moverPeriod: 8, // うごく かべの 1しゅう(秒)。はんぶん でて はんぶん しずむ
   warn: 1.0,
@@ -162,17 +164,19 @@ export function createGame(players, seed) {
   return s;
 }
 
-function spawnChest(s) {
+function spawnChest(s, big = false) {
   // たからばこは めいろの すみの ほう(ゆき止まり)に でやすい
   // だれかの すぐ ちかくには でない(でた しゅんかんに とられない ように)
   const free = emptyCells(s).filter(([x, y]) => s.players.every((p) => Math.abs(p.x - x - 0.5) + Math.abs(p.y - y - 0.5) > 5));
   const dead = free.filter(([x, y]) => DIRS.filter(([dx, dy]) => s.grid[y + dy]?.[x + dx] === 0).length === 1);
   const list = dead.length ? dead : free;
-  if (!list.length) return;
+  if (!list.length) return null;
   const [x, y] = pick(s, list);
-  s.items.push({ x, y, kind: 'chest', id: (s.chestId = (s.chestId || 0) + 1), born: s.phase === 'play' ? s.t : s.t + s.phaseT }); // born: でた 時(はじめの ぶんは スタートの 時)
+  s.items.push({ x, y, kind: 'chest', ...(big ? { big: true } : {}), id: (s.chestId = (s.chestId || 0) + 1), born: s.phase === 'play' ? s.t : s.t + s.phaseT }); // born: でた 時(はじめの ぶんは スタートの 時)
+  return s.items[s.items.length - 1];
 }
 
+export const chestValue = (it) => (it.big ? RULES.bigValue : RULES.chestValue);
 export const timeLeft = (s) => (s.phase === 'play' ? Math.max(0, s.phaseT) : 0);
 
 // まるい からだを かべに あわせて うごかす(かどは すこし すべらせて 道に いれる)
@@ -313,7 +317,7 @@ export function step(s, inputs) {
     for (let i = s.items.length - 1; i >= 0; i--) {
       const it = s.items[i];
       if (Math.hypot(it.x + 0.5 - p.x, it.y + 0.5 - p.y) > 0.55) continue;
-      const v = it.kind === 'chest' ? RULES.chestValue : 1;
+      const v = it.kind === 'chest' ? chestValue(it) : 1;
       p.score += v;
       if (it.kind === 'chest') p.chests++;
       s.items.splice(i, 1);
@@ -341,6 +345,12 @@ export function step(s, inputs) {
   if (s.items.filter((it) => it.kind === 'chest').length < RULES.chests) {
     s.chestT -= dt;
     if (s.chestT <= 0) { s.chestT = RULES.chestRegrow; spawnChest(s); ev.push({ type: 'chest' }); }
+  }
+  // さいごの 大きな たからばこ
+  if (!s.bigDone && s.phaseT <= RULES.bigAt) {
+    s.bigDone = true;
+    const it = spawnChest(s, true);
+    if (it) ev.push({ type: 'big', x: it.x, y: it.y });
   }
   if (s.phaseT <= 0) {
     s.phase = 'show';

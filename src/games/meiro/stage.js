@@ -219,8 +219,9 @@ export function buildMaze(scene, s) {
     return { mesh: m, cur: -WALL_H };
   });
   scene.add(g);
-  function update(t) {
-    for (const [k, f] of torches.entries()) f.scale.setScalar(0.65 + Math.sin(t * 13 + k * 2) * 0.08 + Math.sin(t * 7 + k) * 0.05);
+  // hurry(0〜1): のこり すこしで たいまつが ごうごう もえる
+  function update(t, hurry = 0) {
+    for (const [k, f] of torches.entries()) f.scale.setScalar((0.65 + Math.sin(t * 13 + k * 2) * 0.08 + Math.sin(t * 7 + k) * 0.05) * (1 + hurry * (0.7 + Math.sin(t * 20 + k) * 0.15)));
     const fp = fly.geometry.attributes.position;
     for (let i = 0; i < fp.count; i++) {
       fp.setX(i, flyBase[i * 3] + Math.sin(t * 0.5 + i) * 0.6);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RULES, STEP, cellOf, createGame, isFloor, moverUp, neighbors, ranking, step } from '../src/games/meiro/rules.js';
+import { RULES, STEP, cellOf, createGame, timeLeft, isFloor, moverUp, neighbors, ranking, step } from '../src/games/meiro/rules.js';
 import { PERSONALITIES, cpuInput, createCpu } from '../src/games/meiro/cpu.js';
 
 const PLAYERS = Array.from({ length: 5 }, (_, i) => ({ id: `p${i}` }));
@@ -129,6 +129,24 @@ test('じゃんぷ ゆかを ふむと かべを こえて 2ます さきへ', (
   assert.equal(cellOf(p.y), pad.y + pad.dy * 2);
   // 道さがしでも ゆかからは とんだ さきへ
   assert.deepEqual(neighbors(s, pad.x, pad.y).map(([x, y]) => [x, y]), [[pad.x + pad.dx * 2, pad.y + pad.dy * 2]]);
+});
+
+test('のこり すこしで 大きな たからばこが 1こ でて、10点', () => {
+  const s = toPlay(2);
+  let ev = [];
+  while (timeLeft(s) > RULES.bigAt + 0.5) step(s, PLAYERS.map(() => null));
+  assert.ok(!s.items.some((it) => it.big));
+  ev = go(s, PLAYERS.map(() => null), 1);
+  assert.equal(ev.filter((e) => e.type === 'big').length, 1);
+  const big = s.items.filter((it) => it.big);
+  assert.equal(big.length, 1);
+  assert.ok(s.players.every((p) => Math.abs(p.x - big[0].x - 0.5) + Math.abs(p.y - big[0].y - 0.5) > 5), 'だれの ちかくにも でない');
+  const p = s.players[0];
+  Object.assign(p, { x: big[0].x + 0.5, y: big[0].y + 0.5 });
+  const before = p.score;
+  go(s, PLAYERS.map(() => null), 0.1);
+  assert.equal(p.score - before, RULES.bigValue);
+  assert.equal(go(s, PLAYERS.map(() => null), 5).filter((e) => e.type === 'big').length, 0, '1かい だけ');
 });
 
 test('とった どんぐりは また はえる', () => {

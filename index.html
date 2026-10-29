@@ -621,6 +621,11 @@
   #hudI .chestarrow i { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, #ffd24a 0 55%, transparent 56%); }
   #hudI .chestarrow i::after { content: ''; position: absolute; right: -10px; top: 50%; margin-top: -9px; border: 9px solid transparent; border-left: 12px solid #ffd24a; border-right: 0; }
   #hudI .chestarrow b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 22px; }
+  #hudI .chestarrow.big { width: 60px; height: 60px; margin: -30px 0 0 -30px; }
+  #hudI .chestarrow.big i { background: radial-gradient(circle, #fff1a0 0 30%, #ffb020 31% 55%, transparent 56%); filter: drop-shadow(0 0 8px #ffd24a); }
+  #hudI .chestarrow.big i::after { border-left-color: #ffb020; }
+  #hudI .chestarrow.big b { font-size: 28px; }
+  #hudI.hurry::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(255,140,40,.3); animation: eruptglow .6s ease-in-out infinite alternate; }
   /* 森の谷まの かみひこうき: 上に みんなの 点(順位で ならぶ)と のこり時間。下に のこりの きょりと かたむきの めやす */
   #hudA .scores { display: flex; gap: 4px; flex-wrap: wrap; }
   #hudA .chip { padding: 4px 8px 4px 4px; position: relative; }

@@ -70,6 +70,9 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     get(n = 0) { const f = 880 * 2 ** (Math.min(n, 8) / 12); voice({ type: 'triangle', pts: [[0, f], [0.06, f * 1.5]], len: 0.09, gain: 0.04 }); },
     open() { voice({ type: 'square', pts: [[0, 220], [0.12, 330]], len: 0.14, gain: 0.03 }); noise({ len: 0.15, gain: 0.03, freq: [900, 300], q: 1.5 }); },
     appear() { [[0, 1568], [0.07, 2093], [0.14, 2637]].forEach(([at, f]) => voice({ pts: [[0, f]], len: 0.25, gain: 0.025, at })); },
+    tick(n) { voice({ type: 'square', pts: [[0, n <= 3 ? 1320 : 990]], len: 0.07, gain: 0.035 }); },
+    big() { [[0, 523], [0.1, 659], [0.2, 784], [0.3, 1047], [0.42, 1319], [0.54, 1568]].forEach(([at, f]) => voice({ type: 'triangle', pts: [[0, f]], len: 0.16, gain: 0.05, at })); noise({ len: 0.8, gain: 0.03, freq: [3000, 6000], type: 'highpass', at: 0.3 }); },
+    rain() { [0, 0.15, 0.3, 0.45].forEach((at, i) => voice({ type: 'triangle', pts: [[0, 1047 * 2 ** (i * 4 / 12)]], len: 0.1, gain: 0.03, at: at + 0.6 })); },
     land() { noise({ len: 0.12, gain: 0.04, freq: [400, 120], type: 'lowpass' }); },
     chest() { [[0, 784], [0.08, 988], [0.16, 1175], [0.24, 1568]].forEach(([at, f]) => voice({ type: 'triangle', pts: [[0, f]], len: 0.12, gain: 0.05, at })); },
     ghost() { voice({ type: 'sine', pts: [[0, 600], [0.4, 200]], len: 0.45, gain: 0.06 }); noise({ len: 0.3, gain: 0.04, freq: [1200, 300], q: 2 }); },
@@ -139,9 +142,10 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     fx.push({ obj: m, t: 0, life: 0.32, vel: new THREE.Vector3(), kind: 'fly', from: from.clone(), holder });
   }
   // たからばこが ひらいて きんかが とびだす
-  function openChest(at) {
+  function openChest(at, size = 1) {
     const m = chestMesh();
     m.position.copy(at).setY(0);
+    m.userData.size = size;
     m.getObjectByName('glow').visible = false;
     scene.add(m);
     fx.push({ obj: m, t: 0, life: 1.3, vel: new THREE.Vector3(), kind: 'chest', lid: m.getObjectByName('lid') });
@@ -178,7 +182,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       if (f.kind === 'chest') {
         const o = Math.min(1, f.t / 0.25);
         f.lid.rotation.x = -(1 - (1 - o) ** 3) * 1.9;
-        f.obj.scale.setScalar(k < 0.75 ? 1 + Math.sin(Math.min(1, f.t / 0.2) * Math.PI) * 0.15 : 1 - (k - 0.75) * 4);
+        f.obj.scale.setScalar(f.obj.userData.size * (k < 0.75 ? 1 + Math.sin(Math.min(1, f.t / 0.2) * Math.PI) * 0.15 : 1 - (k - 0.75) * 4));
         if (k >= 1) { scene.remove(f.obj); fx.splice(i, 1); }
         continue;
       }
@@ -383,7 +387,11 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       c.style.order = String(order.indexOf(slot));
       c.classList.toggle('lead', order[0] === slot && s.players[slot].score > 0);
     });
-    $('timeI').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
+    const left = s.phase === 'play' ? Math.ceil(timeLeft(s)) : 0;
+    $('timeI').textContent = s.phase === 'play' ? String(left) : '';
+    $('timeI').classList.toggle('hurry', s.phase === 'play' && left <= 10);
+    $('hudI').classList.toggle('hurry', s.phase === 'play' && left <= 10);
+    if (s.phase === 'play' && left <= 5 && left !== game.lastTick) { game.lastTick = left; sfx.tick(left); }
     // 画面の そとの たからばこは、ふちに 矢じるしで 向きを 見せる
     const chests = s.phase === 'play' ? s.items.filter((it) => it.kind === 'chest') : [];
     const box = $('arrowsI');
@@ -391,6 +399,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     [...box.children].forEach((el, k) => {
       const it = chests[k];
       if (!it) { el.hidden = true; return; }
+      el.classList.toggle('big', !!it.big);
       tmpV.copy(toWorld(it.x + 0.5, it.y + 0.5)).setY(0.3).project(camera);
       const inView = tmpV.z < 1 && Math.abs(tmpV.x) < 0.92 && Math.abs(tmpV.y) < 0.85;
       el.hidden = inView;
@@ -427,8 +436,9 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       if (!game.itemMeshes.has(k)) {
         const m = it.kind === 'chest' ? chestMesh() : acornMesh();
         toWorld(it.x + 0.5, it.y + 0.5, m.position);
-        m.userData = { born: time, ph: Math.random() * 6, drop: it.kind === 'chest' && game.ready };
-        if (m.userData.drop) { beam(m.position, 0xffd860); sfx.appear(); }
+        m.userData = { born: time, ph: Math.random() * 6, drop: it.kind === 'chest' && game.ready, size: it.big ? 1.7 : it.kind === 'chest' ? 1 : 1.6 };
+        if (it.big) m.getObjectByName('glow').scale.setScalar(2.2);
+        if (m.userData.drop) { beam(m.position, 0xffd860, it.big ? { h: 12, r: 0.9, life: 2.4 } : undefined); if (!it.big) sfx.appear(); }
         scene.add(m);
         game.itemMeshes.set(k, m);
       }
@@ -449,8 +459,9 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
         case 'get': {
           const at = toWorld(e.x + 0.5, e.y + 0.5).setY(0.5);
           if (e.kind === 'chest') {
-            openChest(at);
+            openChest(at, e.value > RULES.chestValue ? 1.7 : 1);
             ring(at, 0xffd24a, 1.4, 0.7);
+            if (e.value > RULES.chestValue) { beam(at, 0xffe070, { h: 9, r: 0.7, life: 1.2 }); confetti(at.clone().setY(1), 30); if (e.slot === 0) sfx.big(); else splash(`${nameOf(e.slot)}が 大きな たからばこ!`, 'small'); }
             if (e.slot === 0) { sfx.open(); sfx.chest(); game.shake = 0.15; pop(`たからばこ +${e.value}!`, at.clone().setY(1.2), 'gold', 1000); }
           } else {
             flyTo(at.clone().setY(0.3), game.units[e.slot].holder);
@@ -512,6 +523,11 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
         case 'chest':
           splash('たからばこが でた!', 'small');
           break;
+        case 'big':
+          splash('大きな たからばこ!', 'gold');
+          sfx.big();
+          game.shake = 0.25;
+          break;
         case 'show':
           splash('そこまで!', 'small');
           sfx.whistle();
@@ -520,8 +536,29 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
           game.endTimer = 4;
           const win = e.winner === 0;
           if (win) { sfx.fanfare(); splash('1い!', 'gold'); } else splash(`${ranking(s).indexOf(0) + 1}い`, 'small');
-          game.units[e.winner].win = true;
-          confetti(game.units[e.winner].holder.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 50);
+          const w = game.units[e.winner];
+          w.win = true;
+          confetti(w.holder.position.clone().add(new THREE.Vector3(0, 1.5, 0)), 50);
+          beam(w.holder.position, 0xffe070, { h: 10, r: 0.8, life: 3 });
+          ring(w.holder.position, 0xffd24a, 1.6, 0.8);
+          game.rain = 2.2;
+          sfx.rain();
+          // 王冠
+          const crown = new THREE.Group();
+          const gold = new THREE.MeshToonMaterial({ color: 0xffcf3a, emissive: 0x5a3a00, side: THREE.DoubleSide });
+          crown.add(new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.14, 12, 1, true), gold));
+          for (let k = 0; k < 5; k++) {
+            const sp = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.16, 4), gold);
+            sp.position.set(Math.cos((k / 5) * 6.28) * 0.24, 0.14, Math.sin((k / 5) * 6.28) * 0.24);
+            crown.add(sp);
+          }
+          const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.06), new THREE.MeshBasicMaterial({ color: 0xff4a6a }));
+          gem.position.set(0, 0.02, 0.25);
+          crown.add(gem);
+          crown.position.y = 2.3;
+          w.holder.add(crown);
+          w.crown = crown;
+          if (w.marker) w.marker.visible = false;
           break;
         }
       }
@@ -560,14 +597,14 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     for (const m of game.itemMeshes.values()) {
       const d = m.userData;
       const k = Math.min(1, (time - d.born) / 0.3);
-      m.scale.setScalar((m.children.length ? 1 : 1.6) * (d.drop ? 1 : k));
+      m.scale.setScalar(d.size * (d.drop ? 1 : k));
       if (d.drop) {
         // ひかりの はしらを とおって どすんと おちて くる
         const t = time - d.born - 0.35;
         const y = t < 0 ? 6 : Math.max(0, 6 - 0.5 * 26 * t * t);
         m.position.y = y;
         m.visible = t >= 0;
-        if (y === 0) { d.drop = false; dust(m.position.clone().setY(0.1), 8, { sp: 1.6 }); ring(m.position, 0xffd860, 1.2); }
+        if (y === 0) { d.drop = false; dust(m.position.clone().setY(0.1), d.size > 1 ? 14 : 8, { sp: 1.6 * d.size, size: d.size }); ring(m.position, 0xffd860, 1.2 * d.size); }
       }
       if (!m.children.length) { m.rotation.y = time * 2 + d.ph; m.position.y = 0.25 + Math.sin(time * 3 + d.ph) * 0.05; }
       else m.rotation.y = Math.sin(time + d.ph) * 0.3;
@@ -638,7 +675,27 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
       }
     });
     stage.update(time);
-    game.maze.update(time);
+    // のこり 10秒から たいまつが ごうごう
+    const hurry = s.phase === 'play' ? clamp((10 - timeLeft(s)) / 3, 0, 1) : s.phase === 'show' ? 1 : 0;
+    game.hurry = (game.hurry || 0) + (hurry - (game.hurry || 0)) * Math.min(1, dt * 3);
+    game.maze.update(time, game.hurry);
+    // かった 子の 王冠と どんぐりの あめ
+    for (const u of game.units) if (u.crown) { u.crown.rotation.y = time * 2; u.crown.position.y = 2.3 + Math.sin(time * 4) * 0.06; }
+    if (game.rain > 0) {
+      game.rain -= dt;
+      game.rainT = (game.rainT || 0) - dt;
+      if (game.rainT <= 0) {
+        game.rainT = 0.05;
+        const w = game.units[s.winner].holder.position;
+        const m = acornMesh();
+        const a = Math.random() * 6.28, r = 0.3 + Math.random() * 1.6;
+        m.position.set(w.x + Math.cos(a) * r, 3 + Math.random() * 1.2, w.z + Math.sin(a) * r);
+        m.scale.setScalar(1.1);
+        m.rotation.set(Math.random() * 6, Math.random() * 6, 0);
+        scene.add(m);
+        fx.push({ obj: m, t: 0, life: 1.1, vel: new THREE.Vector3(0, -2, 0), kind: 'drop', spin: 6 });
+      }
+    }
   }
 
   let freeCamera = false;
@@ -652,7 +709,12 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
     const me = game.units[game.state.winner !== null && s.phase === 'finished' ? s.winner : 0].holder.position;
     const want = new THREE.Vector3(me.x, portrait ? 11 : 8.5, me.z + (portrait ? 5.5 : 4.5));
     const look = new THREE.Vector3(me.x, 0, me.z - 0.3);
-    if (s.phase === 'finished') { want.set(me.x, 5.5, me.z + 3.4); look.set(me.x, 0.4, me.z); }
+    if (s.phase === 'finished') {
+      // かった 子の まわりを ゆっくり まわる
+      const a = Math.sin(time * 0.35) * 0.6;
+      want.set(me.x + Math.sin(a) * 2.6, 6.8, me.z + Math.cos(a) * 2.8); // かべに かくれない ように 上から
+      look.set(me.x, 0.5, me.z);
+    }
     const k = snap ? 1 : Math.min(1, dt * 5);
     camPos.lerp(want, k);
     camLook.lerp(look, k);

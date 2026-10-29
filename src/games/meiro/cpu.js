@@ -12,7 +12,7 @@
 // 乱数は CPU ごとに持つ(シードはゲームのシードと席から作る)。
 
 import { nextRandom, seedFrom } from '../../rng.js';
-import { RULES, cellOf, neighbors } from './rules.js';
+import { RULES, cellOf, chestValue, neighbors } from './rules.js';
 
 const SIGHT = 6; // これより ちかい たからばこには すぐ きづく(道のりの ます)
 
@@ -66,7 +66,7 @@ function plan(cpu, s, slot) {
     }
     // ほかの 子の ほうが ずっと ちかい ものは あとまわし
     const rival = s.players.some((q, i) => i !== slot && Math.abs(cellOf(q.x) - it.x) + Math.abs(cellOf(q.y) - it.y) < d * 0.5);
-    const v = (it.kind === 'chest' ? RULES.chestValue * sk.chest : 1) / (d + 1) * (rival ? 0.5 : 1) * (stray ? nextRandom(cpu) : 1);
+    const v = (it.kind === 'chest' ? chestValue(it) * sk.chest : 1) / (d + 1) * (rival ? 0.5 : 1) * (stray ? nextRandom(cpu) : 1);
     if (v > bs) { bs = v; best = it; }
   }
   if (!best) return null;
