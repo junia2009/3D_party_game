@@ -69,6 +69,13 @@
   オンライン対応にしたら `src/net/games.js` の `ONLINE_GAMES` に足す。
 - 手元で: `npm run server`(wrangler dev :8787)と `npm run serve`。localhost の画面は自動で手元のサーバーを見る。
 
+## アクセス集計(GoatCounter)
+
+- `src/analytics.js`。送る名前は `EVENTS` の表からしか作らない(名前・あいことば・部屋の番号を外に出さない)。
+  新しい出来事を数えるときは表に足して、`test/analytics.test.js` にも足す。
+- **集計画面の行の名前は、競技・ステージの表示名そのまま。** 名前を変えると集計画面では別の行になる。
+- 手元(localhost)・E2E(`navigator.webdriver`)・`?seed=` `?server=` `?time=` `?fps` 付きでは数えない。
+
 ## キャラクター
 
 - モデルの元は `src/characters.js`。`models/*.glb` は書き出した結果なので、手で編集しない。

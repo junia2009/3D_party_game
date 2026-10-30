@@ -20,6 +20,7 @@ import { createEffects } from './effects.js';
 import { simulate } from './simulate.js';
 import { clearTaikai, saveTaikai } from './save.js';
 import { replaceState } from '../net/drive.js';
+import { track } from '../analytics.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -986,6 +987,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       await show(ev);
       n.seen(msg.seq);
     }
+    if (live()) track('online-taikai-end', { stage: opts.stage });
     if (live()) await ceremony(live);
     // おわったら 部屋へ もどる(サーバーも 部屋に もどって いる)
     if (live()) { await sleep(3); n.onFinish?.(); }
@@ -1022,6 +1024,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       save(); // 見せる 前に しまう(見ている とちゅうで 切れても、この 手番は すんでいる)
       await show(ev);
     }
+    if (live()) track('taikai-end', { stage: opts.stage });
     if (live()) await ceremony(live);
     if (live()) showResult();
   }

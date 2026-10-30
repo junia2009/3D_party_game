@@ -4,6 +4,7 @@
 // 部屋: あいことば と リンク・あつまった 子(あいた 席は はじめると CPU)・キャラ・あそびを えらぶ(ホスト)・はじめる。
 // サーバーが「はじまった」と いったら、title.js の playOnline で 競技の 会場へ 入る。
 
+import { track } from '../analytics.js';
 import { NetClient, createRoom, matchRoom, saveName, savedName } from '../net/client.js';
 import { ONLINE_GAMES } from '../net/games.js';
 
@@ -62,19 +63,20 @@ export function setupOnline(ctx) {
     client.connect(code, { name: nameOf(), character: ctx.picked() });
   }
 
-  async function withServer(fn, label) {
+  async function withServer(fn, label, ev) {
     ctx.unlockAudio();
     ctx.knock();
     status('netStatus', label);
-    try { join(await fn()); } catch (e) { status('netStatus', e.message || 'サーバーに つながりません'); }
+    try { const code = await fn(); track(ev); join(code); } catch (e) { status('netStatus', e.message || 'サーバーに つながりません'); }
   }
-  $('netCreate').addEventListener('click', () => withServer(createRoom, '部屋を つくって います…'));
-  $('netMatch').addEventListener('click', () => withServer(matchRoom, 'あいて いる 部屋を さがして います…'));
+  $('netCreate').addEventListener('click', () => withServer(createRoom, '部屋を つくって います…', 'room-create'));
+  $('netMatch').addEventListener('click', () => withServer(matchRoom, 'あいて いる 部屋を さがして います…', 'room-match'));
   $('netJoin').addEventListener('click', () => {
     const code = $('netCode').value.replace(/[^0-9]/g, '');
     if (code.length !== 4) { status('netStatus', 'あいことばは 数字 4けただよ'); return; }
     ctx.unlockAudio();
     ctx.knock();
+    track('room-join');
     join(code);
   });
   $('netCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('netJoin').click(); });

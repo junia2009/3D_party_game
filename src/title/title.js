@@ -25,6 +25,7 @@ import { makePortraits } from './portraits.js';
 import { createZukan } from './zukan.js';
 import { LIST as STAGE_LIST } from '../board/stages/index.js';
 import { setupOnline } from './online.js';
+import { initAnalytics, track } from '../analytics.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -34,6 +35,10 @@ const settings = loadSettings();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
+
+// 匿名のアクセス集計(src/analytics.js)。手元の開発・E2E・?seed= 付きでは何もしない。
+// ホーム画面から起動した(PWA として使われている)かも数える。
+if (initAnalytics() && window.matchMedia?.('(display-mode: standalone)').matches) track('pwa-launch');
 
 // 木の板の絵を、メニューのボタンの背景にする
 document.documentElement.style.setProperty('--wood', `url(${woodPlank(640, 140, { seed: 3 })})`);
@@ -253,6 +258,7 @@ function go(next) {
   if (next === 'stages') { renderStageMap(); renderResume(); }
   if (next === 'menu') $('resumeBadge').hidden = !loadTaikai();
   if (next === 'zukan') {
+    track('zukan');
     ensureFaces();
     zukan.open();
   }
@@ -275,7 +281,7 @@ addEventListener('pointerdown', () => {
   jingle();
   // リンクで 部屋に よばれた: その 部屋へ
   const code = online.takePendingRoom();
-  if (code) { go('online'); online.join(code); return; }
+  if (code) { track('room-link'); go('online'); online.join(code); return; }
   go('menu');
 });
 addEventListener('keydown', (e) => {
@@ -749,6 +755,9 @@ async function enterGame() {
   playing = await ready;
   const resume = current === 'taikai' && taikai.resume ? loadTaikai() : null;
   taikai.resume = false;
+  if (current !== 'taikai') track('game-start', { key: current, name: GAMES[current].name });
+  else if (resume) track('taikai-resume', { stage: resume.s.stage });
+  else track('taikai-start', { stage: taikai.stage });
   await playing.enter(picked, current === 'taikai' ? { fromSky: true, turns: taikai.turns, stage: taikai.stage, resume } : undefined);
   taikaiBoard = current === 'taikai' ? playing : null;
   playingKey = current;
@@ -813,6 +822,7 @@ async function playOnlineTaikai(m, client) {
   onlineGame = true;
   onlineTaikai = true;
   taikai.stage = m.stage; // 曲は ステージで きまる
+  track('online-taikai', { stage: m.stage });
   unlockAudio();
   whoosh(1.1, true);
   go('dive');
@@ -871,6 +881,7 @@ async function playOnline(m, client) {
   while (busy) await wait(100);
   busy = true;
   onlineGame = true;
+  track('online-game', { key: m.key, name: GAMES[m.key]?.name });
   unlockAudio();
   whoosh(1.1, true);
   go('dive');

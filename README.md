@@ -36,6 +36,12 @@ npm run serve   # http://localhost:8000/
 | `manifest.webmanifest` `sw.js` `icons/` | PWA。ホーム画面に置けて、一度ひらけばオフラインでも遊べる(CLAUDE.md の「PWA」) |
 | `viewer.html` | 開発用のモデル確認(アニメーション・表情・プレイヤーの色を切り替えて見られる)。遊ぶ人向けの図鑑は `index.html` の中(`#zukan`) |
 
+## アクセス集計(GoatCounter)
+
+何人来て、どれだけ遊ばれたかだけを [GoatCounter](https://www.goatcounter.com/) で数えている(集計画面は `dongurinpic.goatcounter.com`)。
+送るのは「ゲームを開いた」と出来事の名前(競技を遊んだ・大会を始めた/最後まで遊んだ・部屋を作った など)だけで、
+名前・あいことば・部屋の番号・成績は送らない。Cookie も使わない。しくみと決めごとは `src/analytics.js` の先頭。
+
 ## テスト
 
 ```sh
