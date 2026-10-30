@@ -268,14 +268,23 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
 
   // ── 入力: 上へ はじく ─────────────────────────────
   const playing = () => mode === 'playing' && !paused && game && intro >= 1;
+  // 画面の 点 → 自分の レーンの 左右の 場所(床へ まっすぐ おろす)。レーンの そとを おしたら はじ
+  const ray = new THREE.Raycaster();
+  const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const hitP = new THREE.Vector3();
+  function stanceAt(cx, cy) {
+    ray.setFromCamera(new THREE.Vector2((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1), camera);
+    const x = ray.ray.intersectPlane(floor, hitP) ? hitP.x - laneX(game.me) : (cx / innerWidth - 0.5) * 2.4 * RULES.stance;
+    return clamp(x, -RULES.stance, RULES.stance);
+  }
   window.addEventListener('pointerdown', (e) => {
     if (!playing() || input.id !== null || e.target.closest('button, a')) return;
     unlockAudio();
     if (!canThrow(game.state, game.me)) return;
     input.id = e.pointerId;
     input.pts = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
-    // 指を おいた 左右の 場所に 立つ(画面の まんなか = レーンの まんなか)
-    input.stance = clamp((e.clientX / innerWidth - 0.5) * 2.4, -1, 1) * RULES.stance;
+    // 指を おいた 場所の 真下の レーンの 場所に 立つ(レーンの はじを おせば はじ ぎりぎり)
+    input.stance = stanceAt(e.clientX, e.clientY);
     $('howtoBo').classList.remove('show');
   });
   window.addEventListener('pointermove', (e) => {
@@ -615,6 +624,8 @@ export async function createBowl({ renderer, settings, getAudio, onExit }) {
     get state() { return game?.state; },
     get game() { return game; },
     get intro() { return intro; },
+    camera,
+    stance: () => input.stance,
     start: (key = picked) => { picked = key; return startGame(); },
     throw: (t) => { input.pending = t; },
     advance: (sec) => {

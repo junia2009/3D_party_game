@@ -140,3 +140,13 @@ test('人くらいの うでまえでも、CPU と互角に戦える', () => {
     delete PERSONALITIES.human;
   }
 });
+
+test('レーンの はじ ぎりぎりに 立てる。はじから まっすぐ 投げても みぞに 落ちない', () => {
+  assert.ok(Math.abs(RULES.stance - (RULES.laneW / 2 - RULES.ballR)) < 1e-9, 'はじ ぎりぎり(どんぐりが レーンから はみ出さない)');
+  for (const side of [-1, 1]) {
+    const s = toAim(4);
+    s.obstacles = []; // じゃまものに あたらない ように
+    const ev = throwOnce(s, { x: side * RULES.stance, angle: 0, speed: 0.6, spin: 0 });
+    assert.ok(!ev.some((e) => e.type === 'gutter' && e.slot === 0), 'みぞに 落ちない');
+  }
+});
