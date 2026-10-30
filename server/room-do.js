@@ -272,7 +272,7 @@ export class RoomDO {
     }
     setTimeout(() => {
       this.broadcast({ t: 'end', result });
-      this.room.finish();
+      this.room.finish({ winner: result.ranking[0] });
       this.broadcastLobby();
       this.save();
     }, END_WAIT_MS);

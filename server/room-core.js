@@ -37,6 +37,9 @@ export class RoomCore {
     this.phase = 'lobby'; // lobby | playing
     this.settings = { mode: 'game', game: 'random', stage: 'shiki', turns: 10 };
     this.round = 0;
+    this.wins = {}; // 競技の 1位の 数(人は clientId ごと。部屋に いる あいだ)
+    this.cpuWins = 0; // CPU みんなの 1位の 数(CPU は はじめる たびに かわる ので まとめて)
+    this.lastWin = null; // さいごの 1位 { seat(CPU は -1), round }(部屋へ もどった ときの「+1」)
     this.lastActivityAt = Date.now();
   }
 
@@ -46,8 +49,8 @@ export class RoomCore {
     return r;
   }
   toJSON() {
-    const { code, isPublic, games, seats, host, phase, settings, round, lastActivityAt } = this;
-    return { code, isPublic, games, seats, host, phase, settings, round, lastActivityAt };
+    const { code, isPublic, games, seats, host, phase, settings, round, wins, cpuWins, lastWin, lastActivityAt } = this;
+    return { code, isPublic, games, seats, host, phase, settings, round, wins, cpuWins, lastWin, lastActivityAt };
   }
 
   touch() { this.lastActivityAt = Date.now(); }
@@ -149,8 +152,15 @@ export class RoomCore {
     return { lineup, seed, mode: this.settings.mode, game, stage: this.settings.stage, turns: this.settings.turns };
   }
 
-  // あそびが おわった: ロビーへ もどる。切れたままの 人の 席は あける
-  finish() {
+  // あそびが おわった: ロビーへ もどる。切れたままの 人の 席は あける。
+  // winner: 競技の 1位の 席(すごろくは 数えない)
+  finish({ winner = null } = {}) {
+    if (this.phase === 'playing' && Number.isInteger(winner) && winner >= 0 && winner < SEATS) {
+      const s = this.seats[winner];
+      if (s) this.wins[s.clientId] = (this.wins[s.clientId] ?? 0) + 1;
+      else this.cpuWins++;
+      this.lastWin = { seat: s ? winner : -1, round: this.round };
+    }
     this.phase = 'lobby';
     this.seats = this.seats.map((s) => (s && s.connected && !s.left ? s : null));
     this.fixHost();
@@ -164,7 +174,9 @@ export class RoomCore {
       phase: this.phase,
       settings: this.settings,
       hostSeat: this.seatOf(this.host),
-      seats: this.seats.map((s) => (s ? { name: s.name, character: s.character, connected: s.connected } : null)),
+      seats: this.seats.map((s) => (s ? { name: s.name, character: s.character, connected: s.connected, wins: this.wins[s.clientId] ?? 0 } : null)),
+      cpuWins: this.cpuWins,
+      lastWin: this.lastWin,
     };
   }
 }

@@ -10,10 +10,14 @@ import { ONLINE_GAMES } from '../net/games.js';
 const COLORS = ['#ff5a4e', '#3d8bff', '#ffc23c', '#34c47c', '#9b6bff'];
 
 // ctx: { $, go, toast, knock, unlockAudio, characters(), faces(), games, picked(), setPicked(key), playOnline(m, client), inGame() }
+// 王冠(いちばん 勝って いる 子)
+const CROWN = '<svg class="crown" viewBox="0 0 24 16" aria-hidden="true"><path d="M2 14 L4 4 L9 9 L12 2 L15 9 L20 4 L22 14 Z" fill="#fff6c8" stroke="#8a5a14" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+
 export function setupOnline(ctx) {
   const { $ } = ctx;
   let client = null;
   let lobby = null;
+  let seenWin; // 「+1」を 見せた さいごの 回(入った ときに きめる)
   let seat = null;
   const params = new URLSearchParams(location.search);
   let pendingRoom = /^\d{4}$/.test(params.get('room') || '') ? params.get('room') : null;
@@ -79,6 +83,7 @@ export function setupOnline(ctx) {
     client?.leave();
     client = null;
     lobby = null;
+    seenWin = undefined;
     const url = new URL(location.href);
     url.searchParams.delete('room');
     history.replaceState(null, '', url);
@@ -105,21 +110,31 @@ export function setupOnline(ctx) {
     $('roomCode').textContent = lobby.code;
     $('roomTitle').textContent = lobby.isPublic ? 'だれとでも の 部屋' : '部屋';
     const n = lobby.seats.filter(Boolean).length;
-    $('roomCount').textContent = `${n}/5 人(あいた 席は CPU)`;
+    $('roomCount').textContent = `${n}/5 人(あいた 席は CPU)` + (lobby.cpuWins ? `・CPU ${lobby.cpuWins}勝` : '');
+    // 勝ち数: いちばん 勝って いる 子に 王冠。部屋へ もどって きた ときは、さっき 勝った 子に「+1」
+    const top = Math.max(0, ...lobby.seats.map((s) => s?.wins ?? 0));
+    const win = lobby.lastWin;
+    let pop = -2;
+    if (seenWin === undefined) seenWin = win?.round ?? 0; // 入った ときの ぶんは 見せない
+    else if (win && win.round !== seenWin && !ctx.inGame()) { seenWin = win.round; pop = win.seat; }
+    if (pop === -1) ctx.toast('CPU が 1位! +1勝');
     $('roomSeats').replaceChildren(...lobby.seats.map((s, i) => {
       const li = document.createElement('li');
       li.style.setProperty('--c', COLORS[i]);
       if (!s) {
         li.className = 'cpu';
-        li.innerHTML = '<i class="dot"></i><i class="face"></i><span>あき(CPU)</span><span></span>';
+        li.innerHTML = '<i class="dot"></i><i class="face"></i><span>あき(CPU)</span><span></span><span></span>';
         return li;
       }
       if (i === seat) li.classList.add('me');
       if (!s.connected) li.classList.add('off');
       const face = faces[s.character] ? `<img class="face" src="${faces[s.character]}" alt="">` : '<i class="face"></i>';
       const tag = i === lobby.hostSeat ? '<em>ホスト</em>' : !s.connected ? '<em>きれた</em>' : '';
-      li.innerHTML = `<i class="dot"></i>${face}<span></span>${tag}`;
+      const wins = s.wins ?? 0;
+      const badge = `<b class="wins${wins && wins === top ? ' lead' : ''}${i === pop ? ' up' : ''}">${CROWN}${wins}<small>勝</small>${i === pop ? '<i class="plus">+1</i>' : ''}</b>`;
+      li.innerHTML = `<i class="dot"></i>${face}<span></span>${badge}${tag}`;
       li.children[2].textContent = `${s.name || nameOfChar(s.character)}${i === seat ? '(あなた)' : ''}`;
+      if (i === pop) { li.classList.add('won'); if (i === seat) ctx.toast('1位! +1勝'); }
       return li;
     }));
     // キャラ: ほかの 子が つかって いる キャラは えらべない

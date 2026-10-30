@@ -247,12 +247,24 @@
   .share:active { transform: translateY(3px); box-shadow: 0 1px 0 #2f6b25; }
   .opt h3 small { font: 800 12px var(--font-body); color: #6b4424; margin-left: 6px; }
   .seats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-  .seats li { display: grid; grid-template-columns: 14px 40px 1fr auto; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 12px; background: #fff7e6; border: 2px solid #ead2a8; font: 800 15px var(--font-body); color: var(--ink); }
+  .seats li { display: grid; grid-template-columns: 14px 40px 1fr auto auto; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 12px; background: #fff7e6; border: 2px solid #ead2a8; font: 800 15px var(--font-body); color: var(--ink); }
   .seats li .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--c); border: 2px solid rgba(0,0,0,.2); }
   .seats li .face { width: 40px; height: 40px; border-radius: 50%; background: #e9dcc4; display: block; }
   .seats li.cpu { opacity: .55; font-weight: 600; }
   .seats li.me { border-color: var(--leaf); background: #e3f4d2; }
   .seats li.off { opacity: .45; }
+  /* 勝ち数: どんぐり色の ふだ。いちばんの 子は 金色で 王冠 */
+  .seats li .wins { position: relative; display: inline-flex; align-items: baseline; gap: 1px; padding: 2px 9px; border-radius: 999px; background: #f0dcb8; border: 2px solid #c9a36a; color: #6b4318; font: 400 16px var(--font-display); line-height: 1.2; }
+  .seats li .wins small { font: 800 11px var(--font-body); margin-left: 1px; }
+  .seats li .wins .crown { display: none; width: 18px; height: 12px; margin-right: 3px; align-self: center; }
+  .seats li .wins.lead { background: linear-gradient(#ffe68a, #ffc83a); border-color: #b9821e; color: #5a3608; box-shadow: 0 2px 0 #b9821e; }
+  .seats li .wins.lead .crown { display: block; }
+  .seats li .wins.up { animation: winsUp .9s cubic-bezier(.3,1.6,.5,1) both; }
+  .seats li .wins .plus { position: absolute; right: 8px; top: -10px; font: 400 15px var(--font-display); color: #e8402f; text-shadow: 0 2px 0 #fff, 0 -1px 0 #fff, 1px 0 0 #fff, -1px 0 0 #fff; font-style: normal; pointer-events: none; animation: winsPlus 2.4s ease-out both; }
+  .seats li.won { animation: winsRow 1.6s ease-out; }
+  @keyframes winsUp { 0% { transform: scale(.6); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }
+  @keyframes winsPlus { 0% { opacity: 0; transform: translateY(6px) scale(.6); } 20% { opacity: 1; transform: translateY(-8px) scale(1.2); } 70% { opacity: 1; transform: translateY(-16px) scale(1); } 100% { opacity: 0; transform: translateY(-26px); } }
+  @keyframes winsRow { 0%, 40% { background: #fff1b0; box-shadow: 0 0 0 3px #ffd24a; } 100% { box-shadow: 0 0 0 0 transparent; } }
   .seats li em { font-style: normal; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #ffd24a; color: var(--ink); }
   #roomChars button[disabled] { opacity: .35; filter: grayscale(1); }
   .seg button[disabled] { opacity: .45; }

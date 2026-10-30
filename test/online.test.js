@@ -62,6 +62,29 @@ test('はじめると あいた 席を CPU で うめる。とちゅうで 切�
   assert.equal(r.phase, 'lobby');
 });
 
+test('部屋に いる あいだ 競技の 1位を 数える(人は ひとりずつ、CPU は まとめて)。すごろくは 数えない', () => {
+  const r = room();
+  r.join({ clientId: 'a', character: 'ponta' });
+  r.join({ clientId: 'b', character: 'kirin' });
+  const wins = () => r.lobbyInfo().seats.map((s) => s?.wins ?? null);
+  r.start('a'); r.finish({ winner: 1 });
+  assert.deepEqual(wins(), [0, 1, null, null, null]);
+  assert.deepEqual(r.lobbyInfo().lastWin, { seat: 1, round: 1 });
+  r.start('a'); r.finish({ winner: 3 });
+  assert.equal(r.lobbyInfo().cpuWins, 1, 'CPU の 席');
+  assert.equal(r.lobbyInfo().lastWin.seat, -1);
+  r.start('a'); r.finish({ winner: 1 });
+  r.setSettings('a', { mode: 'taikai' });
+  r.start('a'); r.finish();
+  assert.deepEqual(wins(), [0, 2, null, null, null], 'すごろくは 数えない');
+  // ぬけて もどっても 部屋に ある あいだは のこる。保存して もどしても のこる
+  r.leave('b');
+  r.join({ clientId: 'b', character: 'kirin' });
+  const back = RoomCore.fromJSON(JSON.parse(JSON.stringify(r.toJSON())));
+  assert.equal(back.lobbyInfo().seats[1].wins, 2);
+  assert.equal(back.lobbyInfo().cpuWins, 1);
+});
+
 test('だれとでも の 部屋は ロビーで 空きが ある あいだだけ 入れる', () => {
   const r = room({ isPublic: true });
   assert.ok(r.isOpen());
