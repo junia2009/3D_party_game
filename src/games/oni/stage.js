@@ -11,6 +11,13 @@ import { mergeStatic } from '../../runtime/merge.js';
 import { BUSHES, RULES, STUMPS, TREES } from './rules.js';
 
 export const FLOOR_Y = 0;
+// 観客: さくの 外の 丸太の ベンチ(奥の 半分)
+export const SEATS = [
+  { a: -2.35, kind: 'risu' }, { a: -2.05, kind: 'harinezumi' }, { a: -1.75, kind: 'komadori' },
+  { a: -1.39, kind: 'mogura' }, { a: -1.1, kind: 'risu' }, { a: -0.8, kind: 'harinezumi' },
+].map((s) => ({ ...s, x: Math.cos(s.a) * (RULES.fieldR + 1.7), z: Math.sin(s.a) * (RULES.fieldR + 1.7), y: 0.42 }));
+// 審判の ホーホー先生: 奥の さくの 外の 見はり台の 上
+export const PERCH = new THREE.Vector3(0, 3.05, -(RULES.fieldR + 1.6));
 
 const canvasTex = (w, h, draw) => {
   const c = document.createElement('canvas');
@@ -135,6 +142,8 @@ export function buildStage(scene) {
 
   // 広場の 木: 太い みき + 丸い 葉っぱ(夕日で だいだい色が まじる)。葉っぱは あとで うすく できる ように 別に もつ
   const canopies = [];
+  // 深さだけ 書く(色は 書かない)。半透明の 順番で 描く(ふつうの 物より あと。うしろの 子を かくさない)
+  const depthOnly = new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true });
   const leafCols = [0x5f9a3a, 0x77a83e, 0xc8a03a, 0x6a9a44];
   TREES.forEach((t, i) => {
     const trunk = at(new THREE.Mesh(new THREE.CylinderGeometry(t.r * 0.62, t.r * 0.85, 2.6, 9), mat(0x7a4e2c)), t.x, 1.3, t.z);
@@ -156,6 +165,11 @@ export function buildStage(scene) {
       m.position.set(dx * t.r, dy, dz * t.r);
       m.castShadow = true;
       crown.add(m);
+      const pre = new THREE.Mesh(m.geometry, depthOnly);
+      pre.position.copy(m.position);
+      pre.renderOrder = 1;
+      m.renderOrder = 2;
+      crown.add(pre);
     }
     crown.userData.noMerge = true;
     scene.add(crown);
@@ -232,6 +246,45 @@ export function buildStage(scene) {
     g.add(m);
   }
 
+  // 観客の 丸太の ベンチ
+  for (const st of SEATS) {
+    const log = at(new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 1.1, 8), mat(0x8a5a32)), st.x, 0.22, st.z);
+    log.rotation.set(0, -st.a, Math.PI / 2);
+    g.add(log);
+  }
+  // 見はり台: 4本の 足と 板、はしご
+  {
+    const x = PERCH.x, z = PERCH.z, top = PERCH.y - 0.15;
+    for (const [dx, dz] of [[-0.55, -0.45], [0.55, -0.45], [-0.55, 0.45], [0.55, 0.45]]) {
+      const leg = at(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, top, 6), mat(0x7a4e2c)), x + dx, top / 2, z + dz);
+      leg.castShadow = true;
+      g.add(leg);
+    }
+    g.add(at(new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.12, 1.3), mat(0xa06a3a)), x, top, z));
+    for (let k = 0; k < 5; k++) g.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.05, 0.06), mat(0xa06a3a)), x, 0.4 + k * 0.5, z + 0.62));
+    // 屋根の 旗
+    g.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 5), mat(0x5a3a22)), x + 0.6, top + 0.7, z - 0.4));
+    g.add(at(new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.4), new THREE.MeshToonMaterial({ color: 0xffd24a, gradientMap: toonGradient, side: THREE.DoubleSide })), x + 0.9, top + 1.2, z - 0.4));
+  }
+  // ちょうちんの 下の 地面に あたたかい 光の まる
+  const pool = new THREE.MeshBasicMaterial({ map: glowTex, color: 0xffb060, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending });
+  for (const l of lanterns) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(3, 3).rotateX(-Math.PI / 2), pool);
+    m.position.set(l.lan.position.x * 0.96, 0.03, l.lan.position.z * 0.96);
+    m.userData.noMerge = true;
+    g.add(m);
+  }
+  // ほたる: 草むらと ふちの あたりを ふわふわ
+  const flies = [];
+  const flyMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xd8ff7a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  for (let i = 0; i < 26; i++) {
+    const b = BUSHES[i % BUSHES.length];
+    const home = i < 15 ? { x: b.x, z: b.z } : (() => { const a = i * 1.7; return { x: Math.sin(a) * (R - 0.5), z: Math.cos(a) * (R - 0.5) }; })();
+    const sp = new THREE.Sprite(flyMat.clone());
+    sp.scale.setScalar(0.32);
+    scene.add(sp);
+    flies.push({ sp, home, ph: i * 2.3, r: 0.6 + (i % 4) * 0.35 });
+  }
   mergeStatic(g);
   scene.add(g);
 
@@ -241,6 +294,10 @@ export function buildStage(scene) {
     bushes,
     // t: 時間、runners: [{ x, z }]
     update(t, runners, dt) {
+      for (const f of flies) {
+        f.sp.position.set(f.home.x + Math.sin(t * 0.7 + f.ph) * f.r, 0.7 + Math.sin(t * 1.3 + f.ph * 2) * 0.35 + (f.ph % 1), f.home.z + Math.cos(t * 0.55 + f.ph) * f.r);
+        f.sp.material.opacity = 0.35 + 0.65 * Math.max(0, Math.sin(t * 2.2 + f.ph));
+      }
       for (const l of lanterns) {
         const k = 0.75 + Math.sin(t * 2.3 + l.ph) * 0.12 + Math.sin(t * 7.1 + l.ph) * 0.05;
         l.glow.material.opacity = k;
@@ -251,7 +308,6 @@ export function buildStage(scene) {
         const behind = runners.some((r) => Math.abs(r.x - c.t.x) < c.t.r * 2 && r.z < c.t.z + 0.4 && r.z > c.t.z - 4.2);
         c.fade += ((behind ? 0.4 : 1) - c.fade) * Math.min(1, dt * 6);
         c.leaf.opacity = c.fade;
-        c.leaf.depthWrite = c.fade > 0.95;
         c.crown.rotation.y = Math.sin(t * 0.6 + c.t.x) * 0.03;
       }
       // 草むら: だれかが 入って いると ゆれる

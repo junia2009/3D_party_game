@@ -13,7 +13,7 @@ import { seedFrom } from '../../rng.js';
 import { RULES, STEP, createGame, points, ranking, step, timeLeft } from './rules.js';
 import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
-import { FLOOR_Y, buildStage, glowTex } from './stage.js';
+import { FLOOR_Y, PERCH, SEATS, buildStage, glowTex } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 
 const $ = (id) => document.getElementById(id);
@@ -98,7 +98,24 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     return Math.max(0.2, 1 - Math.hypot(x - me.x, z - me.z) / 12);
   }
 
-  await preload(CHARACTERS.map((c) => c.key));
+  // ── 読みこみ: 審判の ホーホー先生と 観客 ───────────────
+  await preload([...CHARACTERS.map((c) => c.key), 'hoho', ...new Set(SEATS.map((st) => st.kind))]);
+  const owl = await createModel('hoho');
+  owl.root.position.copy(PERCH);
+  owl.play('idle');
+  owl.setFace('normal');
+  scene.add(owl.root);
+  const audience = await Promise.all(SEATS.map(async (seat) => {
+    const m = await createModel(seat.kind);
+    m.root.position.set(seat.x, seat.y, seat.z);
+    m.root.rotation.y = Math.atan2(-seat.x, -seat.z);
+    m.play('idle');
+    m.actions.idle.time = Math.random() * 2;
+    m.setFace('happy');
+    scene.add(m.root);
+    return { seat, model: m, until: 0 };
+  }));
+  const cheer = (sec = 1.6) => { for (const a of audience) a.until = time + sec * (0.7 + Math.random() * 0.6); };
 
   // ── 鬼の しるし: 赤い つのの かちゅーしゃ と 足もとの 赤い 輪 ──
   function makeHorns() {
@@ -314,7 +331,7 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     runners[me].marker = marker;
     game = { me, net: net ? createNetDriver({ client: net.client, rules: { STEP, step }, state, me }) : null, seed, players, state, cpus: players.map((p, slot) => (p.cpu ? createCpu(p.cpu, seed, slot) : null)), runners, acc: 0, endTimer: null, shake: 0, count: 4, tick: 11 };
     atmosphere.apply(params.get('time') || 'evening');
-    atmosphere.setupShadows(runners.map((r) => r.holder), [stage.group]);
+    atmosphere.setupShadows([...runners.map((r) => r.holder), owl.root, ...audience.map((a) => a.model.root)], [stage.group]);
     Object.assign(input, { touch: null, stick: null, dash: false, target: null });
     buildChips();
     setMode('playing');
@@ -501,6 +518,7 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
         case 'start':
           splash(e.oni === game.me ? 'あなたが おに!' : `${nameOf(e.oni)}が おに!`, e.oni === game.me ? 'red small' : 'small');
           sfx.whistle();
+          owl.play('flap', { fade: 0.1 });
           if (e.oni === game.me) sfx.oni();
           setTimeout(() => $('howtoOk').classList.remove('show'), 6000);
           break;
@@ -516,6 +534,7 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
           shock(e.x, e.z, 0xff6a3a, 1.2);
           pop('タッチ!', e.x, FLOOR_Y + 1.8, e.z, 'red', 900);
           game.runners[e.to].hop = 0.5;
+          cheer();
           if (e.to === game.me) { splash('あなたが おに!', 'red small'); sfx.oni(); game.shake = 0.3; }
           else if (e.from === game.me) splash('にげろ!', 'gold small');
           else splash(`${nameOf(e.to)}が おに!`, 'small');
@@ -582,6 +601,8 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
         case 'finished': {
           game.endTimer = 4.5;
           sfx.whistle();
+          owl.play('flap', { fade: 0.1 });
+          cheer(6);
           const win = e.winner === game.me;
           splash(win ? 'あなたの かち!' : 'そこまで!', win ? 'gold' : '');
           if (win) sfx.fanfare();
@@ -694,6 +715,15 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       a.g.visible = left > 2.5 || Math.floor(time * 8) % 2 === 0;
     }
     stage.update(time, s.runners, dt);
+    // 先生は 鬼の ほうを 見る。観客は タッチで よろこぶ
+    const ow = s.runners[s.oni];
+    owl.root.rotation.y += (Math.atan2(ow.x - PERCH.x, ow.z - PERCH.z) - owl.root.rotation.y) * Math.min(1, dt * 3);
+    owl.update(dt);
+    if (owl.current === 'flap' && owl.actions.flap.time > 1.2) owl.play('idle');
+    for (const a of audience) {
+      a.model.play(a.until > time ? 'cheer' : 'idle');
+      a.model.update(dt);
+    }
   }
 
   let freeCamera = false;
