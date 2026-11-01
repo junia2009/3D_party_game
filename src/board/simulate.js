@@ -55,6 +55,8 @@ import * as meiro from '../games/meiro/rules.js';
 import * as meiroCpu from '../games/meiro/cpu.js';
 import * as bowl from '../games/bowl/rules.js';
 import * as bowlCpu from '../games/bowl/cpu.js';
+import * as oni from '../games/oni/rules.js';
+import * as oniCpu from '../games/oni/cpu.js';
 
 export const GAMES = {
   daruma: { rules: daruma, createCpu: darumaCpu.createCpu, input: darumaCpu.cpuHold, picked: (s) => s.runners.map((r) => r.acorns) },
@@ -84,6 +86,7 @@ export const GAMES = {
   otoshi: { rules: otoshi, createCpu: otoshiCpu.createCpu, input: otoshiCpu.cpuInput, picked: () => null },
   meiro: { rules: meiro, createCpu: meiroCpu.createCpu, input: meiroCpu.cpuInput, picked: () => null },
   bowl: { rules: bowl, createCpu: bowlCpu.createCpu, input: bowlCpu.cpuInput, picked: () => null },
+  oni: { rules: oni, createCpu: oniCpu.createCpu, input: oniCpu.cpuInput, picked: () => null },
 };
 
 // lineup: [{ cpu: 性格 }]。返すのは { ranking(席の番号の順), picked }

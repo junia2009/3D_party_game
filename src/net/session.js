@@ -24,7 +24,7 @@ const same = (a, b) => a === b || (a && b && JSON.stringify(a) === JSON.stringif
 export const PULSE = {
   bowl: 'all', kakure: 'all', hayauchi: 'all', tsuna: 'all', mato: 'all', tsumi: 'all', mame: 'all', ikada: 'all',
   daruma: [], nawa: [], sled: [], catch: [], hana: [], ehon: [], hikouki: [], meiro: [], otoshi: [], keshigomu: [],
-  bumper: [], sumo: [],
+  bumper: [], sumo: [], oni: [],
   dasshutsu: ['open'], kazan: ['jump'], kinoko: ['jump'], volley: ['hit'], yuki: ['throw', 'make'], ramune: ['pop'],
   wataame: ['zarame'],
 };

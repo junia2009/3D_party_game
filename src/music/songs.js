@@ -401,6 +401,8 @@ export const GAME_MUSIC = {
   volley: 'natsu',
   // ころがす
   bowl: 'nonbiri',
+  // おいかけっこ
+  oni: 'kakekko',
   // 遊園地は 大会の 遊園地と おなじ 曲
   bumper: 'yuen',
 };

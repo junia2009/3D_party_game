@@ -25,7 +25,7 @@ import { track } from '../analytics.js';
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
 const params = new URLSearchParams(location.search);
-const GAME_NAMES = { daruma: 'だるまさんが ころんだ', catch: 'どんぐりキャッチ', sled: '落ち葉そりレース', mato: 'まつぼっくり的あて', tsumi: 'どんぐりつみ', ikada: 'いかだレース', hana: '花ぬり陣取り', hayauchi: 'どんぐり早うち', sumo: '切り株ずもう', kakure: 'おぼえて かくれんぼ', dasshutsu: 'どんぐりマンション だっしゅつ', tsuna: '川原の つなひき', nawa: 'お祭りの 大なわとび', kazan: '火山の 落ちものよけ', yuki: '雪山の 雪合戦', bumper: '遊園地の バンパーカー', kinoko: '森の湖の いろいろキノコ', ehon: '森の図書館の ぱらぱらブック', mame: '空まで まめのきジャンプ', volley: '夏の浜べの ビーチバレー', hikouki: '森の谷まの かみひこうき', ramune: '夏祭りの ラムネ しゅわしゅわ', wataame: '秋の森の わたあめ まき', keshigomu: '森の学校の けしごむ大戦', otoshi: 'お正月の だるまおとし', meiro: '森の いせきの どんぐり めいろ', bowl: '森の 倒れ木の どんぐりボウリング' };
+const GAME_NAMES = { daruma: 'だるまさんが ころんだ', catch: 'どんぐりキャッチ', sled: '落ち葉そりレース', mato: 'まつぼっくり的あて', tsumi: 'どんぐりつみ', ikada: 'いかだレース', hana: '花ぬり陣取り', hayauchi: 'どんぐり早うち', sumo: '切り株ずもう', kakure: 'おぼえて かくれんぼ', dasshutsu: 'どんぐりマンション だっしゅつ', tsuna: '川原の つなひき', nawa: 'お祭りの 大なわとび', kazan: '火山の 落ちものよけ', yuki: '雪山の 雪合戦', bumper: '遊園地の バンパーカー', kinoko: '森の湖の いろいろキノコ', ehon: '森の図書館の ぱらぱらブック', mame: '空まで まめのきジャンプ', volley: '夏の浜べの ビーチバレー', hikouki: '森の谷まの かみひこうき', ramune: '夏祭りの ラムネ しゅわしゅわ', wataame: '秋の森の わたあめ まき', keshigomu: '森の学校の けしごむ大戦', otoshi: 'お正月の だるまおとし', meiro: '森の いせきの どんぐり めいろ', bowl: '森の 倒れ木の どんぐりボウリング', oni: '夕ぐれの 森の おにごっこ' };
 
 export async function createBoard({ renderer, settings, getAudio, onExit, playMinigame }) {
   const scene = new THREE.Scene();

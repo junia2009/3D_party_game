@@ -800,6 +800,24 @@
   @keyframes wave { to { transform: skewY(-4deg) scaleX(.96); } }
   @keyframes flagin { from { transform: translateX(-50%) scale(.6); opacity: 0; } }
   @keyframes flaghurry { to { transform: translateX(-50%) scale(1.06); } }
+  /* 夕ぐれの 森の おにごっこ: 上に みんなの 点(おには 赤い つの)と のこり時間、右下に ダッシュ。自分が おにの あいだは 画面の ふちが 赤く */
+  #hudOk .scores { gap: 3px; }
+  #hudOk .chip { padding: 3px 6px 3px 3px; gap: 3px; }
+  #hudOk .chip i { width: 16px; height: 16px; }
+  #hudOk .chip b { font-size: 12px; min-width: 1.2em; text-align: right; }
+  #hudOk .chip.oni { box-shadow: 0 0 0 3px #ff4a3a; position: relative; }
+  #hudOk .chip.oni::after { content: ''; position: absolute; left: 6px; top: -9px; width: 14px; height: 10px; clip-path: polygon(0 100%, 20% 0, 40% 100%, 60% 100%, 80% 0, 100% 100%); background: #ffd24a; }
+  #hudOk .timer:empty { visibility: hidden; }
+  #hudOk .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
+  @media (orientation: landscape) and (max-height: 560px) {
+    #hudOk .howto { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 62px); font-size: 14px; }
+  }
+  #hudOk .splash.small { font-size: clamp(26px, 8.5vw, 50px); }
+  #hudOk .splash.gold.small { color: #ffd24a; }
+  #hudOk .splash.red.small { color: #ff6a4a; }
+  .tame.dash.run { background: conic-gradient(#ff8a3d calc(var(--k, 1) * 360deg), #8a7a70 0); }
+  #hudOk.oni::before { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 46px 12px rgba(255,70,40,.4); animation: eruptglow .7s ease-in-out infinite alternate; }
+  #hudOk.hurry .timer { color: #ff6a4a; animation: tamefull .5s infinite; }
   /* 遊園地の バンパーカー: 上に のこっている子と のこり時間、右下に ダッシュ(つかったあとは 輪が たまっていく) */
   #hudQ .chip { padding: 4px; }
   #hudQ .chip i { width: 18px; height: 18px; }
@@ -1674,6 +1692,11 @@
       <span class="name">森の 倒れ木の どんぐりボウリング</span>
       <span class="meta"><span>3フレーム</span><span>はじいて 投げる</span></span>
     </button>
+    <button class="card" type="button" data-open="oni">
+      <span class="thumb"><img src="./assets/thumbs/oni.jpg" alt="" width="640" height="360"><span class="ribbon">第28競技</span><span class="go-mark" aria-hidden="true"></span></span>
+      <span class="name">夕ぐれの 森の おにごっこ</span>
+      <span class="meta"><span>60びょう</span><span>にげて おいかけて</span></span>
+    </button>
   </div>
 </section>
 
@@ -2026,6 +2049,19 @@
   <p class="howto" id="howtoG">ゆびを おいて ずらすと はしる。先生の 旗と おなじ 色の キノコへ!<br>「ジャンプ」中に もう一度 おすと ヒップドロップ</p>
   <div class="stick" id="stickG" hidden><i></i></div>
   <button class="tame jump" id="jumpG" type="button">ジャンプ</button>
+</div>
+
+<div class="hud" id="hudOk" hidden>
+  <div class="top">
+    <div class="scores" id="chipsOk" aria-label="点(おにで なかった 時間)"></div>
+    <div class="timer" id="timeOk" aria-label="のこり時間"></div>
+    <button class="pausebtn" id="pauseBtnOk" type="button" aria-label="いちじていし"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="4" width="3.4" height="12" rx="1.2"/><rect x="11.6" y="4" width="3.4" height="12" rx="1.2"/></svg></button>
+  </div>
+  <div class="pops" id="popsOk"></div>
+  <div class="splash" id="splashOk"></div>
+  <p class="howto" id="howtoOk">ゆびを おいて ずらすと はしる。<b>おに</b>(赤い つの)から にげろ!<br>草むらで かくれて、「ダッシュ」で ひと走り</p>
+  <div class="stick" id="stickOk" hidden><i></i></div>
+  <button class="tame dash run" id="dashOk" type="button">ダッシュ</button>
 </div>
 
 <div class="hud" id="hudQ" hidden>
