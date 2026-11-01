@@ -86,6 +86,8 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     drop(vol = 1) { voice({ pts: [[0, 1400], [0.15, 600]], len: 0.18, gain: 0.05 * vol }); },
     // トクン: おにが 近い(低めの 音でも 効果音の 帯域の 中)
     heart(k) { voice({ pts: [[0, 560], [0.08, 460]], len: 0.1, gain: 0.05 + k * 0.05 }); voice({ pts: [[0, 520], [0.08, 450]], len: 0.1, gain: 0.04 + k * 0.04, at: 0.16 }); },
+    // ドーン: 花火(高めの はじける 音)
+    boom() { noise({ len: 0.5, gain: 0.08, freq: [1500, 500], type: 'bandpass', q: 0.7, attack: 0.005 }); noise({ len: 0.7, gain: 0.03, freq: [1600, 1200], type: 'bandpass', at: 0.1, attack: 0.05 }); },
     // チッ チッ: のこり すこし
     tick() { voice({ type: 'square', pts: [[0, 1200]], len: 0.05, gain: 0.03 }); },
     beep(last) { voice({ type: 'square', pts: [[0, last ? 1320 : 660]], len: last ? 0.5 : 0.16, gain: 0.05 }); },
@@ -250,6 +252,16 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 3 + Math.random() * 1.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, -(0.7 + Math.random() * 0.6), (Math.random() - 0.5) * 0.6), spin: 8, kind: 'confetti' });
     }
   }
+  // 花火: 奥の 森から 打ちあがって、夕焼けの 空で ひらく
+  const fwGeo = new THREE.SphereGeometry(0.2, 6, 4);
+  function firework(x, z, delay = 0) {
+    const color = [0xff4f6a, 0xffd23c, 0x5cc0ff, 0x7ad35a, 0xb48cff, 0xff8fd0][Math.floor(Math.random() * 6)];
+    const m = new THREE.Mesh(fwGeo, new THREE.MeshBasicMaterial({ color, transparent: true }));
+    m.position.set(x, 0.5, z);
+    m.visible = false;
+    scene.add(m);
+    fx.push({ obj: m, t: -delay, life: 99, vel: new THREE.Vector3(0, 12, 0), kind: 'rocket', top: 5 + Math.random() * 2, color });
+  }
   // ダッシュの 風の すじ
   const streakGeo = new THREE.PlaneGeometry(0.05, 0.9).rotateX(-Math.PI / 2);
   function streak(x, z, h) {
@@ -266,8 +278,27 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     for (let i = fx.length - 1; i >= 0; i--) {
       const f = fx[i];
       f.t += dt;
+      if (f.kind === 'rocket') {
+        if (f.t < 0) continue;
+        f.obj.visible = true;
+        f.obj.position.addScaledVector(f.vel, dt);
+        if (f.obj.position.y >= f.top) {
+          for (let j = 0; j < 36; j++) {
+            const p = new THREE.Mesh(fwGeo, new THREE.MeshBasicMaterial({ color: f.color, transparent: true }));
+            p.position.copy(f.obj.position);
+            scene.add(p);
+            fx.push({ obj: p, t: 0, life: 1.4, vel: new THREE.Vector3().randomDirection().multiplyScalar(4 + Math.random()), kind: 'burst' });
+          }
+          sfx.boom();
+          scene.remove(f.obj);
+          f.obj.material.dispose();
+          fx.splice(i, 1);
+        }
+        continue;
+      }
       const k = f.t / f.life;
       f.obj.position.addScaledVector(f.vel, dt);
+      if (f.kind === 'burst') { f.vel.multiplyScalar(Math.exp(-dt * 1.8)); f.vel.y -= 2.5 * dt; f.obj.material.opacity = 1 - k; }
       if (f.kind === 'puff') {
         f.vel.multiplyScalar(Math.exp(-3 * dt));
         f.obj.scale.setScalar(f.size * (1 + k * 1.6));
@@ -495,6 +526,8 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       c.classList.toggle('oni', i === s.oni && s.phase !== 'ready');
       c.lastChild.textContent = String(Math.floor(points(s.runners[i])));
     });
+    const lead = s.phase === 'ready' ? -1 : ranking(s)[0];
+    [...$('chipsOk').children].forEach((c, i) => c.classList.toggle('lead', i === lead));
     $('timeOk').textContent = s.phase === 'play' ? String(Math.ceil(timeLeft(s))) : '';
     const me = s.runners[game.me];
     dashEl.hidden = s.phase === 'finished';
@@ -657,6 +690,9 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
           if (win) sfx.fanfare();
           const r = s.runners[e.winner];
           confetti(r.x, r.z);
+          for (let i = 0; i < 8; i++) firework(r.x + (Math.random() - 0.5) * 7, r.z - 3 - Math.random() * 3, 0.4 + i * 0.4);
+          const last = s.runners[e.oni];
+          pop(e.oni === game.me ? 'さいごの おに…' : 'さいごの おに!', last.x, FLOOR_Y + 2, last.z, 'red', 2000);
           break;
         }
       }
@@ -681,7 +717,7 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       const who = p.cpu ? `CPU(${PERSONALITIES[p.cpu].label})` : slot === game.me ? 'あなた' : 'ともだち';
       const def = CHARACTERS.find((c) => c.key === p.character);
       li.innerHTML = `<span class="no">${i + 1}</span><span class="dot" style="background:${css(PLAYER_COLORS[slot].hex)}"></span>` +
-        `<span>${def.name}<small>${who}</small></span><span class="dist">${Math.floor(points(r))}<small>点・つかまった ${r.caught}</small></span>`;
+        `<span>${def.name}<small>${who}</small></span><span class="dist">${Math.floor(points(r))}<small class="u">点</small><small>つかまった ${r.caught}回</small></span>`;
       return li;
     }));
     setMode('result');
@@ -719,8 +755,10 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
         if (r.freeze > 0) clip = 'dizzy';
       }
       if (s.phase === 'finished') {
-        clip = slot === s.winner ? 'cheer' : 'idle';
-        face = slot === s.winner ? 'happy' : 'normal';
+        clip = slot === s.winner ? 'cheer' : slot === s.oni ? 'dizzy' : 'idle';
+        face = slot === s.winner ? 'happy' : slot === s.oni ? 'frustrated' : 'normal';
+        // 勝った 子は こっちを 向いて ぴょんぴょん
+        if (slot === s.winner) { if (u.hop <= 0) u.hop = 0.5; u.h += Math.atan2(Math.sin(-u.h), Math.cos(-u.h)) * Math.min(1, dt * 6); }
       }
       u.model.play(clip);
       u.model.setFace(face);
@@ -757,7 +795,7 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     // ふきだし: 見うしなって いる あいだは「?」、見つけた ときは「!」
     const headY = horns.position.y + 0.9;
     markET = Math.max(0, markET - dt);
-    markE.visible = markET > 0;
+    markE.visible = markET > 0 && s.phase === 'play';
     markE.position.set(o.x, headY + Math.sin(markET * 12) * 0.05, o.z);
     markE.scale.setScalar(0.9 * (1 + Math.max(0, markET - 0.7) * 2));
     markQ.visible = s.oniLost && s.phase === 'play' && !markE.visible;
@@ -800,8 +838,13 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     }
     const look = new THREE.Vector3(fx0, 0, fz0 + (portrait ? 0.6 : 0.3));
     const off = portrait ? new THREE.Vector3(0, 15.5, 10.5) : new THREE.Vector3(0, 11, 9.5);
-    if (s?.phase === 'finished') off.multiplyScalar(0.6);
-    const pos = look.clone().add(off);
+    let pos = look.clone().add(off);
+    // 決着: 勝った 子を 正面の 上から 寄って(まわりで 花火)
+    if (s?.phase === 'finished' && s.winner !== null) {
+      const w = s.runners[s.winner];
+      look.set(w.x, 1.1, w.z - 0.6);
+      pos = new THREE.Vector3(w.x, portrait ? 8.5 : 6.5, w.z + (portrait ? 7 : 6.5));
+    }
     camera.fov = portrait ? 52 : 45;
     camera.aspect = aspect;
     camera.updateProjectionMatrix();

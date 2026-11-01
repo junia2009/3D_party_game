@@ -806,6 +806,9 @@
   #hudOk .chip i { width: 16px; height: 16px; }
   #hudOk .chip b { font-size: 12px; min-width: 1.2em; text-align: right; }
   #hudOk .chip.oni { box-shadow: 0 0 0 3px #ff4a3a; position: relative; }
+  /* いま 1位の 子: 金の ふちと 王冠 */
+  #hudOk .chip.lead { background: linear-gradient(#fff6c8, #ffe27a); position: relative; }
+  #hudOk .chip.lead::before { content: ''; position: absolute; right: 2px; top: -9px; width: 14px; height: 10px; background: #ffc83a; clip-path: polygon(0 100%, 0 30%, 25% 60%, 50% 0, 75% 60%, 100% 30%, 100% 100%); }
   #hudOk .chip.oni::after { content: ''; position: absolute; left: 6px; top: -9px; width: 14px; height: 10px; clip-path: polygon(0 100%, 20% 0, 40% 100%, 60% 100%, 80% 0, 100% 100%); background: #ffd24a; }
   #hudOk .timer:empty { visibility: hidden; }
   /* かくれ中: 下の まん中に 葉っぱの ふだ。ガサガサは きいろ、見つかったら 赤 */
@@ -1215,6 +1218,7 @@
   .ranks li:first-child .no { color: #d99a1e; }
   .ranks .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(0,0,0,.2); }
   .ranks small { display: block; font-weight: 700; font-size: 11px; color: #8a6238; }
+  .ranks small.u { display: inline; margin-left: 1px; }
   .ranks .dist { font-variant-numeric: tabular-nums; font-size: 14px; text-align: right; }
 
   /* ── キャラ図鑑: 島の前でひらく本 ──
