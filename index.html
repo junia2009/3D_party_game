@@ -1123,7 +1123,8 @@
     box-shadow: inset 0 0 34px rgba(122,74,36,.45);
   }
   .mappage svg.route { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  .mapbook .compass { position: absolute; right: 14px; bottom: 14px; width: 54px; height: 54px; opacity: .85; pointer-events: none; transform: rotate(-12deg); }
+  /* 方位じしん: 左の 1つめと 2つめの 島の あいだ(島・説明・札と かさならない ところ)*/
+  .mapbook .compass { position: absolute; left: 7%; top: 35%; width: 50px; height: 50px; opacity: .8; pointer-events: none; transform: translate(0, -50%) rotate(-12deg); }
   .isle {
     position: relative; display: flex; align-items: center; gap: 8px; min-height: 0; border: 0; background: none; padding: 0 4px;
     cursor: pointer; font: inherit; color: #4a2a12; text-align: left; -webkit-tap-highlight-color: transparent;
