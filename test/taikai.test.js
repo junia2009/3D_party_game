@@ -74,7 +74,7 @@ test('ステージ: 道がつながっていて、どのマスからも一周で
   }
   assert.ok(ST.owlSpots.length >= 15 && ST.owlSpots.every((id) => ST.squares[id].kind === 'blue'));
   assert.ok(LIST.some((x) => x.ready && STAGES[x.key]), 'ステージ選択に遊べるステージがある');
-  assert.ok(LIST.some((x) => !x.ready), 'じゅんびちゅうの札もある');
+  assert.ok(LIST.every((x) => !x.ready || STAGES[x.key]), '遊べる 札の ステージは みんな ある');
 });
 
 test('CPU だけで大会を最後まで回すと、決めたターン数で決着する', () => {

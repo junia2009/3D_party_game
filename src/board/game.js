@@ -396,6 +396,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     atmosphere.apply(params.get('time') || st.time || 'day');
     atmosphere.setupShadows(pieces.map((p) => p.holder), pieces.map((p) => p.holder));
     placeOwl(s.owl, true);
+    if (view.sea) { view.sea.swimTo(s.whale, 0, true); view.sea.setFlow(s.flow); }
     setMode('playing');
     intro = fromSky ? 0 : 1;
     camOn(me);
@@ -468,6 +469,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     slide: { color: '#ff7a3a', mark: '≫', title: 'すべり台', text: () => '落ち葉のすべり台で、先のマスまで 一気にすべる!' },
     ice: { color: '#8fd3ff', mark: '❄', title: 'つるつる氷', text: () => '氷の上では 止まれない! もう少し すべる' },
     ride: { color: '#ff4f9a', mark: '乗', title: '乗り場', text: () => 'どんぐりを はらって 乗り物に 乗れる。行き先は くじ!' },
+    current: { color: '#2fc8e8', mark: '≈', title: '海流マス', text: () => (game?.s.flow < 0 ? 'うしろ向きの 流れに のって、5マス もどる!' : '流れに のって、5マス 先へ!') },
+    chest: { color: '#ffb02a', mark: '宝', title: '宝箱マス', text: () => '宝箱を あけよう! どんぐりが ざくざく…かも' },
   };
   const HAPPEN_INFO = {
     spring: { title: '春の雨', text: '池があふれた! 止まった子は 3マス もどる' },
@@ -478,6 +481,10 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     coaster: { title: '宙がえり', text: 'どんぐりを 5こ 落とした! コースターに いる 子が 山分け' },
     wheel: { title: '花火', text: 'きれいな 花火! みんな どんぐり +3、止まった子は +6' },
     ghost: { title: 'おばけの いたずら', text: 'おばけが だれかと 場所を 入れかえた!' },
+    coral: { title: 'ふぐ ぷくっ', text: 'ふぐが ふくらんだ! 止まった子は +3、近くの子は 3マス はじかれる' },
+    kelp: { title: 'ラッコの 貝わり', text: 'ラッコが 貝を わって くれた! どんぐりが 1〜12こ' },
+    wreck: { title: '宝の地図', text: '宝の地図を 見つけた! ホーホー先生の 近くへ…それとも?' },
+    deep: { title: '電気クラゲ', text: 'ビリビリ! 深海に いる子は みんな どんぐり -4' },
   };
   // 乗り物の くじの 結果
   const RIDE_OUTCOME = {
@@ -609,6 +616,40 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       react(e.slot, 'cheer', 'happy', 4);
       fx.fireworks(me().clone(), 7, () => { sfx.boom(); });
       await sleep(4.0 / speed());
+    } else if (e.area === 'coral') {
+      // ふぐが ぷくーっと ふくらんで、まわりを はじく(このあと fugu で 近くの子が うしろへ)
+      camOn(e.slot);
+      cam.close = true;
+      fx.puff(me().clone().setY(1.6));
+      sfx.balloon();
+      react(e.slot, 'idle', 'surprised', 1.4);
+      await sleep(1.0 / speed());
+      cam.shake = 0.25;
+      sfx.squash();
+      await sleep(0.6 / speed());
+    } else if (e.area === 'kelp') {
+      // ラッコが 貝を こんこん → ぱかっ
+      camOn(e.slot);
+      cam.close = true;
+      for (let k = 0; k < 3; k++) { sfx.bonk(); await sleep(0.35 / speed()); }
+      fx.sparkle(me().clone().setY(1.2), 16, 2);
+      react(e.slot, 'cheer', 'happy', 2);
+      await sleep(0.8 / speed());
+    } else if (e.area === 'wreck') {
+      // 古い 地図が ひらひら
+      camOn(e.slot);
+      cam.close = true;
+      fx.sparkle(me().clone().setY(1.5), 10, 1.5);
+      sfx.item();
+      react(e.slot, 'idle', 'surprised', 1.4);
+      await sleep(1.4 / speed());
+    } else if (e.area === 'deep') {
+      // 電気クラゲが ビリビリ: 深海の みんなが しびれる
+      camOn(e.slot);
+      cam.close = true;
+      for (let k = 0; k < 4; k++) { cam.shake = 0.2; sfx.thunder(); await sleep(0.3 / speed()); }
+      game.pieces.forEach((q, i) => { if (st.squares[q.sq].area === 'deep') react(i, 'dizzy', 'frustrated', 2); });
+      await sleep(0.8 / speed());
     } else if (e.area === 'ghost') {
       // うしろから 大きな おばけが ぬっ…「ばあ!」(このあと ghostSwap で 入れかわる)
       camOn(e.slot);
@@ -725,6 +766,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           view.pulse(e.sq);
           const q = st.squares[e.sq];
           const info = q.ice ? KIND_INFO.ice : KIND_INFO[e.kind];
+          // クジラに のる ときは、止まった マスの 説明は しない(効果は 行き先で)
+          if (events[events.indexOf(e) + 1]?.type === 'whaleRide') break;
           if (q.ride) await explain({ ...info, title: `${st.rides[q.ride].name}の 乗り場`, text: `どんぐり ${st.rides[q.ride].price}こで 乗れる。行き先は くじ!`, who: e.slot });
           else if (info && e.kind !== 'happen') await explain({ ...info, text: info.text(s.turns - s.turn < RULES.spurtTurns), who: e.slot });
           break;
@@ -790,6 +833,102 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           await sleep(0.8 / speed());
           break;
         case 'fireworks':
+          break;
+        // ── 海の中 ──
+        case 'current': {
+          // 流れに のって すーっと 運ばれる
+          camOn(e.slot);
+          const p = game.pieces[e.slot];
+          const to = view.squarePos(e.to, new THREE.Vector3());
+          const dir = new THREE.Vector3(to.x - p.holder.position.x, 0, to.z - p.holder.position.z).normalize();
+          fx.surge(() => p.holder.position, dir, 1.8 / speed());
+          sfx.splash();
+          react(e.slot, e.dir > 0 ? 'cheer' : 'dizzy', e.dir > 0 ? 'happy' : 'surprised', 2);
+          await movePiece(e.slot, e.to, { hop: false, time: 1.8 / speed(), arc: 1.2 });
+          settlePieces();
+          await sleep(0.3 / speed());
+          break;
+        }
+        case 'flow':
+          view.sea?.setFlow(e.dir);
+          camOver();
+          sfx.splash();
+          await explain({ color: '#2fc8e8', mark: '≈', title: e.dir < 0 ? '海流が ぎゃくに!' : '海流が もとに もどった', text: e.dir < 0 ? 'このターンは 海流マスで 5マス うしろへ 流される' : 'このターンは 海流マスで 5マス 先へ 進める', sec: 2.6 });
+          break;
+        case 'whale': {
+          // クジラが つぎの 場所へ 泳いで いく
+          if (!view.sea) break;
+          cam.ball = view.sea.whale.position;
+          cam.mode = 'ball';
+          cam.glide = true;
+          sfx.chime();
+          await view.sea.swimTo(e.to, 2.4 / speed());
+          await explain({ color: '#4a7ac8', mark: '鯨', title: 'クジラが 泳いでいった', text: 'クジラの 近く(前後1マス)に 止まると、背中に のって 10マス 先へ!', sec: 2.4 });
+          break;
+        }
+        case 'whaleRide': {
+          // クジラの 背中に ぴょん → いっしょに 泳いで → 行き先へ おりる
+          const p = game.pieces[e.slot];
+          if (!view.sea) { await movePiece(e.slot, e.to, { time: 1.6 / speed(), arc: 5 }); settlePieces(); break; }
+          camOn(e.slot);
+          await explain({ color: '#4a7ac8', mark: '鯨', title: 'クジラの 背中に のった!', text: '10マス 先まで 運んで もらう', who: e.slot, sec: 1.8 });
+          const seat = new THREE.Vector3();
+          view.sea.whaleSeat.getWorldPosition(seat);
+          await animTo(p, seat, { time: 0.7 / speed(), arc: 2 });
+          cam.ball = p.holder.position;
+          cam.mode = 'ball';
+          cam.glide = true;
+          sfx.chime();
+          react(e.slot, 'cheer', 'happy', 4);
+          const dur = 3.0 / speed();
+          const swim = view.sea.swimTo(e.to, dur);
+          await ridePath(p, (t, out) => view.sea.whaleSeat.getWorldPosition(out), dur);
+          await swim;
+          await movePiece(e.slot, e.to, { time: 0.9 / speed(), arc: 2.5 });
+          p.squash = 1;
+          fx.sparkle(p.holder.position.clone().setY(0.4), 12, 2);
+          settlePieces();
+          camOn(e.slot);
+          await sleep(0.3 / speed());
+          break;
+        }
+        case 'chest': {
+          camOn(e.slot);
+          const at = game.pieces[e.slot].holder.position.clone();
+          if (e.acorns > 0) {
+            fx.sparkle(at.clone().setY(1), 20, 3);
+            if (e.acorns >= 15) { fx.confetti(at, 40); sfx.medal(); } else sfx.gain();
+            react(e.slot, 'cheer', 'happy', 2);
+            await explain({ color: '#ffb02a', mark: '宝', title: e.acorns >= 15 ? '大当たり!' : 'どんぐりが ざくざく!', text: `宝箱から どんぐりが ${e.acorns}こ!`, who: e.slot, sec: 2 });
+          } else {
+            fx.puff(at.clone().setY(0.8));
+            sfx.spooky();
+            cam.shake = 0.25;
+            react(e.slot, 'dizzy', 'surprised', 2);
+            await explain({ color: '#e8402f', mark: '宝', title: 'びっくり箱!', text: `ばね の おもちゃが とびだした! どんぐりを ${-e.acorns}こ 落とした`, who: e.slot, sec: 2 });
+          }
+          break;
+        }
+        case 'fugu': {
+          // 近くの子が うしろへ はじかれる
+          await Promise.all(e.hit.map((i, k) => { react(i, 'dizzy', 'surprised', 1.6); return movePiece(i, e.to[k], { hop: false, time: 1.0 / speed(), arc: 1.5 }); }));
+          settlePieces();
+          if (e.hit.length) await explain({ color: '#9b6bff', mark: '!', title: 'はじかれた!', text: e.hit.map(name).join('・') + 'が うしろへ', sec: 1.8 });
+          break;
+        }
+        case 'shell':
+          break;
+        case 'treasureMap': {
+          camOn(e.slot);
+          await explain({ color: e.good ? '#ffd24a' : '#e8402f', mark: '宝', title: e.good ? 'ほんものの 宝の地図!' : '古い 地図だった…', text: e.good ? 'ホーホー先生の すぐ 近くへ!' : '道に まよって 4マス もどる', who: e.slot, sec: 2 });
+          await movePiece(e.slot, e.to, { time: 1.6 / speed(), arc: e.good ? 5 : 1.5 });
+          settlePieces();
+          react(e.slot, e.good ? 'cheer' : 'dizzy', e.good ? 'happy' : 'frustrated', 1.6);
+          if (e.good) fx.sparkle(game.pieces[e.slot].holder.position.clone().setY(0.4), 14, 2);
+          await sleep(0.4 / speed());
+          break;
+        }
+        case 'jelly':
           break;
         case 'ghostSwap': {
           // ぽん! と けむりに なって、場所が 入れかわる

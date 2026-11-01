@@ -14,6 +14,7 @@ import { mergeStatic } from '../runtime/merge.js';
 import { acornGeometry, foliageClump, makeRand } from '../games/daruma/trees.js';
 import { grassTexture } from '../games/daruma/ground.js';
 import { buildPark } from './scene-yuen.js';
+import { buildSea } from './scene-umi.js';
 
 // エリアの色: ground 地面 / leaf マス / tree 木の葉(下・上)/ stone 飛び石 / drip 島の下に垂れるもの
 const SEASON = {
@@ -26,6 +27,11 @@ const SEASON = {
   coaster: { ground: 0x86c964, leaf: 0x5cc0ff, leafEdge: 0x2f8ad0, tree: [0x2f7a35, 0x9ad468], stone: 0xe6dcc4, drip: 0x6aa956 },
   wheel: { ground: 0x9ad87a, leaf: 0xff8fb8, leafEdge: 0xd9608a, tree: [0x3f8a45, 0xb6e27a], stone: 0xe6dcc4, drip: 0x6aa956 },
   ghost: { ground: 0x8f84b8, leaf: 0xff9a3a, leafEdge: 0xc8641a, tree: [0x40305e, 0x8a6ab8], stone: 0xa49ac4, drip: 0x5a4a7a },
+  // 海の中の 探検(地面は 砂)
+  coral: { ground: 0xf2dfae, leaf: 0xff8a6a, leafEdge: 0xd85a4a, tree: [0x2f7a35, 0x8fd060], stone: 0xfff2d6, drip: 0xff9ab0 },
+  kelp: { ground: 0xc8d49a, leaf: 0x6ac06a, leafEdge: 0x3f8a46, tree: [0x2f7a35, 0x8fd060], stone: 0xe6e0c4, drip: 0x4f9a3a },
+  wreck: { ground: 0x9ab8c4, leaf: 0xf2e2c0, leafEdge: 0xc8a878, tree: [0x2f7a35, 0x8fd060], stone: 0xc8d8dc, drip: 0x5a7a8a },
+  deep: { ground: 0x4a5878, leaf: 0x9a8aff, leafEdge: 0x6a5ac8, tree: [0x2f7a35, 0x8fd060], stone: 0x6a7898, drip: 0x2a3050 },
 };
 // マスの札: 色と印
 const BADGE = {
@@ -38,6 +44,8 @@ const BADGE = {
   shop: { color: '#ffc23c', mark: '店', ink: '#4a2a12' },
   slide: { color: '#ff7a3a', mark: '≫' },
   ride: { color: '#ff4f9a', mark: '乗' },
+  current: { color: '#2fc8e8', mark: '≈' },
+  chest: { color: '#ffb02a', mark: '宝', ink: '#4a2a12' },
 };
 // 乗り場の札: きっぷの 形の 印
 function rideBadge() {
@@ -169,6 +177,35 @@ function badgeTexture(kind, ice) {
   return t;
 }
 
+// 海の 底の 砂: 白っぽい つぶと、波の あと
+function sandTexture() {
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#ffffff';
+  x.fillRect(0, 0, S, S);
+  const rnd = makeRand(77);
+  for (let i = 0; i < 1400; i++) {
+    x.fillStyle = rnd() < 0.5 ? 'rgba(200,180,140,.35)' : 'rgba(255,255,255,.8)';
+    x.fillRect(rnd() * S, rnd() * S, 2, 2);
+  }
+  x.strokeStyle = 'rgba(190,170,130,.35)';
+  x.lineWidth = 3;
+  for (let k = 0; k < 7; k++) {
+    x.beginPath();
+    for (let i = 0; i <= 32; i++) {
+      const px = (i / 32) * S, py = k * 38 + 12 + Math.sin(i * 0.8 + k) * 6;
+      if (i === 0) x.moveTo(px, py); else x.lineTo(px, py);
+    }
+    x.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
 // 季節の葉っぱの形(だいたい直径 2)
 function leafShape(area) {
   const sh = new THREE.Shape();
@@ -219,6 +256,43 @@ function leafShape(area) {
     sh.bezierCurveTo(0.85, 0.95, 0.25, 1.0, 0, 0.55);
     sh.bezierCurveTo(-0.25, 1.0, -0.85, 0.95, -1.0, 0.5);
     sh.bezierCurveTo(-1.15, 0.05, -0.7, -0.45, 0, -1);
+  } else if (area === 'coral') {
+    // ヒトデ: 5本の うで(先を まるく)
+    for (let k = 0; k <= 60; k++) {
+      const a = Math.PI / 2 + (k / 60) * Math.PI * 2;
+      const r = 0.55 + 0.5 * Math.max(0, Math.cos(a * 5 - Math.PI / 2 * 5)) ** 2;
+      const px = Math.cos(a) * r, py = Math.sin(a) * r;
+      if (k === 0) sh.moveTo(px, py); else sh.lineTo(px, py);
+    }
+  } else if (area === 'kelp') {
+    // 海藻の 葉: ほそながい 葉に、ふちの なみ
+    for (let k = 0; k <= 40; k++) {
+      const a = (k / 40) * Math.PI * 2;
+      const r = 1 + Math.sin(a * 6) * 0.06;
+      const px = Math.cos(a) * 0.72 * r, py = Math.sin(a) * 1.08 * r;
+      if (k === 0) sh.moveTo(px, py); else sh.lineTo(px, py);
+    }
+  } else if (area === 'wreck') {
+    // ホタテ貝: おうぎ形の ぎざぎざ + 根もとの みみ
+    sh.moveTo(-0.3, -0.95);
+    for (let k = 0; k <= 9; k++) {
+      const a = Math.PI * 1.2 - (k / 9) * Math.PI * 1.4;
+      const r = k % 1 === 0 ? 1.0 : 0.9;
+      sh.quadraticCurveTo(Math.cos(a + 0.08) * r * 1.08, Math.sin(a + 0.08) * r * 1.08 - 0.1, Math.cos(a) * r, Math.sin(a) * r - 0.1);
+    }
+    sh.lineTo(0.3, -0.95);
+    sh.lineTo(0.5, -1.05);
+    sh.lineTo(-0.5, -1.05);
+    sh.lineTo(-0.3, -0.95);
+  } else if (area === 'deep') {
+    // クラゲの かさ: まるい かさに、すそが ひらひら
+    sh.moveTo(-1, 0);
+    sh.absarc(0, 0, 1, Math.PI, 0, true);
+    for (let k = 0; k <= 8; k++) {
+      const x = 1 - (k / 8) * 2;
+      sh.lineTo(x, k % 2 ? -0.45 : -0.2);
+    }
+    sh.lineTo(-1, 0);
   } else if (area === 'ghost') {
     // かぼちゃ: 5つの ふくらみ + へた
     for (let k = 0; k <= 40; k++) {
@@ -389,6 +463,11 @@ const DRIFT = {
   gate: { color: 0xffffff, colors: [0xff6a8a, 0xffd23c, 0x5cc0ff, 0x7ad35a, 0xb48cff], geo: () => new THREE.PlaneGeometry(0.14, 0.09), fall: 0.45, sway: 1.0, n: 50 },
   wheel: { color: 0xe8f6ff, geo: () => new THREE.SphereGeometry(0.12, 8, 6), fall: -0.35, sway: 0.8, n: 18, bubble: true },
   ghost: { color: 0xc8b6ff, geo: () => new THREE.SphereGeometry(0.08, 6, 4), fall: -0.25, sway: 0.6, n: 26 },
+  // 海の中: あわが のぼる。深海は 光る つぶ(マリンスノーは ゆっくり 落ちる)
+  coral: { color: 0xeafcff, geo: () => new THREE.SphereGeometry(0.1, 8, 6), fall: -0.6, sway: 0.3, n: 40, bubble: true },
+  kelp: { color: 0xeafcff, geo: () => new THREE.SphereGeometry(0.09, 8, 6), fall: -0.5, sway: 0.4, n: 34, bubble: true },
+  wreck: { color: 0xeafcff, geo: () => new THREE.SphereGeometry(0.1, 8, 6), fall: -0.55, sway: 0.3, n: 30, bubble: true },
+  deep: { color: 0xc8e8ff, geo: () => new THREE.SphereGeometry(0.05, 5, 4), fall: 0.18, sway: 0.5, n: 60 },
 };
 function createDrifters(scene, st, isle) {
   const areas = new Set(st.squares.map((q) => q.area));
@@ -479,7 +558,7 @@ export function buildBoardScene(scene, st) {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setIndex(idx);
     geo.computeVertexNormals();
-    const m = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient, map: grassTexture() });
+    const m = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient, map: st.sea ? sandTexture() : grassTexture() });
     m.map.repeat.set(1, 1);
     const top = new THREE.Mesh(geo, m);
     top.name = 'islandTop';
@@ -599,6 +678,7 @@ export function buildBoardScene(scene, st) {
   const near = (x, z, r) => st.squares.some((q) => (q.x - x) ** 2 + (q.z - z) ** 2 < r * r);
   // 遊園地: 乗り物と 飾り(木を 置かない ところも 教えてもらう)
   const park = st.key === 'yuen' ? buildPark(g, st, rand, { near, isle, podium: PODIUM_AT }) : null;
+  const sea = st.sea ? buildSea(g, st, rand, { near, isle, podium: PODIUM_AT }) : null;
   // 木: 島のふちと、道の内がわ
   const crownMats = {};
   const trunkMat = toonMaterial(0x6b4c36);
@@ -620,7 +700,7 @@ export function buildBoardScene(scene, st) {
   })();
   const pineMat = toonMaterial(0x2f6a4a), snowCap = toonMaterial(0xf6fbff);
   let placed = 0;
-  for (let i = 0; i < 400 && placed < (park ? 36 : 70); i++) {
+  for (let i = 0; i < 400 && placed < (sea ? 0 : park ? 36 : 70); i++) {
     const a = rand() * Math.PI * 2, r = 0.25 + rand() * 0.6;
     const x = Math.cos(a) * isle.rx * r, z = Math.sin(a) * isle.rz * r;
     if (near(x, z, 2.4)) continue;
@@ -708,7 +788,7 @@ export function buildBoardScene(scene, st) {
     g.add(stall);
   }
   // まん中: どんぐりの大木(全体を見るときに盤をかくさないよう、低めに)。どんぐりがぶら下がる
-  if (!park) {
+  if (!park && !sea) {
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.3, 4.5, 12), toonMaterial(0x6b4c36));
     trunk.position.y = 2.25;
     g.add(trunk);
@@ -761,7 +841,7 @@ export function buildBoardScene(scene, st) {
   }
 
   // 季節の飾り
-  if (!park) buildSeasonProps(g, st, rand, near, isle);
+  if (!park && !sea) buildSeasonProps(g, st, rand, near, isle);
 
   mergeStatic(g, (o) => o.userData.anchor); // 回る 乗り物(anchor)は、それぞれで まとめる
   scene.add(g);
@@ -780,6 +860,7 @@ export function buildBoardScene(scene, st) {
     // 乗り物(遊園地): rides[key].path(t, out) で、乗っている ときの 位置(t は 0〜1)
     rides: park?.rides || {},
     park,
+    sea,
     // 止まったマスの札を、ぽんと弾ませる
     pulse(id) { pulses.set(id, 0); },
     // ステージを かえるとき: 盤を 片づけて、GPU の メモリも 返す
@@ -799,6 +880,7 @@ export function buildBoardScene(scene, st) {
     update(dt) {
       drift.update(dt);
       park?.update(dt);
+      sea?.update(dt);
       for (const [id, t0] of pulses) {
         const t = t0 + dt;
         const f = faces[id];

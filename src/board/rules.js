@@ -36,6 +36,7 @@ export const RULES = {
   happen: {
     springBack: 3, summerHit: 10, summerNear: 3, summerRange: 3, winterLoss: 5,
     floatMin: 3, floatMax: 5, loopDrop: 5, fireAll: 3, fireHit: 6,
+    fuguRange: 3, fuguBack: 3, fuguHit: 3, shellMax: 12, mapBack: 4, jellyLoss: 4,
   },
 };
 export const TURNS = [5, 10, 15];
@@ -93,6 +94,8 @@ export function createTournament(players, seed, { stage = 'shiki', turns = 10 } 
     s.bonus.push(k);
   }
   s.owl = st.owlSpots[rint(s, st.owlSpots.length)];
+  // 海の 中: 流れの 向き(1 = 前、-1 = うしろ)と クジラの 場所
+  if (st.sea) { s.flow = 1; s.whale = st.sea.whaleStart; }
   return s;
 }
 
@@ -284,6 +287,7 @@ export function act(s, a) {
         s.cur = 0;
         ev.push({ type: 'turn', turn: s.turn, spurt: spurt(s) });
         if (s.turns - s.turn + 1 === RULES.spurtTurns) ev.push({ type: 'spurt' });
+        seaTurn(s, ev);
         startPlayer(s, ev);
       }
       return ev;
@@ -371,6 +375,25 @@ function land(s, ev, slot, chained = false) {
     if (p.acorns >= st.rides[q.ride].price) { s.pending = { type: 'ride', slot, ride: q.ride }; return; }
     ev.push({ type: 'rideSkip', slot, why: 'どんぐりがない' });
   }
+  // 海の 中: クジラの 背中・海流
+  if (!chained && st.sea) {
+    if (nearWhale(s, st, p.sq)) {
+      let to = p.sq;
+      for (let i = 0; i < st.sea.whaleRide; i++) to = ahead(st, to);
+      ev.push({ type: 'whaleRide', slot, from: p.sq, to });
+      p.sq = to;
+      s.whale = to; // クジラも いっしょに 泳いで いく
+      return land(s, ev, slot, true);
+    }
+    if (q.kind === 'current') {
+      const prev = prevMap(st);
+      let to = p.sq;
+      for (let i = 0; i < st.sea.current; i++) to = s.flow > 0 ? ahead(st, to) : prev[to];
+      ev.push({ type: 'current', slot, from: p.sq, to, dir: s.flow });
+      p.sq = to;
+      return land(s, ev, slot, true);
+    }
+  }
   const mul = spurt(s) ? 2 : 1;
   switch (q.kind) {
     case 'blue': gain(s, slot, RULES.blue * mul, ev, 'blue'); break;
@@ -385,6 +408,14 @@ function land(s, ev, slot, chained = false) {
       break;
     }
     case 'happen': happen(s, ev, slot, q.area); break;
+    case 'chest': {
+      const list = st.sea.chest;
+      let x = nextRandom(s) * list.reduce((a, c) => a + c.w, 0);
+      const c = list.find((o) => (x -= o.w) < 0) || list[0];
+      ev.push({ type: 'chest', slot, acorns: c.acorns });
+      gain(s, slot, c.acorns, ev, 'chest');
+      break;
+    }
     case 'duel': {
       if (s.players.some((o, i) => i !== slot && o.acorns > 0) && p.acorns > 0) { s.pending = { type: 'duelPick', slot }; return; }
       ev.push({ type: 'duelSkip', slot, why: 'どんぐりがない' });
@@ -441,6 +472,30 @@ function happen(s, ev, slot, area) {
     // 花火: みんな +3、止まった子は +6
     ev.push({ type: 'fireworks', slot });
     s.players.forEach((_, i) => gain(s, i, i === slot ? H.fireHit : H.fireAll, ev, 'happen'));
+  } else if (area === 'coral') {
+    // ふぐ ぷくっ: 止まった子は +3、まわり(前後3マス)の子は 3 マス うしろへ はじかれる
+    const prev = prevMap(st);
+    const hit = s.players.map((_, i) => i).filter((i) => i !== slot && near(st, s.players[slot].sq, s.players[i].sq, H.fuguRange));
+    gain(s, slot, H.fuguHit, ev, 'happen');
+    for (const i of hit) { const o = s.players[i]; for (let k = 0; k < H.fuguBack; k++) o.sq = prev[o.sq]; }
+    ev.push({ type: 'fugu', slot, hit, to: hit.map((i) => s.players[i].sq) });
+  } else if (area === 'kelp') {
+    // ラッコの 貝わり: どんぐり 1〜12 こ(くじ)
+    const n = 1 + rint(s, H.shellMax);
+    ev.push({ type: 'shell', slot, n });
+    gain(s, slot, n, ev, 'happen');
+  } else if (area === 'wreck') {
+    // 宝の 地図: 半分は 先生の 2 マス 手前へ、半分は 古い 地図で 4 マス もどる
+    const prev = prevMap(st);
+    const o = s.players[slot];
+    const good = nextRandom(s) < 0.5;
+    if (good) o.sq = prev[prev[s.owl]];
+    else for (let k = 0; k < H.mapBack; k++) o.sq = prev[o.sq];
+    ev.push({ type: 'treasureMap', slot, good, to: o.sq });
+  } else if (area === 'deep') {
+    // 電気クラゲ: 深海に いる 子は みんな -4
+    ev.push({ type: 'jelly', slot });
+    s.players.forEach((o, i) => { if (st.squares[o.sq].area === 'deep') gain(s, i, -H.jellyLoss, ev, 'happen'); });
   } else if (area === 'ghost') {
     // おばけの いたずら: 止まった子と、くじで えらばれた ほかの子の 場所が いれかわる
     const others = s.players.map((_, i) => i).filter((i) => i !== slot);
@@ -473,6 +528,25 @@ function ride(s, ev, slot, key) {
   ev.push({ type: 'ride', slot, ride: key, outcome: o.kind, to });
   if (o.kind === 'stay') { gain(s, slot, o.acorns, ev, 'ride'); endPlayer(s, ev); return; }
   land(s, ev, slot, true);
+}
+
+// 海の 中: クジラの 近くか(クジラの マスから 前後 whaleReach マス)
+function nearWhale(s, st, sq) {
+  return s.whale !== undefined && near(st, s.whale, sq, st.sea.whaleReach);
+}
+// 海の 中: 新しい ターンの はじめに、流れの 向きを くじで きめて、クジラが 泳ぐ
+function seaTurn(s, ev) {
+  const st = stageOf(s);
+  if (!st.sea) return;
+  const flow = nextRandom(s) < st.sea.backFlow ? -1 : 1;
+  if (flow !== s.flow) ev.push({ type: 'flow', dir: flow });
+  s.flow = flow;
+  const [a, b] = st.sea.whaleSwim;
+  const n = a + rint(s, b - a + 1);
+  let to = s.whale;
+  for (let i = 0; i < n; i++) to = ahead(st, to);
+  s.whale = to;
+  ev.push({ type: 'whale', to, n });
 }
 
 // 先生が移る。who がいれば(笛)その子の 1〜10 マス先へ。いなければ(メダルを売った)遠くのマスへ

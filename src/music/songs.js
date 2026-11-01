@@ -172,6 +172,37 @@ const yuen = {
   order: ['A', 'A', 'B', 'A'],
 };
 
+// 海の中の 探検「うみの なか」── ゆらゆら 泳ぐ。オカリナの 長い 音と、あわの てっきん
+const seaA = ['F', 'Am', 'Bb', 'C', 'F', 'Dm', 'Gm C7', 'F'];
+const seaB = ['Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'Gm', 'C7'];
+const umi = {
+  bpm: 100,
+  swing: 0.16,
+  sections: {
+    A: {
+      lead: { inst: 'ocarina', gain: 0.6, notes: seq(`
+        A4 - - - C5 - F5 - | E5 - - - C5 - A4 - | D5 - - - F5 - Bb5 - | A5 - - - G5 - - - |
+        A4 - - - C5 - F5 - | A5 - - - F5 - D5 - | Bb4 - D5 - E5 - G5 - | F5 - - - - - . .`) },
+      arp: { inst: 'marimba', gain: 0.35, notes: fromChords(seaA, '0 1 2 1 0 1 2 1') },
+      bubble: { inst: 'glock', gain: 0.35, notes: seq(`. . . . . . C6 . | . . . . . . . . | . . . . F6 . . . | . . . . . . . . | . . . . . . A6 . | . . . . . . . . | . . . . . . G6 . | F6 . . . . . . .`) },
+      bass: { inst: 'bass', gain: 0.95, notes: fromChords(seaA, 'r . . . f . . .') },
+      shaker: { inst: 'drum', gain: 0.35, notes: seq(rep('s . s . s . s .', 8)) },
+      poko: { inst: 'drum', gain: 0.4, notes: seq(rep('k . . . t . . .', 8)) },
+    },
+    B: {
+      lead: { inst: 'marimba', gain: 1.1, notes: seq(`
+        D5 . F5 . A5 . F5 . | Bb4 . D5 . F5 . D5 . | C5 . F5 . A5 . C6 . | G5 - - - E5 - - - |
+        D5 . F5 . A5 . D6 . | Bb5 . A5 . F5 . D5 . | G5 . Bb5 . D6 . Bb5 . | C6 - - - - - . .`) },
+      pad: { inst: 'ocarina', gain: 0.3, notes: fromChords(seaB, '1 - - - 2 - - -') },
+      bass: { inst: 'bass', gain: 0.95, notes: fromChords(seaB, 'r . . . f . r .') },
+      bubble: { inst: 'glock', gain: 0.3, notes: seq(`${empty(3)} | . . . . . . E6 . | ${empty(3)} | . . . . G6 . E6 .`) },
+      shaker: { inst: 'drum', gain: 0.35, notes: seq(rep('s . s . s . s .', 8)) },
+      poko: { inst: 'drum', gain: 0.45, notes: seq(`${rep('k . . . t . . .', 7)} | k . t . k t T .`) },
+    },
+  },
+  order: ['A', 'A', 'B', 'A'],
+};
+
 // ── 競技の 曲(雰囲気ごとに 1曲。おなじ 雰囲気の 競技で 使いまわす) ─────────────
 
 // かけっこ「どんぐり かけっこ」── 走る・すべる・とぶ。前へ 前へ
@@ -378,7 +409,7 @@ const natsu = {
   order: ['A', 'B'],
 };
 
-export const SONGS = { title, shiki, yuen, kakekko, matsuri, dokidoki, shoubu, nonbiri, tanken, natsu };
+export const SONGS = { title, shiki, yuen, umi, kakekko, matsuri, dokidoki, shoubu, nonbiri, tanken, natsu };
 
 // 競技の あいだ BGM から 効果音の 帯域を けずる 深さ(dB)。合図の 音を 聞きとる 競技は ふかく
 export const CARVE = { default: 12, board: 9, daruma: 22 };

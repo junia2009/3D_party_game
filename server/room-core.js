@@ -15,7 +15,7 @@ export const CHARACTER_KEYS = ['ponta', 'mimi', 'gonzo', 'penne', 'konko', 'kero
 const CPU_KEYS = CHARACTER_KEYS.filter((k) => k !== 'ray');
 const NAMES = { ponta: 'ポン太', mimi: 'ミミ', gonzo: 'ゴンゾ', penne: 'ペンネ', konko: 'コンコ', kerosuke: 'ケロスケ', kirin: 'キリコ', ray: 'レイ' };
 export const PERSONALITY = ['cautious', 'normal', 'bold'];
-export const STAGES = ['shiki', 'yuen'];
+export const STAGES = ['shiki', 'yuen', 'umi'];
 export const TURNS = [5, 10, 15];
 
 // あいことばは 数字 4けた(0 から はじまらない)

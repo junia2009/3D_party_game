@@ -41,6 +41,14 @@ export const TIMES = {
     hemi: { sky: 0xd0c0ff, ground: 0x5a5078, intensity: 1.25 },
     fill: 0.4, disc: 0xffc8a0, rays: 0, rayColor: 0xffb090, mist: 0, stars: 0.5, birds: 'none',
   },
+  // 海の中: 上は 明るい 水色、下は 深い 青。光は 上から 青みがかって
+  sea: {
+    label: 'うみ',
+    zenith: 0xa8f2ff, horizon: 0x2f86c4, fog: 0x5ab6dc, fogNear: 55, fogFar: 190,
+    sun: { dir: [0.2, 0.95, 0.3], color: 0xd8f6ff, intensity: 2.0 },
+    hemi: { sky: 0xbff0ff, ground: 0x2a5a7a, intensity: 1.45 },
+    fill: 0.25, disc: 0xe8fcff, rays: 0, rayColor: 0xbff4ff, mist: 0, stars: 0, birds: 'none',
+  },
   night: {
     label: 'よる',
     zenith: 0x0c1636, horizon: 0x2c4472, fog: 0x22314f, fogNear: 30, fogFar: 190,
@@ -304,6 +312,7 @@ export function createAtmosphere(scene, renderer, camera, opts = {}) {
     disc.visible = dir.z < 0.3;
     stars.material.opacity = p.stars;
     stars.visible = p.stars > 0;
+    for (const c of clouds) c.visible = key !== 'sea';
     for (const c of clouds) {
       c.material.color.setHex(key === 'evening' ? 0xffc9a8 : key === 'dusk' ? 0xe8a8c8 : key === 'night' ? 0x3a4a72 : 0xffffff);
       c.material.opacity = key === 'night' ? 0.5 : 0.9;
@@ -325,7 +334,7 @@ export function createAtmosphere(scene, renderer, camera, opts = {}) {
     birdMat.color.setHex(p.birds === 'crow' ? 0x1c1c22 : p.birds === 'butterfly' ? 0xffd04a : 0x5a4a3a);
     birdMesh.visible = p.birds !== 'none';
     // 葉っぱは夕方に多め
-    leaves.count = key === 'evening' ? LEAVES : key === 'night' ? 8 : 20;
+    leaves.count = key === 'evening' ? LEAVES : key === 'night' ? 8 : key === 'sea' ? 0 : 20;
   }
 
   // 影を落とす/受けるものを決める

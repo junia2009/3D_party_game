@@ -968,11 +968,35 @@ async function playMinigame(key, lineup, character) {
 // ── 大会: ステージ選択(地図の本) ────────────────────────
 // 地図の紙に、ステージの島をえがく。遊べる島はタップできる。じゅんびちゅうの島は霧の中
 const ISLE_SPOTS = [[30, 30], [72, 52], [34, 78]]; // 地図の上の位置(%)
-function isleSvg(ready) {
+function isleSvg(ready, key) {
   if (!ready) {
     return `<svg viewBox="0 0 120 80"><ellipse cx="60" cy="46" rx="44" ry="22" fill="#c9bfa8" stroke="#8a7a6a" stroke-width="3"/>
       <g fill="#fffaf0" opacity=".92"><ellipse cx="44" cy="40" rx="26" ry="13"/><ellipse cx="72" cy="36" rx="24" ry="12"/><ellipse cx="60" cy="50" rx="34" ry="12"/></g>
       <text x="60" y="47" text-anchor="middle" font-size="22" font-family="Dela Gothic One" fill="#8a7a6a">?</text></svg>`;
+  }
+  // どんぐり遊園地: 黄緑の 島に 観覧車と テント
+  if (key === 'yuen') {
+    return `<svg viewBox="0 0 120 80">
+      <ellipse cx="60" cy="50" rx="46" ry="22" fill="#8a6a50" stroke="#4a2a12" stroke-width="3"/>
+      <ellipse cx="60" cy="44" rx="46" ry="22" fill="#9ad87a" stroke="#4a2a12" stroke-width="3"/>
+      <ellipse cx="60" cy="44" rx="30" ry="13" fill="none" stroke="#fff6e0" stroke-width="3" stroke-dasharray="3 4"/>
+      <circle cx="42" cy="26" r="13" fill="none" stroke="#ff7aa8" stroke-width="3"/><circle cx="42" cy="26" r="2.5" fill="#ff7aa8"/>
+      <path d="M42 26 L42 13 M42 26 L53 32 M42 26 L31 32 M42 26 L42 42" stroke="#ff7aa8" stroke-width="1.6"/>
+      <path d="M70 40 L80 24 L90 40 Z" fill="#ffd23c" stroke="#4a2a12" stroke-width="2"/><path d="M75 32 L85 32" stroke="#e8402f" stroke-width="2"/>
+    </svg>`;
+  }
+  // 海の中の 探検: 水色の 海に、サンゴと クジラ
+  if (key === 'umi') {
+    return `<svg viewBox="0 0 120 80">
+      <ellipse cx="60" cy="50" rx="46" ry="22" fill="#2a5a8a" stroke="#1a3050" stroke-width="3"/>
+      <ellipse cx="60" cy="44" rx="46" ry="22" fill="#6ad0e8" stroke="#1a3050" stroke-width="3"/>
+      <ellipse cx="60" cy="44" rx="30" ry="13" fill="none" stroke="#fff6e0" stroke-width="3" stroke-dasharray="3 4"/>
+      <path d="M34 48 q-3 -10 2 -16 M36 42 q4 -6 7 -6 M30 44 q-5 -4 -6 -9" stroke="#ff7aa8" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <ellipse cx="74" cy="28" rx="17" ry="9" fill="#4a7ac8" stroke="#1a3050" stroke-width="2"/>
+      <path d="M57 28 l-8 -6 l1 12 z" fill="#4a7ac8" stroke="#1a3050" stroke-width="2"/>
+      <circle cx="84" cy="26" r="1.8" fill="#1a3050"/><path d="M80 18 q2 -6 0 -9 M80 18 q-3 -5 -6 -6" stroke="#bff0ff" stroke-width="2" fill="none"/>
+      <circle cx="96" cy="44" r="2" fill="#eafcff"/><circle cx="99" cy="38" r="1.4" fill="#eafcff"/>
+    </svg>`;
   }
   // 四季の森: 島を4つに分けて、春(桃)・夏(緑)・秋(橙)・冬(白)。まん中に大木
   return `<svg viewBox="0 0 120 80">
@@ -1044,7 +1068,7 @@ function renderStageMap() {
     b.className = 'isle' + (s.ready ? '' : ' soon');
     b.style.left = `${x}%`;
     b.style.top = `${y}%`;
-    b.innerHTML = `${isleSvg(s.ready)}<b>${s.name}</b><small>${s.desc}</small>`;
+    b.innerHTML = `${isleSvg(s.ready, s.key)}<b>${s.name}</b><small>${s.desc}</small>`;
     b.addEventListener('click', () => {
       unlockAudio();
       if (!s.ready) { boop(); toast('このステージは もうすこし まっててね!'); return; }
