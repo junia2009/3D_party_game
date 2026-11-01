@@ -1123,14 +1123,15 @@
     box-shadow: inset 0 0 34px rgba(122,74,36,.45);
   }
   .mappage svg.route { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  /* 方位じしん: 左の 1つめと 2つめの 島の あいだ(島・説明・札と かさならない ところ)*/
-  .mapbook .compass { position: absolute; left: 7%; top: 35%; width: 50px; height: 50px; opacity: .8; pointer-events: none; transform: translate(0, -50%) rotate(-12deg); }
+  /* 方位じしん: 右の 1つめと 2つめの 説明の あいだ(島・説明・札と かさならない ところ)*/
+  .mapbook .compass { position: absolute; right: 8%; top: 34%; width: 50px; height: 50px; opacity: .8; pointer-events: none; transform: translate(0, -50%) rotate(-12deg); }
   .isle {
     position: relative; display: flex; align-items: center; gap: 8px; min-height: 0; border: 0; background: none; padding: 0 4px;
     cursor: pointer; font: inherit; color: #4a2a12; text-align: left; -webkit-tap-highlight-color: transparent;
     animation: islein .5s cubic-bezier(.3,1.5,.5,1) backwards; animation-delay: calc(var(--i) * .08s);
   }
-  .isle.flip { flex-direction: row-reverse; text-align: right; }
+  /* 2つめの 島は すこし 右へ(航路が くねくね に なる) */
+  .isle.shift .pic { margin-left: 6%; flex-basis: 50%; }
   .isle .pic { position: relative; flex: 0 0 56%; height: 100%; display: grid; place-items: center; }
   .isle .pic > svg:first-child { width: 100%; max-height: 100%; filter: drop-shadow(0 5px 0 rgba(74,42,18,.25)); transition: transform .2s; }
   .isle .flag { position: absolute; left: 50%; top: 22%; width: 30px; height: 40px; transform: translate(-30%, -20%) scale(0); transform-origin: 15% 100%; transition: transform .3s cubic-bezier(.3,1.8,.5,1); }
@@ -1140,7 +1141,6 @@
   .isle b { font: 400 clamp(16px, 4.6vw, 20px) var(--font-display); line-height: 1.15; }
   .isle small { font-size: 11.5px; font-weight: 700; line-height: 1.4; opacity: .8; }
   .isle .tags { display: flex; flex-wrap: wrap; gap: 3px; }
-  .isle.flip .tags { justify-content: flex-end; }
   .isle .tags i { font-style: normal; font-size: 10.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px; background: rgba(122,74,36,.14); }
   .isle.on .tags i { background: #ffd24a; }
   .isle.on b { color: #b8401e; }
@@ -1154,9 +1154,10 @@
   @media (orientation: landscape) and (max-height: 560px) {
     .mappage { min-height: 0; grid-template-rows: none; grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .mappage svg.route { display: none; }
-    .isle, .isle.flip { flex-direction: column; text-align: center; justify-content: center; gap: 2px; }
+    .isle { flex-direction: column; text-align: center; justify-content: center; gap: 2px; }
+    .isle.shift .pic { margin-left: 0; }
     .isle .pic { flex: 0 1 auto; height: auto; width: 78%; }
-    .isle .tags, .isle.flip .tags { justify-content: center; }
+    .isle .tags { justify-content: center; }
     .isle small { font-size: 10.5px; }
     .mapbook .compass { display: none; }
   }

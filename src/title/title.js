@@ -1050,7 +1050,7 @@ $('resumeDel').addEventListener('click', () => {
   b.textContent = 'この大会を けす';
   renderResume();
 });
-// 宝の地図: 島を 上から 順に 大きく ならべて、点線の 航路で つなぐ。説明は 島の よこ(左右 互いちがい)。
+// 宝の地図: 島を 上から 順に 大きく ならべて、点線の 航路で つなぐ。島は 左、説明は 右(どの 島も おなじ 形)。
 // 島を タップすると 旗が 立って えらばれる。下の「この 島へ!」で 進む
 function renderStageMap() {
   const page = $('stageMap');
@@ -1062,7 +1062,7 @@ function renderStageMap() {
   route.setAttribute('class', 'route');
   route.setAttribute('viewBox', '0 0 100 100');
   route.setAttribute('preserveAspectRatio', 'none');
-  const pts = STAGE_LIST.map((_, i) => [i % 2 ? 70 : 30, ((i + 0.5) / n) * 100]);
+  const pts = STAGE_LIST.map((_, i) => [i % 2 ? 36 : 24, ((i + 0.5) / n) * 100]);
   let d = `M${pts[0][0]} ${pts[0][1]}`;
   for (let i = 1; i < pts.length; i++) {
     const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
@@ -1073,7 +1073,7 @@ function renderStageMap() {
   STAGE_LIST.forEach((s, i) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'isle' + (i % 2 ? ' flip' : '') + (s.ready ? '' : ' soon') + (s.key === taikai.stage ? ' on' : '');
+    b.className = 'isle' + (i % 2 ? ' shift' : '') + (s.ready ? '' : ' soon') + (s.key === taikai.stage ? ' on' : '');
     b.style.setProperty('--i', String(i));
     b.innerHTML = `<span class="pic">${isleSvg(s.ready, s.key)}<svg class="flag" viewBox="0 0 30 40" aria-hidden="true"><path d="M5 38 L5 4" stroke="#4a2a12" stroke-width="3" stroke-linecap="round"/><path d="M6 5 L27 11 L6 18 Z" fill="#e8402f" stroke="#4a2a12" stroke-width="2" stroke-linejoin="round"/></svg></span>
       <span class="txt"><b>${s.name}</b><small>${s.desc}</small><span class="tags">${(s.tags || []).map((t) => `<i>${t}</i>`).join('')}</span></span>`;
