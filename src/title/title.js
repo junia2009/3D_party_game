@@ -967,7 +967,6 @@ async function playMinigame(key, lineup, character) {
 
 // ── 大会: ステージ選択(地図の本) ────────────────────────
 // 地図の紙に、ステージの島をえがく。遊べる島はタップできる。じゅんびちゅうの島は霧の中
-const ISLE_SPOTS = [[30, 30], [72, 52], [34, 78]]; // 地図の上の位置(%)
 function isleSvg(ready, key) {
   if (!ready) {
     return `<svg viewBox="0 0 120 80"><ellipse cx="60" cy="46" rx="44" ry="22" fill="#c9bfa8" stroke="#8a7a6a" stroke-width="3"/>
@@ -1051,34 +1050,46 @@ $('resumeDel').addEventListener('click', () => {
   b.textContent = 'この大会を けす';
   renderResume();
 });
+// 宝の地図: 島を 上から 順に 大きく ならべて、点線の 航路で つなぐ。説明は 島の よこ(左右 互いちがい)。
+// 島を タップすると 旗が 立って えらばれる。下の「この 島へ!」で 進む
 function renderStageMap() {
   const page = $('stageMap');
   page.replaceChildren();
-  // 島と島をむすぶ、点線の航路
-  const sea = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  sea.setAttribute('class', 'sea');
-  sea.setAttribute('viewBox', '0 0 100 100');
-  sea.setAttribute('preserveAspectRatio', 'none');
-  sea.innerHTML = `<path d="M${ISLE_SPOTS.map((p) => p.join(' ')).join(' L')}" fill="none" stroke="#a07a4a" stroke-width=".8" stroke-dasharray="2 2"/>`;
-  page.append(sea);
+  if (!STAGE_LIST.some((s) => s.key === taikai.stage && s.ready)) taikai.stage = STAGE_LIST.find((s) => s.ready).key;
+  const n = STAGE_LIST.length;
+  // 航路(島の 中心を 左右 互いちがいに 通る、ゆるい カーブ)
+  const route = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  route.setAttribute('class', 'route');
+  route.setAttribute('viewBox', '0 0 100 100');
+  route.setAttribute('preserveAspectRatio', 'none');
+  const pts = STAGE_LIST.map((_, i) => [i % 2 ? 70 : 30, ((i + 0.5) / n) * 100]);
+  let d = `M${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+    d += ` C${x0} ${(y0 + y1) / 2} ${x1} ${(y0 + y1) / 2} ${x1} ${y1}`;
+  }
+  route.innerHTML = `<path d="${d}" fill="none" stroke="#a0703a" stroke-width="1.1" stroke-dasharray="2.2 2.2" vector-effect="non-scaling-stroke" style="stroke-width:3px"/>`;
+  page.append(route);
   STAGE_LIST.forEach((s, i) => {
-    const [x, y] = ISLE_SPOTS[i % ISLE_SPOTS.length];
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'isle' + (s.ready ? '' : ' soon');
-    b.style.left = `${x}%`;
-    b.style.top = `${y}%`;
-    b.innerHTML = `${isleSvg(s.ready, s.key)}<b>${s.name}</b><small>${s.desc}</small>`;
+    b.className = 'isle' + (i % 2 ? ' flip' : '') + (s.ready ? '' : ' soon') + (s.key === taikai.stage ? ' on' : '');
+    b.style.setProperty('--i', String(i));
+    b.innerHTML = `<span class="pic">${isleSvg(s.ready, s.key)}<svg class="flag" viewBox="0 0 30 40" aria-hidden="true"><path d="M5 38 L5 4" stroke="#4a2a12" stroke-width="3" stroke-linecap="round"/><path d="M6 5 L27 11 L6 18 Z" fill="#e8402f" stroke="#4a2a12" stroke-width="2" stroke-linejoin="round"/></svg></span>
+      <span class="txt"><b>${s.name}</b><small>${s.desc}</small><span class="tags">${(s.tags || []).map((t) => `<i>${t}</i>`).join('')}</span></span>`;
     b.addEventListener('click', () => {
       unlockAudio();
       if (!s.ready) { boop(); toast('このステージは もうすこし まっててね!'); return; }
       knock();
       taikai.stage = s.key;
-      openGame('taikai');
+      for (const o of page.querySelectorAll('.isle')) o.classList.toggle('on', o === b);
+      $('stageGo').querySelector('b').textContent = `${s.name}へ!`;
     });
     page.append(b);
   });
+  $('stageGo').querySelector('b').textContent = `${STAGE_LIST.find((x) => x.key === taikai.stage).name}へ!`;
 }
+$('stageGo').addEventListener('click', () => { unlockAudio(); knock(); openGame('taikai'); });
 function renderTurns() {
   for (const b of $('turnSeg').children) b.setAttribute('aria-pressed', String(Number(b.dataset.v) === taikai.turns));
 }

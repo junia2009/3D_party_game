@@ -1109,20 +1109,56 @@
   .band line { stroke: rgba(255,255,255,.7); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 9; }
   .band circle { fill: rgba(255,255,255,.35); stroke: rgba(255,255,255,.85); stroke-width: 3; }
 
-  /* 大会: 地図の本(ステージ選択) */
-  .mapbook { padding: 10px; border-radius: 22px; background: #7a4a24; box-shadow: 0 6px 0 #4a2a12, 0 14px 30px rgba(0,0,0,.25); }
+  /* 大会: 宝の地図(ステージ選択)。画面の 下まで 使って、島を 上から 順に ならべる */
+  #stages { align-content: stretch; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  #stages:has(#resumeBox[hidden]) { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .mapbook { position: relative; min-height: 0; padding: 10px; border-radius: 22px; background: #7a4a24; box-shadow: 0 6px 0 #4a2a12, 0 14px 30px rgba(0,0,0,.25); }
   .mappage {
-    position: relative; border-radius: 14px; padding: 10px; min-height: 340px;
-    background: radial-gradient(ellipse at 30% 20%, #fff4d6, #f1dcaa 60%, #e3c486); box-shadow: inset 0 0 30px rgba(122,74,36,.35);
+    position: relative; height: 100%; min-height: 420px; border-radius: 14px; padding: 6px 4px; box-sizing: border-box;
+    display: grid; grid-template-rows: repeat(3, minmax(0, 1fr));
+    background:
+      radial-gradient(circle at 12% 88%, rgba(160,110,60,.18) 0 18%, transparent 19%),
+      radial-gradient(circle at 92% 8%, rgba(160,110,60,.14) 0 12%, transparent 13%),
+      radial-gradient(ellipse at 30% 20%, #fff4d6, #f1dcaa 60%, #e3c486);
+    box-shadow: inset 0 0 34px rgba(122,74,36,.45);
   }
-  .mappage svg.sea { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-  .isle { position: absolute; border: 0; background: none; padding: 0; width: 46%; transform: translate(-50%, -50%); cursor: pointer; font: inherit; color: #4a2a12; }
-  .isle svg { width: 100%; height: auto; display: block; filter: drop-shadow(0 4px 0 rgba(74,42,18,.25)); }
-  .isle b { display: block; font: 400 17px var(--font-display); margin-top: -4px; }
-  .isle small { display: block; font-size: 11px; font-weight: 700; opacity: .75; }
-  .isle.soon { cursor: default; opacity: .9; }
-  .isle.soon b { color: #8a7a6a; }
-  .isle:not(.soon):active { transform: translate(-50%, -50%) scale(.96); }
+  .mappage svg.route { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .mapbook .compass { position: absolute; right: 14px; bottom: 14px; width: 54px; height: 54px; opacity: .85; pointer-events: none; transform: rotate(-12deg); }
+  .isle {
+    position: relative; display: flex; align-items: center; gap: 8px; min-height: 0; border: 0; background: none; padding: 0 4px;
+    cursor: pointer; font: inherit; color: #4a2a12; text-align: left; -webkit-tap-highlight-color: transparent;
+    animation: islein .5s cubic-bezier(.3,1.5,.5,1) backwards; animation-delay: calc(var(--i) * .08s);
+  }
+  .isle.flip { flex-direction: row-reverse; text-align: right; }
+  .isle .pic { position: relative; flex: 0 0 56%; height: 100%; display: grid; place-items: center; }
+  .isle .pic > svg:first-child { width: 100%; max-height: 100%; filter: drop-shadow(0 5px 0 rgba(74,42,18,.25)); transition: transform .2s; }
+  .isle .flag { position: absolute; left: 50%; top: 22%; width: 30px; height: 40px; transform: translate(-30%, -20%) scale(0); transform-origin: 15% 100%; transition: transform .3s cubic-bezier(.3,1.8,.5,1); }
+  .isle.on .flag { transform: translate(-30%, -20%) scale(1); animation: flagwave .8s ease-in-out infinite alternate; }
+  .isle.on .pic > svg:first-child { transform: scale(1.06); }
+  .isle .txt { display: grid; gap: 3px; min-width: 0; }
+  .isle b { font: 400 clamp(16px, 4.6vw, 20px) var(--font-display); line-height: 1.15; }
+  .isle small { font-size: 11.5px; font-weight: 700; line-height: 1.4; opacity: .8; }
+  .isle .tags { display: flex; flex-wrap: wrap; gap: 3px; }
+  .isle.flip .tags { justify-content: flex-end; }
+  .isle .tags i { font-style: normal; font-size: 10.5px; font-weight: 800; padding: 1px 7px; border-radius: 999px; background: rgba(122,74,36,.14); }
+  .isle.on .tags i { background: #ffd24a; }
+  .isle.on b { color: #b8401e; }
+  .isle.soon { cursor: default; opacity: .85; }
+  .isle:not(.soon):active .pic > svg:first-child { transform: scale(.96); }
+  @keyframes islein { from { opacity: 0; transform: translateY(16px) scale(.92); } }
+  @keyframes flagwave { from { transform: translate(-30%, -20%) rotate(-4deg); } to { transform: translate(-30%, -20%) rotate(4deg); } }
+  .stagego { margin-top: 2px; }
+  @media (max-height: 760px) { .mapbook .compass { display: none; } }
+  /* 横持ち(背が ひくい): 島を 横に 3つ ならべる */
+  @media (orientation: landscape) and (max-height: 560px) {
+    .mappage { min-height: 0; grid-template-rows: none; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .mappage svg.route { display: none; }
+    .isle, .isle.flip { flex-direction: column; text-align: center; justify-content: center; gap: 2px; }
+    .isle .pic { flex: 0 1 auto; height: auto; width: 78%; }
+    .isle .tags, .isle.flip .tags { justify-content: center; }
+    .isle small { font-size: 10.5px; }
+    .mapbook .compass { display: none; }
+  }
   #turnSeg small { display: block; font-size: 10px; opacity: .7; }
   /* 大会の盤: 上に5人の札、下にメッセージと操作のボタン */
   .bcards { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
@@ -1732,7 +1768,11 @@
     </button>
     <button class="resume-del" type="button" id="resumeDel">この大会を けす</button>
   </div>
-  <div class="mapbook"><div class="mappage" id="stageMap"></div></div>
+  <div class="mapbook">
+    <div class="mappage" id="stageMap"></div>
+    <svg class="compass" viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="26" fill="#f6e6bc" stroke="#7a4a24" stroke-width="2.5"/><path d="M30 6 L35 30 L30 54 L25 30 Z" fill="#7a4a24"/><path d="M30 6 L35 30 L25 30 Z" fill="#e8402f"/><path d="M6 30 L30 26 L54 30 L30 34 Z" fill="#c8a06a"/><text x="30" y="16" text-anchor="middle" font-size="8" font-family="Dela Gothic One" fill="#fff6e0">N</text></svg>
+  </div>
+  <button class="plank stagego" type="button" id="stageGo"><span class="ico">⚑</span><span><b>この島へ!</b><small>たんけんに 出発</small></span></button>
 </section>
 
 <section class="screen sub" id="settings" hidden aria-label="せってい">
