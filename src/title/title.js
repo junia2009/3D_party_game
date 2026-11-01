@@ -255,7 +255,7 @@ function go(next) {
   $('ver').hidden = next !== 'title';
   screen = next;
   if (next === 'play') renderChars();
-  if (next === 'stages') { renderStageMap(); renderResume(); }
+  if (next === 'stages') { renderStageMap(); renderResume(); requestAnimationFrame(drawPaper); }
   if (next === 'menu') $('resumeBadge').hidden = !loadTaikai();
   if (next === 'zukan') {
     track('zukan');
@@ -1077,6 +1077,112 @@ $('resumeDel').addEventListener('click', () => {
   b.textContent = 'この大会を けす';
   renderResume();
 });
+// ── 宝の地図の 紙(巻物)。実際の 大きさ(px)で SVG に 描く(ノイズの 模様が のびない ように)──
+// 上下に 木の 軸と 巻いた 紙の まるみ。紙は 羊皮紙: 繊維の ざらつき・まだらな しみ・ちぎれた ふち・こげた 縁どり。
+// 方位じしん から 放射の 航海線、折り目、コーヒーの 輪じみ、インクの はね、題字の リボン、縮尺、ろうの 封印
+function paperSvg(W, H) {
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const R = 17; // 軸の 太さ
+  const top = R + 8, bot = H - R - 8; // 紙の 上下(巻きの 下)
+  const L = 10, Rr = W - 10;
+  // ちぎれた 左右の ふち(ぎざぎざ)
+  const edge = (x0, dir) => {
+    const pts = [];
+    for (let y = top; y <= bot; y += 7) pts.push([x0 + dir * (rnd() * 3.2 + (rnd() < 0.08 ? 3 : 0)), y]);
+    return pts;
+  };
+  const le = edge(L, 1), re = edge(Rr, -1);
+  const paper = `M${le[0][0]} ${top} L${re[0][0]} ${top} ${re.map(([x, y]) => `L${x.toFixed(1)} ${y}`).join(' ')} L${re.at(-1)[0]} ${bot} L${le.at(-1)[0]} ${bot} ${[...le].reverse().map(([x, y]) => `L${x.toFixed(1)} ${y}`).join(' ')} Z`;
+  // 方位じしん(右、2つめの 島の 上)と 航海線
+  const cx = W * 0.86, cy = top + (bot - top) * 0.33;
+  const rays = Array.from({ length: 16 }, (_, k) => {
+    const a = (k / 16) * Math.PI * 2, len = Math.hypot(W, H);
+    return `<line x1="${cx}" y1="${cy}" x2="${(cx + Math.cos(a) * len).toFixed(1)}" y2="${(cy + Math.sin(a) * len).toFixed(1)}" stroke="${k % 2 ? '#a07040' : '#7a4a24'}" stroke-width="${k % 4 ? 0.5 : 0.8}" ${k % 2 ? 'stroke-dasharray="3 4"' : ''}/>`;
+  }).join('');
+  const star = (r1, r2, n, rot = 0) => Array.from({ length: n * 2 }, (_, k) => { const a = rot + (k / (n * 2)) * Math.PI * 2 - Math.PI / 2; const r = k % 2 ? r2 : r1; return `${(Math.cos(a) * r).toFixed(1)},${(Math.sin(a) * r).toFixed(1)}`; }).join(' ');
+  const compass = `<g transform="translate(${cx} ${cy}) rotate(-8)">
+    <circle r="30" fill="#f6e6bc" fill-opacity=".85" stroke="#7a4a24" stroke-width="1.8"/><circle r="26" fill="none" stroke="#7a4a24" stroke-width=".6"/>
+    ${Array.from({ length: 32 }, (_, k) => { const a = (k / 32) * Math.PI * 2; return `<line x1="${(Math.cos(a) * 26).toFixed(1)}" y1="${(Math.sin(a) * 26).toFixed(1)}" x2="${(Math.cos(a) * (k % 4 ? 28 : 30)).toFixed(1)}" y2="${(Math.sin(a) * (k % 4 ? 28 : 30)).toFixed(1)}" stroke="#7a4a24" stroke-width=".6"/>`; }).join('')}
+    <polygon points="${star(24, 5, 4, Math.PI / 4)}" fill="#e3c486" stroke="#7a4a24" stroke-width=".8"/>
+    <polygon points="${star(27, 6, 4)}" fill="#c8a06a" stroke="#7a4a24" stroke-width="1"/>
+    <path d="M0 -27 L6 -6 L0 0 Z M27 0 L6 6 L0 0 Z M0 27 L-6 6 L0 0 Z M-27 0 L-6 -6 L0 0 Z" fill="#7a4a24"/>
+    <path d="M0 -27 L6 -6 L-6 -6 Z" fill="#c83a24" stroke="#7a4a24" stroke-width=".6"/>
+    <circle r="3.2" fill="#ffd24a" stroke="#7a4a24" stroke-width=".8"/>
+    <text y="-33" text-anchor="middle" font-size="9" font-family="Dela Gothic One" fill="#7a4a24">N</text>
+  </g>`;
+  // インクの はね
+  const blots = Array.from({ length: 9 }, () => {
+    const x = L + 20 + rnd() * (W - 60), y = top + 30 + rnd() * (bot - top - 60), r = 0.8 + rnd() * 2.2;
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="#4a2a12" opacity="${(0.15 + rnd() * 0.25).toFixed(2)}"/>`;
+  }).join('');
+  const ph = bot - top;
+  // 軸(木)と 巻いた 紙の まるみ
+  const rod = (y, flip) => `
+    <rect x="8" y="${y - 7}" width="${W - 16}" height="14" rx="7" fill="url(#curl)" stroke="#9a7040" stroke-width=".8" transform="${flip ? `scale(1 -1) translate(0 ${-2 * y})` : ''}"/>
+    <rect x="6" y="${y - R / 2 + (flip ? 6 : -6)}" width="${W - 12}" height="${R}" rx="${R / 2}" fill="url(#wood)" stroke="#3a1e08" stroke-width="1.6"/>
+    <path d="M14 ${y + (flip ? 6 : -6) - 2} H${W - 14}" stroke="rgba(255,220,160,.45)" stroke-width="2" stroke-linecap="round"/>
+    ${[R / 2 + 2, W - R / 2 - 2].map((x) => `<circle cx="${x}" cy="${y + (flip ? 6 : -6)}" r="${R / 2 + 3}" fill="url(#knob)" stroke="#3a1e08" stroke-width="1.6"/><circle cx="${x}" cy="${y + (flip ? 6 : -6)}" r="3" fill="#ffd24a" stroke="#3a1e08" stroke-width="1"/>`).join('')}`;
+  return `<svg class="paper" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">
+  <defs>
+    <radialGradient id="pBase" cx="38%" cy="30%" r="80%"><stop offset="0" stop-color="#fff3d2"/><stop offset=".45" stop-color="#f4dfae"/><stop offset=".8" stop-color="#e4c286"/><stop offset="1" stop-color="#cfa060"/></radialGradient>
+    <filter id="pStain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="4" seed="4"/><feColorMatrix values="0 0 0 0 .55  0 0 0 0 .34  0 0 0 0 .12  0 0 0 -2.6 1.75"/></filter>
+    <filter id="pGrain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="9"/><feColorMatrix values="0 0 0 0 .35  0 0 0 0 .2  0 0 0 0 .08  0 0 0 -1.6 1.05"/></filter>
+    <filter id="pFiber" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.02 0.45" numOctaves="2" seed="2"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 .95  0 0 0 0 .85  0 0 0 -2 1.2"/></filter>
+    <filter id="pRough" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="3" seed="5"/><feDisplacementMap in="SourceGraphic" scale="6"/></filter>
+    <filter id="pBurn" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" seed="8" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="14" result="d"/><feGaussianBlur in="d" stdDeviation="4"/></filter>
+    <filter id="pRing" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="2" seed="3"/><feDisplacementMap in="SourceGraphic" scale="5"/></filter>
+    <clipPath id="pClip"><path d="${paper}"/></clipPath>
+    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b07a42"/><stop offset=".35" stop-color="#8a5428"/><stop offset=".7" stop-color="#5e3414"/><stop offset="1" stop-color="#3e2008"/></linearGradient>
+    <radialGradient id="knob" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#c88a4a"/><stop offset="1" stop-color="#4a2a0e"/></radialGradient>
+    <linearGradient id="curl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c89a5a"/><stop offset=".5" stop-color="#f6e2b4"/><stop offset="1" stop-color="#b0824a"/></linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d84a32"/><stop offset="1" stop-color="#9a2a1a"/></linearGradient>
+    <radialGradient id="wax" cx="40%" cy="35%" r="65%"><stop offset="0" stop-color="#e8503a"/><stop offset=".7" stop-color="#a82418"/><stop offset="1" stop-color="#6a1208"/></radialGradient>
+  </defs>
+  <g filter="url(#pRough)"><path d="${paper}" fill="url(#pBase)"/></g>
+  <g clip-path="url(#pClip)">
+    <rect x="0" y="0" width="${W}" height="${H}" filter="url(#pStain)" opacity=".42"/>
+    <rect x="0" y="0" width="${W}" height="${H}" filter="url(#pFiber)" opacity=".35"/>
+    <rect x="0" y="0" width="${W}" height="${H}" filter="url(#pGrain)" opacity=".38"/>
+    <g opacity=".22">${rays}</g>
+    <g stroke="#8a5a2a" stroke-width=".6" stroke-dasharray="1.5 3" opacity=".35"><line x1="0" y1="${top + ph * 0.25}" x2="${W}" y2="${top + ph * 0.25}"/><line x1="0" y1="${top + ph * 0.75}" x2="${W}" y2="${top + ph * 0.75}"/><line x1="${W * 0.25}" y1="0" x2="${W * 0.25}" y2="${H}"/><line x1="${W * 0.75}" y1="0" x2="${W * 0.75}" y2="${H}"/></g>
+    <g opacity=".5"><line x1="${W / 2}" y1="0" x2="${W / 2}" y2="${H}" stroke="#8a5a2a" stroke-width="1.2" opacity=".35"/><line x1="${W / 2 + 1.5}" y1="0" x2="${W / 2 + 1.5}" y2="${H}" stroke="#fff8e0" stroke-width="1.6" opacity=".6"/>
+      ${[1, 2].map((k) => `<line x1="0" y1="${top + (ph * k) / 3}" x2="${W}" y2="${top + (ph * k) / 3}" stroke="#8a5a2a" stroke-width="1.2" opacity=".3"/><line x1="0" y1="${top + (ph * k) / 3 + 1.5}" x2="${W}" y2="${top + (ph * k) / 3 + 1.5}" stroke="#fff8e0" stroke-width="1.6" opacity=".55"/>`).join('')}</g>
+    <ellipse cx="${W * 0.2}" cy="${top + ph * 0.83}" rx="30" ry="28" fill="none" stroke="#7a4218" stroke-width="5" opacity=".14" filter="url(#pRing)"/>
+    <ellipse cx="${W * 0.2}" cy="${top + ph * 0.83}" rx="27" ry="25" fill="none" stroke="#7a4218" stroke-width="1.4" opacity=".18" filter="url(#pRing)"/>
+    ${blots}
+    <path d="${paper}" fill="none" stroke="#5a2e0c" stroke-width="26" opacity=".55" filter="url(#pBurn)"/>
+    <path d="${paper}" fill="none" stroke="#2e1606" stroke-width="5" opacity=".6" filter="url(#pBurn)"/>
+  </g>
+  ${compass}
+  <g transform="translate(${L + 18} ${bot - 16})" font-family="Dela Gothic One" fill="#7a4a24">
+    <path d="M0 0 h72" stroke="#7a4a24" stroke-width="1.4"/>${[0, 24, 48, 72].map((x, i) => `<path d="M${x} -4 v8" stroke="#7a4a24" stroke-width="1.2"/>${i < 3 ? `<rect x="${x}" y="-2" width="24" height="4" fill="${i % 2 ? '#f6e6bc' : '#7a4a24'}" stroke="#7a4a24" stroke-width=".8"/>` : ''}`).join('')}
+    <text x="0" y="-7" font-size="7">0</text><text x="72" y="-7" font-size="7" text-anchor="middle">300 歩</text>
+  </g>
+  <g transform="translate(${W / 2} ${top + 4})">
+    <path d="M-92 4 l-14 8 l14 8 Z M92 4 l14 8 l-14 8 Z" fill="#8a2416" stroke="#4a1006" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M-84 -2 Q0 8 84 -2 L84 20 Q0 30 -84 20 Z" fill="url(#ribbon)" stroke="#4a1006" stroke-width="1.4"/>
+    <text y="14.5" text-anchor="middle" font-size="12.5" font-family="Dela Gothic One" fill="#fff3d2" stroke="#4a1006" stroke-width="2.4" paint-order="stroke">どんぐり諸島 宝の地図</text>
+  </g>
+  <g transform="translate(${W - 30} ${bot - 26}) rotate(-14)">
+    <path d="M0 -21 C9 -22 20 -14 21 -4 C24 6 16 19 4 21 C-8 24 -20 15 -21 3 C-23 -9 -12 -21 0 -21 Z" fill="url(#wax)" stroke="#5a0e06" stroke-width="1.2"/>
+    <circle r="13.5" fill="none" stroke="#5a0e06" stroke-width="1.2" opacity=".6"/>
+    <path d="M-6 -1 Q-6 10 0 12 Q6 10 6 -1 Z" fill="#c8402a" stroke="#5a0e06" stroke-width="1.1"/>
+    <path d="M-8 -1 Q0 -9 8 -1 Z" fill="#8a1a0e" stroke="#5a0e06" stroke-width="1.1"/><path d="M0 -6 v-4" stroke="#5a0e06" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="M-12 -12 q4 -3 8 -2" stroke="rgba(255,200,180,.6)" stroke-width="2" fill="none" stroke-linecap="round"/>
+  </g>
+  ${rod(top, false)}
+  ${rod(bot, true)}
+</svg>`;
+}
+function drawPaper() {
+  const book = document.querySelector('#stages .mapbook');
+  if (!book || !book.clientWidth) return;
+  book.querySelector('svg.paper')?.remove();
+  book.insertAdjacentHTML('afterbegin', paperSvg(book.clientWidth, book.clientHeight));
+}
+addEventListener('resize', () => { if (screen === 'stages') drawPaper(); });
+
 // 宝の地図: 島を 上から 順に 大きく ならべて、点線の 航路で つなぐ。島は 左、説明は 右(どの 島も おなじ 形)。
 // 島を タップすると 旗が 立って えらばれる。下の「この 島へ!」で 進む
 function renderStageMap() {
