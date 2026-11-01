@@ -816,6 +816,15 @@
   #hudOk .hidebadge.found { background: rgba(220,60,40,.95); animation: hideshake .08s infinite alternate; }
   @keyframes hidein { from { transform: translateX(-50%) translateY(20px); opacity: 0; } }
   @keyframes hideshake { from { transform: translateX(calc(-50% - 3px)); } to { transform: translateX(calc(-50% + 3px)); } }
+  /* おにが 近い: ふちが 赤く どくどく(--danger 0〜1) */
+  #hudOk.danger::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 calc(40px + var(--danger) * 70px) calc(var(--danger) * 30px) rgba(235,35,25, calc(.25 + var(--danger) * .6)); animation: heartbeat calc(.75s - var(--danger) * .4s) ease-out infinite; }
+  @keyframes heartbeat { 0%, 100% { opacity: .55; } 15% { opacity: 1; } 30% { opacity: .7; } 45% { opacity: .95; } }
+  /* 画面の 外の 相手を さす 矢印(おには 赤、ねらう 子は 金) */
+  #hudOk .offarrow { position: absolute; width: 38px; height: 38px; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); }
+  #hudOk .offarrow[hidden] { display: none; }
+  #hudOk .offarrow svg { width: 100%; height: 100%; fill: #ffd24a; stroke: #fff; stroke-width: 3; stroke-linejoin: round; }
+  #hudOk .offarrow.oni svg { fill: #ff4a3a; animation: arrowpulse .4s infinite alternate; }
+  @keyframes arrowpulse { to { transform: scale(1.18); } }
   .pop.blue { color: #3d8bff; }
   .pop.green { color: #4fae3a; }
   #hudOk .howto { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
@@ -2070,6 +2079,7 @@
   <div class="pops" id="popsOk"></div>
   <div class="splash" id="splashOk"></div>
   <p class="howto" id="howtoOk">ゆびを おいて ずらすと はしる。<b>おに</b>(赤い つの)から にげろ!<br>草むらで かくれて、「ダッシュ」で ひと走り</p>
+  <div class="offarrow" id="arrowOk" hidden><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 8 L36 20 L6 32 L13 20 Z"/></svg></div>
   <div class="hidebadge" id="hideOk" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c-3 4-7 6-7 11a7 7 0 0 0 14 0c0-5-4-7-7-11z" fill="#5a9a3c" stroke="#2e5a1e" stroke-width="1.6"/><path d="M12 8v13" stroke="#2e5a1e" stroke-width="1.4"/></svg><span>かくれ中</span></div>
   <div class="stick" id="stickOk" hidden><i></i></div>
   <button class="tame dash run" id="dashOk" type="button">ダッシュ</button>

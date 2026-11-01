@@ -84,6 +84,8 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     pick(vol = 1) { [988, 1318, 1568].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.16, gain: 0.07 * vol, at: i * 0.06 })); },
     // ぽとん: どんぐりが 落ちてくる
     drop(vol = 1) { voice({ pts: [[0, 1400], [0.15, 600]], len: 0.18, gain: 0.05 * vol }); },
+    // トクン: おにが 近い(低めの 音でも 効果音の 帯域の 中)
+    heart(k) { voice({ pts: [[0, 560], [0.08, 460]], len: 0.1, gain: 0.05 + k * 0.05 }); voice({ pts: [[0, 520], [0.08, 450]], len: 0.1, gain: 0.04 + k * 0.04, at: 0.16 }); },
     // チッ チッ: のこり すこし
     tick() { voice({ type: 'square', pts: [[0, 1200]], len: 0.05, gain: 0.03 }); },
     beep(last) { voice({ type: 'square', pts: [[0, last ? 1320 : 660]], len: last ? 0.5 : 0.16, gain: 0.05 }); },
@@ -248,6 +250,16 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       fx.push({ obj: m, t: 0, life: 3 + Math.random() * 1.5, vel: new THREE.Vector3((Math.random() - 0.5) * 0.6, -(0.7 + Math.random() * 0.6), (Math.random() - 0.5) * 0.6), spin: 8, kind: 'confetti' });
     }
   }
+  // ダッシュの 風の すじ
+  const streakGeo = new THREE.PlaneGeometry(0.05, 0.9).rotateX(-Math.PI / 2);
+  function streak(x, z, h) {
+    const m = new THREE.Mesh(streakGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false }));
+    const side = (Math.random() - 0.5) * 0.8;
+    m.position.set(x - Math.sin(h) * 0.6 + Math.cos(h) * side, FLOOR_Y + 0.25 + Math.random() * 0.6, z - Math.cos(h) * 0.6 - Math.sin(h) * side);
+    m.rotation.y = h;
+    scene.add(m);
+    fx.push({ obj: m, t: 0, life: 0.28, vel: new THREE.Vector3(-Math.sin(h) * 3, 0, -Math.cos(h) * 3), kind: 'fade' });
+  }
   // 走った あとの 土けむり
   function dust(x, z) { puff(x, FLOOR_Y + 0.08, z, 1, 0xd8c8a0, 0.6); }
   function updateFx(dt) {
@@ -271,6 +283,8 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
         f.obj.rotation.x += f.spin * dt;
         f.obj.rotation.y += f.spin * 0.7 * dt;
         f.obj.material.opacity = Math.min(1, (1 - k) * 3);
+      } else if (f.kind === 'fade') {
+        f.obj.material.opacity = 0.8 * (1 - k);
       } else if (f.kind === 'ring') {
         f.obj.scale.setScalar(f.size * (0.4 + k * 2.2));
         f.obj.material.opacity = 1 - k;
@@ -488,6 +502,41 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     dashEl.classList.toggle('wait', me.cool > 0);
     $('hudOk').classList.toggle('oni', s.oni === game.me && s.phase === 'play');
     $('hudOk').classList.toggle('hurry', s.hurried && s.phase === 'play');
+    // おにが 近い: 画面の ふちが 赤く どくどく(自分が おにで ない とき)
+    const o = s.runners[s.oni];
+    const dOni = Math.hypot(o.x - me.x, o.z - me.z);
+    const danger = s.phase === 'play' && s.oni !== game.me && o.noTag !== game.me && !(me.hidden && !me.spotted) ? Math.max(0, Math.min(1, (4 - dOni) / 3)) : 0;
+    $('hudOk').style.setProperty('--danger', danger.toFixed(2));
+    $('hudOk').classList.toggle('danger', danger > 0);
+    // 画面の 外の 相手を さす 矢印: にげる ときは おに、おにの ときは いちばん 近い 見える 子
+    let target = null;
+    if (s.phase === 'play') {
+      if (s.oni !== game.me) target = o;
+      else {
+        let bd = Infinity;
+        s.runners.forEach((r, i) => {
+          if (i === game.me || (r.hidden && !r.spotted)) return;
+          const d = Math.hypot(r.x - me.x, r.z - me.z);
+          if (d < bd) { bd = d; target = r; }
+        });
+      }
+    }
+    const arrow = $('arrowOk');
+    arrow.hidden = true;
+    if (target) {
+      tmpV.set(target.x, FLOOR_Y + 0.8, target.z).project(camera);
+      const sx = (tmpV.x + 1) / 2, sy = (1 - tmpV.y) / 2;
+      const out = sx < 0.04 || sx > 0.96 || sy < 0.1 || sy > 0.9 || tmpV.z > 1;
+      if (out) {
+        const cx = sx - 0.5, cy = sy - 0.5;
+        const f = Math.min(0.44 / Math.max(Math.abs(cx), 1e-3), 0.38 / Math.max(Math.abs(cy), 1e-3));
+        arrow.hidden = false;
+        arrow.style.left = `${(0.5 + cx * f) * 100}%`;
+        arrow.style.top = `${(0.5 + cy * f) * 100}%`;
+        arrow.style.transform = `translate(-50%, -50%) rotate(${Math.atan2(cy * innerHeight, cx * innerWidth)}rad)`;
+        arrow.classList.toggle('oni', s.oni !== game.me);
+      }
+    }
     // 草むらに かくれて いる あいだ: 「かくれ中」(見つかったら「みつかった!」)
     const hid = me.hidden && s.phase === 'play' && s.oni !== game.me;
     $('hideOk').hidden = !hid;
@@ -656,7 +705,9 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       const look = slot === s.oni && s.oniLost && s.phase === 'play' ? Math.sin(time * 3.2) * 0.9 : 0;
       u.holder.rotation.y = u.h + look;
       // ダッシュ中は まえのめり
-      u.model.root.rotation.x = r.dash > 0 ? 0.25 : 0;
+      u.model.root.rotation.x += ((r.dash > 0 ? 0.3 : u.run * 0.12) - u.model.root.rotation.x) * Math.min(1, dt * 12);
+      u.step = (u.step || 0) + dt * (r.dash > 0 ? 20 : 14) * u.run;
+      u.model.root.position.y = Math.abs(Math.sin(u.step)) * 0.08 * u.run;
       let clip = u.run > 0.5 ? 'run' : 'idle', face = 'normal';
       if (s.phase === 'play') {
         if (slot === s.oni) face = r.freeze > 0 ? 'surprised' : 'frustrated';
@@ -678,6 +729,9 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       const unseen = r.hidden && !r.spotted && slot !== game.me && slot !== s.oni && s.phase === 'play';
       u.holder.visible = !unseen;
       u.ring.visible = !r.hidden || s.phase !== 'play';
+      // ダッシュ: うしろに 風の すじ
+      u.fxT = (u.fxT || 0) - dt;
+      if (r.dash > 0 && u.fxT <= 0 && !(r.hidden && slot !== game.me)) { u.fxT = 0.03; streak(r.x, r.z, r.h); }
       // 走ると 土けむり
       u.dustT -= dt;
       if (u.dustT <= 0 && sp > (r.dash > 0 ? 2 : 3.2) && !r.hidden) { u.dustT = r.dash > 0 ? 0.05 : 0.14; dust(r.x - Math.sin(r.h) * 0.3, r.z - Math.cos(r.h) * 0.3); }
@@ -691,6 +745,11 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     const ou = game.runners[s.oni];
     horns.position.set(o.x, FLOOR_Y + 1.5 * (0.85 / ou.size ** 0.3) + (ou.hop > 0 ? Math.sin((ou.hop / 0.5) * Math.PI) * 0.5 : 0) - ou.sink, o.z);
     horns.rotation.y = ou.h;
+    if (game.lastOni !== s.oni) { game.lastOni = s.oni; game.hornPop = 0.45; }
+    game.hornPop = Math.max(0, (game.hornPop || 0) - dt);
+    const hp = game.hornPop / 0.45;
+    horns.scale.setScalar(1.6 * (1 + Math.sin(hp * Math.PI) * 0.9 * hp));
+    horns.rotation.z = Math.sin(hp * 20) * 0.3 * hp;
     oniRing.position.set(o.x, FLOOR_Y + 0.03, o.z);
     oniRing.scale.setScalar(1 + Math.sin(time * 6) * 0.08);
     oniGlow.position.set(o.x, FLOOR_Y + 0.5, o.z);
@@ -829,7 +888,12 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
         }
       }
     }
-    if (game && mode === 'playing') renderHud();
+    if (game && mode === 'playing') {
+      renderHud();
+      const dg = Number($('hudOk').style.getPropertyValue('--danger')) || 0;
+      game.beat = (game.beat ?? 0) - dt;
+      if (dg > 0 && game.beat <= 0 && !paused) { game.beat = 0.75 - dg * 0.4; sfx.heart(dg); }
+    }
     if (game && !paused) {
       updateWorld(dt);
       updateFx(dt);
