@@ -396,7 +396,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     atmosphere.apply(params.get('time') || st.time || 'day');
     atmosphere.setupShadows(pieces.map((p) => p.holder), pieces.map((p) => p.holder));
     placeOwl(s.owl, true);
-    if (view.sea) { view.sea.swimTo(s.whale, 0, true); view.sea.setFlow(s.flow); }
+    if (view.sea) { view.sea.swimTo(s.whale, 0, true); view.sea.setFlow(s.flow); view.sea.setSpurt(s.turns - s.turn < RULES.spurtTurns && s.phase !== 'order'); }
     setMode('playing');
     intro = fromSky ? 0 : 1;
     camOn(me);
@@ -620,18 +620,20 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       // ふぐが ぷくーっと ふくらんで、まわりを はじく(このあと fugu で 近くの子が うしろへ)
       camOn(e.slot);
       cam.close = true;
-      fx.puff(me().clone().setY(1.6));
       sfx.balloon();
-      react(e.slot, 'idle', 'surprised', 1.4);
-      await sleep(1.0 / speed());
+      react(e.slot, 'idle', 'surprised', 2.2);
+      const puffer = view.sea?.fugu(me().clone());
+      await sleep(1.2 / speed());
       cam.shake = 0.25;
       sfx.squash();
-      await sleep(0.6 / speed());
+      await (puffer || sleep(0.6 / speed()));
     } else if (e.area === 'kelp') {
       // ラッコが 貝を こんこん → ぱかっ
       camOn(e.slot);
       cam.close = true;
-      for (let k = 0; k < 3; k++) { sfx.bonk(); await sleep(0.35 / speed()); }
+      const ot = view.sea?.otter(me().clone());
+      for (let k = 0; k < 4; k++) { sfx.bonk(); await sleep(0.38 / speed()); }
+      await ot;
       fx.sparkle(me().clone().setY(1.2), 16, 2);
       react(e.slot, 'cheer', 'happy', 2);
       await sleep(0.8 / speed());
@@ -647,8 +649,12 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       // 電気クラゲが ビリビリ: 深海の みんなが しびれる
       camOn(e.slot);
       cam.close = true;
-      for (let k = 0; k < 4; k++) { cam.shake = 0.2; sfx.thunder(); await sleep(0.3 / speed()); }
+      const zapped = game.pieces.filter((q) => st.squares[q.sq].area === 'deep');
+      const zap = view.sea?.jellyZap(zapped.map((q) => q.holder.position.clone()));
+      await sleep(0.5 / speed());
       game.pieces.forEach((q, i) => { if (st.squares[q.sq].area === 'deep') react(i, 'dizzy', 'frustrated', 2); });
+      for (let k = 0; k < 4; k++) { cam.shake = 0.2; sfx.thunder(); await sleep(0.3 / speed()); }
+      await zap;
       await sleep(0.8 / speed());
     } else if (e.area === 'ghost') {
       // うしろから 大きな おばけが ぬっ…「ばあ!」(このあと ghostSwap で 入れかわる)
@@ -735,6 +741,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           await sleep(2.0 / speed());
           break;
         case 'spurt':
+          view.sea?.setSpurt(true);
           await explain({ color: '#ffd24a', mark: '!', title: 'ラストスパート!', text: 'のこり3ターン。青マス・赤マスの どんぐりが 2倍!', sec: 3.2 });
           break;
         case 'player':
@@ -844,7 +851,9 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           fx.surge(() => p.holder.position, dir, 1.8 / speed());
           sfx.splash();
           react(e.slot, e.dir > 0 ? 'cheer' : 'dizzy', e.dir > 0 ? 'happy' : 'surprised', 2);
+          const trail = setInterval(() => view.sea?.bubbleBurst(p.holder.position.clone().setY(0.6), 4, 0.4, 1), 120);
           await movePiece(e.slot, e.to, { hop: false, time: 1.8 / speed(), arc: 1.2 });
+          clearInterval(trail);
           settlePieces();
           await sleep(0.3 / speed());
           break;
@@ -863,6 +872,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           cam.glide = true;
           sfx.chime();
           await view.sea.swimTo(e.to, 2.4 / speed());
+          view.sea.spout();
+          sfx.splash();
           await explain({ color: '#4a7ac8', mark: '鯨', title: 'クジラが 泳いでいった', text: 'クジラの 近く(前後1マス)に 止まると、背中に のって 10マス 先へ!', sec: 2.4 });
           break;
         }
@@ -874,6 +885,8 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
           await explain({ color: '#4a7ac8', mark: '鯨', title: 'クジラの 背中に のった!', text: '10マス 先まで 運んで もらう', who: e.slot, sec: 1.8 });
           const seat = new THREE.Vector3();
           view.sea.whaleSeat.getWorldPosition(seat);
+          view.sea.spout();
+          sfx.splash();
           await animTo(p, seat, { time: 0.7 / speed(), arc: 2 });
           cam.ball = p.holder.position;
           cam.mode = 'ball';
@@ -894,6 +907,10 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
         }
         case 'chest': {
           camOn(e.slot);
+          cam.close = true;
+          sfx.chime();
+          await view.sea?.openChest(game.s.players[e.slot].sq);
+          cam.close = false;
           const at = game.pieces[e.slot].holder.position.clone();
           if (e.acorns > 0) {
             fx.sparkle(at.clone().setY(1), 20, 3);
@@ -1042,6 +1059,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
             game.bonusIntro = true;
             camOver();
             splash('大会 おしまい!', 'gold');
+            view.sea?.celebrate();
             await sleep(1.8 / speed());
             await explain({ color: '#ffd24a', mark: '★', title: 'ボーナスメダルの発表', text: 'さいごに、ボーナスメダルを 3つ 発表します!', sec: 2.8 });
           }
@@ -1585,6 +1603,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
     get game() { return game; },
     get mode() { return mode; },
     get intro() { return intro; },
+    get view() { return view; },
     camera, renderer, scene,
     freeCamera: (on) => { freeCamera = on; },
     setFast: (on) => { fast = on; },

@@ -261,9 +261,14 @@ function buildShip(g, x, z, rot) {
 function chestMesh() {
   const g = new THREE.Group();
   g.add(mesh(new THREE.BoxGeometry(0.9, 0.5, 0.6), mat(0x9a5a2a), 0, 0.25, 0));
-  const lid = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.9, 10, 1, false, 0, Math.PI), mat(0xb06a32), 0, 0.5, 0);
-  lid.rotation.z = Math.PI / 2;
+  // ふた: うしろの ちょうつがいで ひらく(anchor。ひらく とき 回す)
+  const lid = anchor(new THREE.Group());
+  lid.position.set(0, 0.5, -0.3);
+  const lidM = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.9, 10, 1, false, 0, Math.PI), mat(0xb06a32), 0, 0, 0.3);
+  lidM.rotation.z = Math.PI / 2;
+  lid.add(lidM);
   g.add(lid);
+  g.userData.lid = lid;
   g.add(mesh(new THREE.BoxGeometry(0.94, 0.08, 0.64), mat(0xffc83a), 0, 0.48, 0));
   g.add(mesh(new THREE.BoxGeometry(0.14, 0.18, 0.05), mat(0xffc83a), 0, 0.42, 0.31));
   // のぞく 金の どんぐり
@@ -396,6 +401,7 @@ export function buildSea(g, st, rand, { near, isle }) {
     block(x, z, 5);
   }
   // 宝箱マスの そばに 宝箱
+  const chests = {};
   for (const q of st.squares) {
     if (q.kind !== 'chest') continue;
     const len = Math.hypot(q.x, q.z) || 1;
@@ -403,6 +409,7 @@ export function buildSea(g, st, rand, { near, isle }) {
     c.position.set(q.x - (q.x / len) * 1.5, 0, q.z - (q.z / len) * 1.5);
     c.rotation.y = Math.atan2(q.x - c.position.x, q.z - c.position.z);
     g.add(c);
+    chests[q.id] = c;
   }
 
   // ── 深海: 岩・クラゲ・チョウチンアンコウ ──
@@ -574,6 +581,292 @@ export function buildSea(g, st, rand, { near, isle }) {
     fish.instanceMatrix.needsUpdate = true;
   });
 
+  // ── 砂の 上の ゆらめく 光(コースティクス)。2まいを ちがう 向きに ずらして かさねる ──
+  const causticTex = canvasTex(256, 256, (c, w) => {
+    c.clearRect(0, 0, w, w);
+    c.strokeStyle = 'rgba(255,255,255,0.9)';
+    c.lineWidth = 3;
+    const rnd = (() => { let x = 11; return () => ((x = (x * 16807) % 2147483647) / 2147483647); })();
+    // 網の目: ゆがんだ 円を たくさん
+    for (let i = 0; i < 46; i++) {
+      const cx = rnd() * w, cy = rnd() * w, r = 10 + rnd() * 22;
+      for (const ox of [-w, 0, w]) for (const oy of [-w, 0, w]) {
+        c.beginPath();
+        for (let k = 0; k <= 12; k++) {
+          const a = (k / 12) * Math.PI * 2, rr = r * (0.8 + 0.3 * Math.sin(a * 3 + i));
+          const px = cx + ox + Math.cos(a) * rr, py = cy + oy + Math.sin(a) * rr;
+          if (k === 0) c.moveTo(px, py); else c.lineTo(px, py);
+        }
+        c.stroke();
+      }
+    }
+  });
+  causticTex.wrapS = causticTex.wrapT = THREE.RepeatWrapping;
+  const caustics = [];
+  for (const [rep, op] of [[5, 0.16], [3.4, 0.12]]) {
+    const t = causticTex.clone();
+    t.needsUpdate = true;
+    t.repeat.set(rep, rep * (isle.rz / isle.rx));
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(isle.rx * 2, isle.rz * 2).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: t, color: 0xdffaff, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending }));
+    m.position.y = 0.035;
+    m.renderOrder = 1;
+    m.userData.noMerge = true;
+    g.add(m);
+    caustics.push(t);
+  }
+
+  // ── ウミガメと マンタ(盤の 上を ゆっくり 大きく 回る)──
+  const turtle = anchor(new THREE.Group());
+  {
+    const shell = mesh(new THREE.SphereGeometry(0.9, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x5a8a4a));
+    shell.scale.set(1, 0.55, 1.2);
+    const plates = mesh(new THREE.SphereGeometry(0.75, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x7aa85a), 0, 0.03, 0);
+    plates.scale.set(1, 0.55, 1.2);
+    const belly = mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.12, 16), mat(0xe8d8a0), 0, -0.02, 0);
+    belly.scale.set(1, 1, 1.18);
+    const head = mesh(new THREE.SphereGeometry(0.32, 12, 8), mat(0x8ab878), 0, 0.12, 1.25);
+    for (const sx of [-1, 1]) turtle.add(mesh(new THREE.SphereGeometry(0.05, 6, 4), mat(0x1a2a1a), sx * 0.16, 0.24, 1.48));
+    turtle.add(shell, plates, belly, head);
+    for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+      const f = mesh(new THREE.SphereGeometry(0.35, 8, 6), mat(0x8ab878), sx * 0.95, 0, sz * 0.7);
+      f.scale.set(1.3, 0.15, sz > 0 ? 0.6 : 0.4);
+      turtle.add(f);
+    }
+    g.add(turtle);
+  }
+  const manta = anchor(new THREE.Group());
+  {
+    const body = new THREE.Shape();
+    body.moveTo(0, 1.2);
+    body.quadraticCurveTo(1.0, 0.6, 2.4, -0.1);
+    body.quadraticCurveTo(1.0, -0.2, 0, -0.9);
+    body.quadraticCurveTo(-1.0, -0.2, -2.4, -0.1);
+    body.quadraticCurveTo(-1.0, 0.6, 0, 1.2);
+    const geo = new THREE.ExtrudeGeometry(body, { depth: 0.2, bevelEnabled: true, bevelSize: 0.12, bevelThickness: 0.1, bevelSegments: 2 });
+    geo.rotateX(-Math.PI / 2);
+    manta.add(mesh(geo, mat(0x4a5a8a)));
+    const tail = mesh(new THREE.CylinderGeometry(0.03, 0.01, 2.0, 4), mat(0x34466a), 0, 0.1, -1.8);
+    tail.rotation.x = Math.PI / 2;
+    manta.add(tail);
+    for (const sx of [-1, 1]) manta.add(mesh(new THREE.SphereGeometry(0.07, 6, 4), mat(0xe8f0ff), sx * 0.35, 0.28, 0.85));
+    g.add(manta);
+  }
+  updaters.push((t) => {
+    const a = t * 0.12;
+    turtle.position.set(Math.cos(a) * isle.rx * 0.55, 5.2 + Math.sin(t * 0.7) * 0.3, Math.sin(a) * isle.rz * 0.55);
+    turtle.rotation.set(0, Math.atan2(-Math.sin(a), Math.cos(a)), Math.sin(t * 1.2) * 0.08);
+    const b = -t * 0.09 + 2;
+    // マンタは 島の 外がわを 大きく 回る(盤を かくさない)
+    manta.position.set(Math.cos(b) * isle.rx * 1.55, 6 + Math.sin(t * 0.5) * 0.6, Math.sin(b) * isle.rz * 1.6);
+    manta.rotation.set(0, Math.atan2(Math.sin(b), -Math.cos(b)), Math.sin(t * 1.4) * 0.18);
+  });
+
+  // ── 深海の ふきだし口: あわの 柱 ──
+  const vents = [];
+  for (let k = 0; k < 3; k++) {
+    const p = spot(k < 2 ? 'deep' : 'wreck', 1.6);
+    if (!p) continue;
+    const cone = mesh(new THREE.ConeGeometry(0.55, 0.9, 7, 1, true), mat(0x4a4058), p[0], 0.45, p[1]);
+    g.add(cone);
+    g.add(mesh(new THREE.CircleGeometry(0.26, 10).rotateX(-Math.PI / 2), glow(0xff8a5a), p[0], 0.88, p[1]));
+    vents.push({ x: p[0], z: p[1] });
+    block(p[0], p[1], 1.2);
+  }
+  const BUB = 60;
+  const bubbles = new THREE.InstancedMesh(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshBasicMaterial({ color: 0xeafcff, transparent: true, opacity: 0.55, depthWrite: false }), BUB);
+  bubbles.frustumCulled = false;
+  g.add(bubbles);
+  const bub = Array.from({ length: BUB }, (_, i) => ({ v: i % Math.max(1, vents.length), y: (i / BUB) * 7, ph: i * 1.7, s: 0.6 + (i % 5) * 0.2 }));
+  // しかけの あわ(海流で 流される コマの うしろ・クジラの しお)
+  const burst = [];
+  updaters.push((t, dt) => {
+    bub.forEach((b, i) => {
+      const v = vents[b.v];
+      if (!v) { dmy.scale.setScalar(0.0001); dmy.updateMatrix(); bubbles.setMatrixAt(i, dmy.matrix); return; }
+      b.y += dt * (1.2 + b.s * 0.5);
+      if (b.y > 7) b.y = 0.9;
+      dmy.position.set(v.x + Math.sin(t * 2 + b.ph) * 0.15 * b.y * 0.3, b.y, v.z + Math.cos(t * 1.7 + b.ph) * 0.15 * b.y * 0.3);
+      dmy.rotation.set(0, 0, 0);
+      dmy.scale.setScalar(b.s * (0.7 + b.y * 0.06));
+      dmy.updateMatrix();
+      bubbles.setMatrixAt(i, dmy.matrix);
+    });
+    bubbles.instanceMatrix.needsUpdate = true;
+    for (let i = burst.length - 1; i >= 0; i--) {
+      const b = burst[i];
+      b.t += dt;
+      b.m.position.addScaledVector(b.vel, dt);
+      b.vel.multiplyScalar(Math.exp(-dt * 1.5));
+      b.vel.y += dt * 2.5;
+      b.m.material.opacity = 0.7 * (1 - b.t / b.life);
+      if (b.t >= b.life) { g.remove(b.m); b.m.material.dispose(); burst.splice(i, 1); }
+    }
+  });
+  const bubbleGeo = new THREE.SphereGeometry(0.1, 8, 6);
+  // あわを ぶわっと(pos から vel の 向きへ)
+  function bubbleBurst(pos, n = 14, spread = 1.5, up = 2) {
+    for (let k = 0; k < n; k++) {
+      const m = mesh(bubbleGeo, new THREE.MeshBasicMaterial({ color: 0xeafcff, transparent: true, opacity: 0.7, depthWrite: false }), pos.x, pos.y, pos.z);
+      m.scale.setScalar(0.6 + Math.random() * 1.2);
+      m.userData.noMerge = true;
+      g.add(m);
+      burst.push({ m, t: 0, life: 1.2 + Math.random() * 0.8, vel: new THREE.Vector3((Math.random() - 0.5) * spread * 2, up * (0.5 + Math.random()), (Math.random() - 0.5) * spread * 2) });
+    }
+  }
+
+  // ── しかけの 演出 ──
+  const acts = []; // { t, dur, step(k), end() }
+  const play = (dur, step, end) => new Promise((resolve) => acts.push({ t: 0, dur, step, end: () => { end?.(); resolve(); } }));
+  // ふぐ: ぷくーっと ふくらんで、とげが 出て、しぼむ
+  function fugu(pos) {
+    const f = new THREE.Group();
+    const body = mesh(new THREE.SphereGeometry(0.4, 16, 12), mat(0xf2d88a));
+    const belly = mesh(new THREE.SphereGeometry(0.38, 12, 8, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45), mat(0xfff6e0), 0, -0.02, 0.02);
+    f.add(body, belly);
+    for (const sx of [-1, 1]) {
+      f.add(mesh(new THREE.SphereGeometry(0.08, 8, 6), mat(0x1a1a2a), sx * 0.18, 0.12, 0.33));
+      const fin = mesh(new THREE.SphereGeometry(0.1, 6, 4), mat(0xe8b86a), sx * 0.42, 0, 0);
+      fin.scale.set(0.3, 1, 1.4);
+      f.add(fin);
+    }
+    f.add(mesh(new THREE.TorusGeometry(0.06, 0.02, 4, 10), mat(0x8a3a2a), 0, -0.05, 0.38));
+    const spikes = [];
+    for (let k = 0; k < 26; k++) {
+      const v = new THREE.Vector3().randomDirection();
+      const sp = mesh(new THREE.ConeGeometry(0.035, 0.16, 4), mat(0xc89a5a), v.x * 0.4, v.y * 0.4, v.z * 0.4);
+      sp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v);
+      sp.scale.setScalar(0.01);
+      f.add(sp);
+      spikes.push(sp);
+    }
+    f.position.copy(pos).add(new THREE.Vector3(0.9, 1.6, 0.6));
+    g.add(f);
+    return play(2.2, (k) => {
+      const inflate = k < 0.25 ? k / 0.25 * 0.2 : k < 0.6 ? 0.2 + ((k - 0.25) / 0.35) * 1.6 : k < 0.85 ? 1.8 : 1.8 - ((k - 0.85) / 0.15) * 1.6;
+      f.scale.setScalar(0.6 + inflate);
+      for (const sp of spikes) sp.scale.setScalar(k > 0.45 && k < 0.9 ? 1.4 : 0.01);
+      f.rotation.y = Math.sin(k * 20) * 0.2;
+      if (k > 0.55 && k < 0.6 && !f.userData.burst) { f.userData.burst = true; bubbleBurst(f.position, 18, 2.2, 1); }
+    }, () => g.remove(f));
+  }
+  // クラゲの いなずま: 光る クラゲが 上に あらわれて、深海の 子へ ビリビリ
+  const boltMat = new THREE.LineBasicMaterial({ color: 0xbff4ff, transparent: true });
+  function jellyZap(targets) {
+    const j = buildJelly(0xb48cff);
+    const c = targets.length ? targets.reduce((a, p) => a.add(p), new THREE.Vector3()).multiplyScalar(1 / targets.length) : new THREE.Vector3();
+    j.position.set(c.x, 4.5, c.z);
+    j.scale.setScalar(1.8);
+    g.add(j);
+    const lines = targets.map(() => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(3 * 8), 3));
+      const l = new THREE.Line(geo, boltMat);
+      g.add(l);
+      return l;
+    });
+    // しびれる 子の まわりの 光
+    const sparks = targets.map((b) => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xbff4ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      sp.position.copy(b).add(new THREE.Vector3(0, 1, 0));
+      sp.scale.setScalar(2.6);
+      g.add(sp);
+      return sp;
+    });
+    return play(2.0, (k) => {
+      j.position.y = 4.5 + Math.sin(k * 12) * 0.15;
+      const on = k > 0.25 && Math.floor(k * 30) % 2 === 0;
+      boltMat.opacity = on ? 1 : 0;
+      for (const sp of sparks) sp.material.opacity = on ? 0.9 : 0.2 * (k > 0.25 ? 1 : 0);
+      lines.forEach((l, i) => {
+        const a = j.position, b = targets[i];
+        const p = l.geometry.attributes.position;
+        for (let n = 0; n < 8; n++) {
+          const u = n / 7;
+          p.setXYZ(n, a.x + (b.x - a.x) * u + (n && n < 7 ? (Math.random() - 0.5) * 0.5 : 0), a.y - 0.5 + (b.y + 0.8 - a.y + 0.5) * u, a.z + (b.z - a.z) * u + (n && n < 7 ? (Math.random() - 0.5) * 0.5 : 0));
+        }
+        p.needsUpdate = true;
+      });
+    }, () => { g.remove(j); for (const l of lines) { g.remove(l); l.geometry.dispose(); } for (const sp of sparks) g.remove(sp); });
+  }
+  // ラッコ: あおむけに 浮いて、おなかの 上で 貝を こんこん
+  function otter(pos) {
+    const o = new THREE.Group();
+    const body = mesh(new THREE.SphereGeometry(0.45, 14, 10), mat(0x8a5a3a));
+    body.scale.set(0.8, 0.6, 1.4);
+    const face = mesh(new THREE.SphereGeometry(0.3, 12, 8), mat(0xd8c0a0), 0, 0.12, 0.6);
+    for (const sx of [-1, 1]) o.add(mesh(new THREE.SphereGeometry(0.05, 6, 4), mat(0x1a1a1a), sx * 0.11, 0.3, 0.72));
+    const shell = mesh(new THREE.SphereGeometry(0.16, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xf2d8e8), 0, 0.32, 0.1);
+    const stone = mesh(new THREE.SphereGeometry(0.1, 6, 4), mat(0x8a8a9a), 0, 0.5, 0.2);
+    o.add(body, face, shell, stone);
+    o.position.copy(pos).add(new THREE.Vector3(0, 2.2, 0));
+    g.add(o);
+    return play(2.0, (k) => {
+      o.position.y = pos.y + 2.2 + Math.sin(k * 8) * 0.1;
+      stone.position.y = 0.42 + Math.abs(Math.sin(k * 18)) * 0.25;
+      if (k > 0.8 && !o.userData.open) { o.userData.open = true; shell.scale.y = 0.4; bubbleBurst(o.position, 10, 1, 1.5); }
+    }, () => g.remove(o));
+  }
+  // 宝箱を ひらく(ふたが ぱかっ。中から 光)
+  function openChest(id) {
+    const c = chests[id];
+    if (!c) return Promise.resolve();
+    const lid = c.userData.lid;
+    const light = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffd24a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+    light.position.copy(c.position).add(new THREE.Vector3(0, 0.8, 0));
+    light.scale.setScalar(2.5);
+    g.add(light);
+    return play(1.6, (k) => {
+      lid.rotation.x = -Math.min(1, k * 3) * 1.9 * (k > 0.85 ? (1 - (k - 0.85) / 0.15) : 1);
+      light.material.opacity = Math.sin(Math.min(1, k * 1.2) * Math.PI) * 0.9;
+    }, () => { g.remove(light); lid.rotation.x = 0; });
+  }
+  updaters.push((t, dt) => {
+    for (let i = acts.length - 1; i >= 0; i--) {
+      const a = acts[i];
+      a.t += dt;
+      const k = Math.min(1, a.t / a.dur);
+      a.step(k);
+      if (k >= 1) { acts.splice(i, 1); a.end(); }
+    }
+  });
+
+  // ── ラストスパート: 海が 光る(光る プランクトン)。魚の むれは 虹色で はやく ──
+  const PL = 220;
+  const plGeo = new THREE.BufferGeometry();
+  const plPos = new Float32Array(PL * 3);
+  const plHome = [];
+  for (let i = 0; i < PL; i++) {
+    const a = rand() * Math.PI * 2, r = Math.sqrt(rand());
+    plHome.push([Math.cos(a) * isle.rx * r * 1.05, 0.5 + rand() * 6, Math.sin(a) * isle.rz * r * 1.05, rand() * 6]);
+  }
+  plGeo.setAttribute('position', new THREE.BufferAttribute(plPos, 3));
+  const plMat = new THREE.PointsMaterial({ map: glowTex, color: 0xb8fff0, size: 0.95, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+  const plankton = new THREE.Points(plGeo, plMat);
+  plankton.frustumCulled = false;
+  g.add(plankton);
+  let spurt = 0, spurtOn = false;
+  const rainbow = [0xff6a8a, 0xffb03a, 0xffe14a, 0x6ad86a, 0x5cc0ff, 0xb48cff];
+  updaters.push((t, dt) => {
+    spurt += ((spurtOn ? 1 : 0) - spurt) * Math.min(1, dt * 1.5);
+    plMat.opacity = spurt * (0.75 + Math.sin(t * 2) * 0.2);
+    plankton.visible = spurt > 0.01;
+    if (plankton.visible) {
+      for (let i = 0; i < PL; i++) {
+        const h = plHome[i];
+        plPos[i * 3] = h[0] + Math.sin(t * 0.5 + h[3]) * 0.6;
+        plPos[i * 3 + 1] = h[1] + Math.sin(t * 0.8 + h[3] * 2) * 0.4;
+        plPos[i * 3 + 2] = h[2] + Math.cos(t * 0.4 + h[3]) * 0.6;
+      }
+      plGeo.attributes.position.needsUpdate = true;
+    }
+  });
+  function setSpurt(on) {
+    spurtOn = on;
+    for (const sc of schools) sc.sp = Math.sign(sc.sp) * (on ? 1.1 : 0.5);
+    for (let i = 0; i < FISH; i++) fish.setColorAt(i, new THREE.Color(on ? rainbow[i % rainbow.length] : schools[i % 4].color));
+    fish.instanceColor.needsUpdate = true;
+  }
+
   // ── クジラ ──
   const W = buildWhale();
   const whale = anchor(W.g);
@@ -604,12 +897,24 @@ export function buildSea(g, st, rand, { near, isle }) {
       W0.sq = id;
       return new Promise((resolve) => { W0.swim = { path, t: 0, dur, resolve }; });
     },
+    bubbleBurst,
+    setSpurt,
+    // 決着: 島の あちこちから あわが ぶわっ
+    celebrate() { for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; bubbleBurst(new THREE.Vector3(Math.cos(a) * isle.rx * 0.6, 0.5, Math.sin(a) * isle.rz * 0.6), 16, 1, 4); } },
+    fugu,
+    jellyZap,
+    otter,
+    openChest,
+    // クジラの しお(背中から あわが ぶわっと)
+    spout() { const p = new THREE.Vector3(); W.seat.getWorldPosition(p); p.y += 0.6; bubbleBurst(p, 24, 0.6, 4.5); },
     setFlow(dir) {
       for (const f of flows) f.m.visible = f.dir === dir;
     },
     update(dt) {
       time += dt;
-      for (const u of updaters) u(time);
+      for (const u of updaters) u(time, dt);
+      caustics[0].offset.set(time * 0.012, time * 0.007);
+      caustics[1].offset.set(-time * 0.009, time * 0.011);
       flowTex.offset.x -= dt * 0.9;
       // クジラ: 泳ぐ(しっぽを ふって、ひれを ぱたぱた)
       W.tail.rotation.x = Math.sin(time * 2.4) * 0.25;
