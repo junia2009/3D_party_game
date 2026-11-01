@@ -967,47 +967,74 @@ async function playMinigame(key, lineup, character) {
 
 // ── 大会: ステージ選択(地図の本) ────────────────────────
 // 地図の紙に、ステージの島をえがく。遊べる島はタップできる。じゅんびちゅうの島は霧の中
+// 島の 絵(宝の地図の 上に 描く)。下に 水彩の 海の にじみ、岩の 土台、上に ステージの 景色
+const ISLE_BASE = (top, rock = '#8a6a50', id = '') => `
+  <defs><radialGradient id="wc${id}" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#7ec8e3" stop-opacity=".55"/><stop offset=".7" stop-color="#7ec8e3" stop-opacity=".25"/><stop offset="1" stop-color="#7ec8e3" stop-opacity="0"/></radialGradient></defs>
+  <ellipse cx="80" cy="74" rx="78" ry="30" fill="url(#wc${id})"/>
+  <path d="M14 72 q8 -4 16 0 M132 80 q8 -4 16 0 M24 92 q7 -3 14 0" stroke="#5a9ab8" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".6"/>
+  <path d="M22 60 Q24 84 80 88 Q136 84 138 60 Z" fill="${rock}" stroke="#4a2a12" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M40 76 l6 8 M62 82 l3 6 M100 82 l-2 6 M120 76 l-5 7" stroke="#4a2a12" stroke-width="1.4" opacity=".5"/>
+  <ellipse cx="80" cy="58" rx="58" ry="24" fill="${top}" stroke="#4a2a12" stroke-width="2.6"/>`;
 function isleSvg(ready, key) {
   if (!ready) {
-    return `<svg viewBox="0 0 120 80"><ellipse cx="60" cy="46" rx="44" ry="22" fill="#c9bfa8" stroke="#8a7a6a" stroke-width="3"/>
-      <g fill="#fffaf0" opacity=".92"><ellipse cx="44" cy="40" rx="26" ry="13"/><ellipse cx="72" cy="36" rx="24" ry="12"/><ellipse cx="60" cy="50" rx="34" ry="12"/></g>
-      <text x="60" y="47" text-anchor="middle" font-size="22" font-family="Dela Gothic One" fill="#8a7a6a">?</text></svg>`;
+    return `<svg viewBox="8 6 144 92">${ISLE_BASE('#c9bfa8', '#9a8a78', 'x')}<text x="80" y="64" text-anchor="middle" font-size="24" font-family="Dela Gothic One" fill="#8a7a6a">?</text></svg>`;
   }
-  // どんぐり遊園地: 黄緑の 島に 観覧車と テント
+  // どんぐり遊園地: 観覧車・ジェットコースター・テント・風船
   if (key === 'yuen') {
-    return `<svg viewBox="0 0 120 80">
-      <ellipse cx="60" cy="50" rx="46" ry="22" fill="#8a6a50" stroke="#4a2a12" stroke-width="3"/>
-      <ellipse cx="60" cy="44" rx="46" ry="22" fill="#9ad87a" stroke="#4a2a12" stroke-width="3"/>
-      <ellipse cx="60" cy="44" rx="30" ry="13" fill="none" stroke="#fff6e0" stroke-width="3" stroke-dasharray="3 4"/>
-      <circle cx="42" cy="26" r="13" fill="none" stroke="#ff7aa8" stroke-width="3"/><circle cx="42" cy="26" r="2.5" fill="#ff7aa8"/>
-      <path d="M42 26 L42 13 M42 26 L53 32 M42 26 L31 32 M42 26 L42 42" stroke="#ff7aa8" stroke-width="1.6"/>
-      <path d="M70 40 L80 24 L90 40 Z" fill="#ffd23c" stroke="#4a2a12" stroke-width="2"/><path d="M75 32 L85 32" stroke="#e8402f" stroke-width="2"/>
+    const gond = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => { const a = (k / 8) * Math.PI * 2; return `<rect x="${48 + Math.cos(a) * 17 - 3}" y="${30 + Math.sin(a) * 17}" width="6" height="5" rx="1.5" fill="${['#ff6a8a', '#ffd23c', '#5cc0ff', '#7ad35a'][k % 4]}" stroke="#4a2a12" stroke-width=".8"/>`; }).join('');
+    return `<svg viewBox="8 6 144 92">${ISLE_BASE('#9ad87a', '#8a6a50', 'y')}
+      <ellipse cx="80" cy="58" rx="40" ry="15" fill="none" stroke="#fff6e0" stroke-width="2.4" stroke-dasharray="3 4"/>
+      <path d="M38 56 L48 32 L58 56" stroke="#4a2a12" stroke-width="2" fill="none"/>
+      <circle cx="48" cy="32" r="17" fill="none" stroke="#ff7aa8" stroke-width="2.6"/>
+      <path d="M48 15 V49 M31 32 H65 M36 20 L60 44 M60 20 L36 44" stroke="#ff7aa8" stroke-width="1.1"/>${gond}
+      <circle cx="48" cy="32" r="2.6" fill="#ffd23c" stroke="#4a2a12" stroke-width="1"/>
+      <path d="M86 58 C88 40 96 36 100 46 C104 56 112 30 120 34 C126 37 124 50 132 54" stroke="#e8402f" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <path d="M90 58 v-6 M100 58 v-10 M110 58 v-12 M120 58 v-16 M128 58 v-6" stroke="#8a5a32" stroke-width="1.2"/>
+      <path d="M100 63 L112 46 L124 63 Z" fill="#fff6e0" stroke="#4a2a12" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M104 63 L112 46 L108 63 Z M116 63 L112 46 L120 63 Z" fill="#e8402f"/>
+      <path d="M112 46 v-6" stroke="#4a2a12" stroke-width="1.4"/><path d="M112 40 l6 2 l-6 2 z" fill="#ffd23c" stroke="#4a2a12" stroke-width=".8"/>
+      <g stroke="#4a2a12" stroke-width=".8"><path d="M70 44 q-1 8 2 14" fill="none"/><path d="M76 40 q2 9 -1 18" fill="none"/>
+      <ellipse cx="70" cy="40" rx="4" ry="5" fill="#5cc0ff"/><ellipse cx="76" cy="36" rx="4" ry="5" fill="#ffd23c"/></g>
     </svg>`;
   }
-  // 海の中の 探検: 水色の 海に、サンゴと クジラ
+  // 海の中の 探検: 水の 中の 島(サンゴ・海藻・沈没船・クジラの しお・あわ)
   if (key === 'umi') {
-    return `<svg viewBox="0 0 120 80">
-      <ellipse cx="60" cy="50" rx="46" ry="22" fill="#2a5a8a" stroke="#1a3050" stroke-width="3"/>
-      <ellipse cx="60" cy="44" rx="46" ry="22" fill="#6ad0e8" stroke="#1a3050" stroke-width="3"/>
-      <ellipse cx="60" cy="44" rx="30" ry="13" fill="none" stroke="#fff6e0" stroke-width="3" stroke-dasharray="3 4"/>
-      <path d="M34 48 q-3 -10 2 -16 M36 42 q4 -6 7 -6 M30 44 q-5 -4 -6 -9" stroke="#ff7aa8" stroke-width="3" fill="none" stroke-linecap="round"/>
-      <ellipse cx="74" cy="28" rx="17" ry="9" fill="#4a7ac8" stroke="#1a3050" stroke-width="2"/>
-      <path d="M57 28 l-8 -6 l1 12 z" fill="#4a7ac8" stroke="#1a3050" stroke-width="2"/>
-      <circle cx="84" cy="26" r="1.8" fill="#1a3050"/><path d="M80 18 q2 -6 0 -9 M80 18 q-3 -5 -6 -6" stroke="#bff0ff" stroke-width="2" fill="none"/>
-      <circle cx="96" cy="44" r="2" fill="#eafcff"/><circle cx="99" cy="38" r="1.4" fill="#eafcff"/>
+    return `<svg viewBox="8 6 144 92">
+      <defs><linearGradient id="seaTop" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fe0f0"/><stop offset="1" stop-color="#4fb0d8"/></linearGradient></defs>
+      ${ISLE_BASE('url(#seaTop)', '#2a5a8a', 'u')}
+      <path d="M36 58 q6 -3 12 0 t12 0 M98 66 q6 -3 12 0 t12 0 M66 70 q5 -3 10 0" stroke="#e8fbff" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".8"/>
+      <ellipse cx="80" cy="58" rx="40" ry="15" fill="none" stroke="#fff6e0" stroke-width="2.4" stroke-dasharray="3 4"/>
+      <path d="M40 62 q-4 -10 0 -18 M40 52 q5 -5 9 -5 M36 56 q-6 -3 -7 -9 M44 60 q3 -6 8 -7" stroke="#ff7aa8" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+      <path d="M56 64 q-3 -8 1 -14 q-3 -6 1 -12 M61 64 q3 -7 -1 -13 q3 -6 -1 -11" stroke="#4f9a3a" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+      <g transform="translate(108 52) rotate(14)"><path d="M-14 0 h28 l-5 7 h-18 z" fill="#8a5a32" stroke="#4a2a12" stroke-width="1.4" stroke-linejoin="round"/><path d="M0 0 v-15" stroke="#4a2a12" stroke-width="1.4"/><path d="M1 -14 l8 4 l-8 3 z" fill="#e8dcc0" stroke="#4a2a12" stroke-width=".8"/></g>
+      <ellipse cx="86" cy="36" rx="18" ry="9" fill="#4a7ac8" stroke="#1a3050" stroke-width="1.8"/>
+      <path d="M86 40 q10 4 18 -1" fill="#e8f2ff" stroke="none"/>
+      <path d="M68 36 l-9 -7 l1 14 z" fill="#4a7ac8" stroke="#1a3050" stroke-width="1.6" stroke-linejoin="round"/>
+      <circle cx="97" cy="34" r="1.8" fill="#1a3050"/><path d="M92 39 q4 2 7 0" stroke="#1a3050" stroke-width="1" fill="none"/>
+      <path d="M88 27 q0 -7 -3 -10 M88 27 q2 -8 6 -10 M88 27 q-4 -5 -9 -5" stroke="#bff0ff" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+      <g fill="#eafcff" stroke="#5a9ab8" stroke-width=".8"><circle cx="126" cy="44" r="2.4"/><circle cx="130" cy="36" r="1.8"/><circle cx="125" cy="29" r="1.3"/><circle cx="32" cy="40" r="1.6"/></g>
     </svg>`;
   }
-  // 四季の森: 島を4つに分けて、春(桃)・夏(緑)・秋(橙)・冬(白)。まん中に大木
-  return `<svg viewBox="0 0 120 80">
-    <ellipse cx="60" cy="50" rx="46" ry="22" fill="#8a6a50" stroke="#4a2a12" stroke-width="3"/>
-    <clipPath id="isleClip"><ellipse cx="60" cy="44" rx="46" ry="22"/></clipPath>
+  // 四季の森: 島を 4つに 分けて、春(桃)・夏(緑)・秋(橙)・冬(白)。それぞれの 木と、まん中に 大木
+  return `<svg viewBox="8 6 144 92">
+    <defs><clipPath id="isleClip"><ellipse cx="80" cy="58" rx="58" ry="24"/></clipPath></defs>
+    ${ISLE_BASE('#9ad87a', '#8a6a50', 's')}
     <g clip-path="url(#isleClip)">
-      <rect x="0" y="0" width="60" height="44" fill="#ffc3d6"/><rect x="60" y="0" width="60" height="44" fill="#8fd060"/>
-      <rect x="60" y="44" width="60" height="40" fill="#f0a24a"/><rect x="0" y="44" width="60" height="40" fill="#f4f8ff"/>
+      <rect x="0" y="0" width="80" height="58" fill="#ffc8da"/><rect x="80" y="0" width="80" height="58" fill="#8fd060"/>
+      <rect x="80" y="58" width="80" height="40" fill="#f0a24a"/><rect x="0" y="58" width="80" height="40" fill="#f4f8ff"/>
     </g>
-    <ellipse cx="60" cy="44" rx="46" ry="22" fill="none" stroke="#4a2a12" stroke-width="3"/>
-    <ellipse cx="60" cy="44" rx="30" ry="13" fill="none" stroke="#fff6e0" stroke-width="3" stroke-dasharray="3 4"/>
-    <rect x="57" y="30" width="6" height="12" fill="#6b4c36"/><circle cx="60" cy="28" r="10" fill="#4f9a3c" stroke="#2f6b25" stroke-width="2"/>
+    <ellipse cx="80" cy="58" rx="58" ry="24" fill="none" stroke="#4a2a12" stroke-width="2.6"/>
+    <ellipse cx="80" cy="58" rx="40" ry="15" fill="none" stroke="#fff6e0" stroke-width="2.4" stroke-dasharray="3 4"/>
+    <ellipse cx="46" cy="52" rx="7" ry="3" fill="#7ec8e3" stroke="#4a2a12" stroke-width="1"/>
+    <g stroke="#4a2a12" stroke-width="1.2">
+      <path d="M38 50 v-6" /><circle cx="38" cy="40" r="6" fill="#ff9ac0"/>
+      <path d="M122 50 v-6"/><circle cx="122" cy="40" r="6.5" fill="#4f9a3c"/>
+      <path d="M118 72 v-6"/><circle cx="118" cy="62" r="6" fill="#e8642c"/>
+      <path d="M42 74 v-4"/><path d="M42 58 l-6 12 h12 z" fill="#2f6a4a"/><path d="M42 58 l-3 6 h6 z" fill="#fff"/>
+    </g>
+    <rect x="77" y="40" width="6" height="14" fill="#6b4c36" stroke="#4a2a12" stroke-width="1.2"/>
+    <circle cx="80" cy="34" r="11" fill="#4f9a3c" stroke="#2f6b25" stroke-width="2"/>
+    <circle cx="76" cy="31" r="1.6" fill="#c8843f"/><circle cx="84" cy="36" r="1.6" fill="#c8843f"/>
   </svg>`;
 }
 // つづきから: 保存しておいた 大会(board/save.js)が あれば、ステージの 地図の 上に 出す

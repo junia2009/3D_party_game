@@ -1112,21 +1112,30 @@
   /* 大会: 宝の地図(ステージ選択)。画面の 下まで 使って、島を 上から 順に ならべる */
   #stages { align-content: stretch; grid-template-rows: auto auto minmax(0, 1fr) auto; }
   #stages:has(#resumeBox[hidden]) { grid-template-rows: auto minmax(0, 1fr) auto; }
-  .mapbook { position: relative; min-height: 0; padding: 10px; border-radius: 22px; background: #7a4a24; box-shadow: 0 6px 0 #4a2a12, 0 14px 30px rgba(0,0,0,.25); }
+  /* 宝の地図の 紙: 羊皮紙(しみ・折り目・こげた ふち・うすい 経緯線は .mapdeco) */
+  .mapbook { position: relative; min-height: 0; padding: 10px; border-radius: 22px; background: linear-gradient(#8a5428, #6a3e1c); box-shadow: 0 6px 0 #4a2a12, 0 14px 30px rgba(0,0,0,.25), inset 0 2px 0 rgba(255,220,160,.25); }
   .mappage {
-    position: relative; height: 100%; min-height: 420px; border-radius: 14px; padding: 6px 4px; box-sizing: border-box;
+    position: relative; z-index: 1; height: 100%; min-height: 420px; border-radius: 10px 16px 12px 18px / 16px 10px 18px 12px; padding: 6px 4px; box-sizing: border-box;
     display: grid; grid-template-rows: repeat(3, minmax(0, 1fr));
     background:
-      radial-gradient(circle at 12% 88%, rgba(160,110,60,.18) 0 18%, transparent 19%),
-      radial-gradient(circle at 92% 8%, rgba(160,110,60,.14) 0 12%, transparent 13%),
-      radial-gradient(ellipse at 30% 20%, #fff4d6, #f1dcaa 60%, #e3c486);
-    box-shadow: inset 0 0 34px rgba(122,74,36,.45);
+      linear-gradient(90deg, transparent 49.6%, rgba(122,74,36,.12) 50%, rgba(255,255,255,.18) 50.6%, transparent 51.2%),
+      linear-gradient(180deg, transparent 33%, rgba(122,74,36,.1) 33.4%, rgba(255,255,255,.16) 33.9%, transparent 34.5%, transparent 66.2%, rgba(122,74,36,.1) 66.6%, rgba(255,255,255,.16) 67.1%, transparent 67.7%),
+      radial-gradient(ellipse at 14% 86%, rgba(150,95,40,.22) 0 9%, transparent 18%),
+      radial-gradient(ellipse at 88% 10%, rgba(150,95,40,.18) 0 7%, transparent 15%),
+      radial-gradient(ellipse at 74% 62%, rgba(150,95,40,.1) 0 5%, transparent 11%),
+      radial-gradient(ellipse at 32% 22%, #fff6dc, #f3dfae 55%, #e2c084 85%, #c89a58);
+    box-shadow: inset 0 0 0 2px rgba(122,74,36,.35), inset 0 0 26px 6px rgba(110,62,24,.55), inset 0 0 70px rgba(160,100,40,.25);
   }
-  .mappage svg.route { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .mapbook .mapdeco { position: absolute; inset: 10px; width: calc(100% - 20px); height: calc(100% - 20px); z-index: 2; pointer-events: none; mix-blend-mode: multiply; }
+  .mapdoodle { position: absolute; z-index: 2; pointer-events: none; opacity: .45; }
+  .mapdoodle.d1 { left: 7%; top: 36%; width: 46px; transform: rotate(-6deg); }
+  .mapdoodle.d2 { right: 8%; bottom: 3.5%; width: 64px; }
+  .mapdoodle.d3 { left: 9%; bottom: 33%; width: 34px; transform: rotate(8deg); }
+  .mappage svg.route { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; filter: drop-shadow(0 1px 0 rgba(255,246,220,.7)); }
   /* 方位じしん: 右の 1つめと 2つめの 説明の あいだ(島・説明・札と かさならない ところ)*/
-  .mapbook .compass { position: absolute; right: 8%; top: 34%; width: 50px; height: 50px; opacity: .8; pointer-events: none; transform: translate(0, -50%) rotate(-12deg); }
+  .mapbook .compass { position: absolute; z-index: 2; right: 7%; top: 34%; width: 58px; height: 58px; opacity: .85; pointer-events: none; transform: translate(0, -50%) rotate(-12deg); filter: drop-shadow(0 2px 0 rgba(122,74,36,.25)); }
   .isle {
-    position: relative; display: flex; align-items: center; gap: 8px; min-height: 0; border: 0; background: none; padding: 0 4px;
+    position: relative; z-index: 3; display: flex; align-items: center; gap: 8px; min-height: 0; border: 0; background: none; padding: 0 4px;
     cursor: pointer; font: inherit; color: #4a2a12; text-align: left; -webkit-tap-highlight-color: transparent;
     animation: islein .5s cubic-bezier(.3,1.5,.5,1) backwards; animation-delay: calc(var(--i) * .08s);
   }
@@ -1137,6 +1146,9 @@
   .isle .flag { position: absolute; left: 50%; top: 22%; width: 30px; height: 40px; transform: translate(-30%, -20%) scale(0); transform-origin: 15% 100%; transition: transform .3s cubic-bezier(.3,1.8,.5,1); }
   .isle.on .flag { transform: translate(-30%, -20%) scale(1); animation: flagwave .8s ease-in-out infinite alternate; }
   .isle.on .pic > svg:first-child { transform: scale(1.06); }
+  .isle .pic::before { content: ''; position: absolute; left: 6%; right: 6%; top: 14%; bottom: 6%; border-radius: 50%; background: radial-gradient(closest-side, rgba(255,214,90,.95), rgba(255,226,120,.45) 55%, rgba(255,226,120,0)); opacity: 0; transition: opacity .3s; }
+  .isle.on .pic::before { opacity: 1; animation: islelight 1.6s ease-in-out infinite alternate; }
+  @keyframes islelight { from { transform: scale(.94); } to { transform: scale(1.04); } }
   .isle .txt { display: grid; gap: 3px; min-width: 0; }
   .isle b { font: 400 clamp(16px, 4.6vw, 20px) var(--font-display); line-height: 1.15; }
   .isle small { font-size: 11.5px; font-weight: 700; line-height: 1.4; opacity: .8; }
@@ -1159,7 +1171,7 @@
     .isle .pic { flex: 0 1 auto; height: auto; width: 78%; }
     .isle .tags { justify-content: center; }
     .isle small { font-size: 10.5px; }
-    .mapbook .compass { display: none; }
+    .mapbook .compass, .mapdoodle { display: none; }
   }
   #turnSeg small { display: block; font-size: 10px; opacity: .7; }
   /* 大会の盤: 上に5人の札、下にメッセージと操作のボタン */
@@ -1771,8 +1783,25 @@
     <button class="resume-del" type="button" id="resumeDel">この大会を けす</button>
   </div>
   <div class="mapbook">
+    <svg class="mapdeco" viewBox="0 0 100 160" preserveAspectRatio="none" aria-hidden="true">
+      <g fill="none" stroke="#8a5a2a" stroke-linecap="round" opacity=".35" stroke-width=".5">
+        <path d="M0 53 H100 M0 107 H100 M50 0 V160" stroke-dasharray="1 2" opacity=".35"/>
+        <path d="M70 22 q2 -1.4 4 0 t4 0 M8 58 q2 -1.4 4 0 t4 0 t4 0 M78 96 q2 -1.4 4 0 t4 0 M10 132 q2 -1.4 4 0 t4 0 M60 146 q2 -1.4 4 0 t4 0 t4 0"/>
+      </g>
+    </svg>
     <div class="mappage" id="stageMap"></div>
-    <svg class="compass" viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="26" fill="#f6e6bc" stroke="#7a4a24" stroke-width="2.5"/><path d="M30 6 L35 30 L30 54 L25 30 Z" fill="#7a4a24"/><path d="M30 6 L35 30 L25 30 Z" fill="#e8402f"/><path d="M6 30 L30 26 L54 30 L30 34 Z" fill="#c8a06a"/><text x="30" y="16" text-anchor="middle" font-size="8" font-family="Dela Gothic One" fill="#fff6e0">N</text></svg>
+    <svg class="mapdoodle d1" viewBox="0 0 60 40" aria-hidden="true"><g fill="none" stroke="#7a4a24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 28 h40 l-6 7 h-28 z"/><path d="M28 28 v-22 M28 7 l14 13 h-14 M28 9 l-11 15 h11"/><path d="M4 37 q4 -3 8 0 t8 0 t8 0 t8 0 t8 0"/></g></svg>
+    <svg class="mapdoodle d2" viewBox="0 0 70 40" aria-hidden="true"><g fill="none" stroke="#7a4a24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 30 q8 -16 16 0 q8 -16 16 0 q8 -16 16 0"/><path d="M52 30 q6 -18 12 -14 q2 4 -4 6"/><circle cx="61" cy="17" r=".8" fill="#7a4a24"/><path d="M2 36 q5 -3 10 0 t10 0 t10 0 t10 0 t10 0 t10 0"/></g></svg>
+    <svg class="mapdoodle d3" viewBox="0 0 40 24" aria-hidden="true"><g fill="none" stroke="#7a4a24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12 q10 -10 22 0 q-12 10 -22 0 z M28 12 l8 -6 v12 z"/><circle cx="12" cy="10.5" r=".9" fill="#7a4a24"/></g></svg>
+    <svg class="compass" viewBox="0 0 80 80" aria-hidden="true">
+      <circle cx="40" cy="40" r="30" fill="#f6e6bc" stroke="#7a4a24" stroke-width="2.2"/><circle cx="40" cy="40" r="25" fill="none" stroke="#7a4a24" stroke-width=".8" stroke-dasharray="1.5 2"/>
+      <path d="M40 8 L45 35 L72 40 L45 45 L40 72 L35 45 L8 40 L35 35 Z" fill="#c8a06a" stroke="#7a4a24" stroke-width="1.2" stroke-linejoin="round"/>
+      <path d="M40 8 L45 35 L40 40 Z M72 40 L45 45 L40 40 Z M40 72 L35 45 L40 40 Z M8 40 L35 35 L40 40 Z" fill="#7a4a24"/>
+      <path d="M40 8 L45 35 L35 35 Z" fill="#e8402f" stroke="#7a4a24" stroke-width=".8"/>
+      <path d="M40 22 L43 37 L58 40 L43 43 L40 58 L37 43 L22 40 L37 37 Z" fill="#f6e6bc" stroke="#7a4a24" stroke-width=".8" transform="rotate(45 40 40)"/>
+      <circle cx="40" cy="40" r="3" fill="#ffd24a" stroke="#7a4a24" stroke-width="1"/>
+      <text x="40" y="6" text-anchor="middle" font-size="8" font-family="Dela Gothic One" fill="#7a4a24">N</text>
+    </svg>
   </div>
   <button class="plank stagego" type="button" id="stageGo"><span class="ico">⚑</span><span><b>この島へ!</b><small>たんけんに 出発</small></span></button>
 </section>
