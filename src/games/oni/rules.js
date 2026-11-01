@@ -5,7 +5,9 @@
 // - ダッシュ: ボタンで ひと走り(dashTime)。つかったあとは しばらく つかえない(cool)。
 // - タッチ返しなし: 鬼に なった 子は、いま タッチした 子(前の 鬼)を しばらく タッチ できない。
 //   鬼に なった 子は すこしの あいだ 動けない(そのあいだに みんな にげる)。
-// - かくれ草むら: 草むらの 中に いるあいだは 見えにくい(画面は うすく、CPU の 鬼は 近くでないと 気づかない)。
+// - かくれ草むら: 草むらの 中に いるあいだは 鬼から 見えない。鬼が 近くに 来ると 見つかる(spotted)。
+//   じっと して いれば notice まで 近づかれないと 見つからないが、中で 動くと ガサガサ して noticeMove から 見つかる。
+//   鬼から 見える 子が だれも いないと、鬼は 見うしなう(oniLost。画面は「?」)。
 // - どんぐりボーナス: ときどき 金の どんぐりが 落ちてくる。ひろうと 点が ふえる(鬼でも ひろえる)。
 // - 木・切り株は とおれない。広場の ふちからは 出られない。
 //
@@ -40,6 +42,10 @@ export const RULES = {
   acornBonus: 2, // ひろうと ふえる 点(秒ぶん)
   pickR: 0.7,
   hurry: 10, // のこり この 秒で 合図
+  // かくれ草むら
+  notice: 2.2, // じっと して いる 子に 鬼が 気づく きょり
+  noticeMove: 4.6, // 中で 動いて いる(ガサガサ)子に 気づく きょり
+  rustleSpeed: 0.8, // これより はやく 動くと ガサガサ
 };
 
 // 広場の もの(きまった ならび)。木・切り株は とおれない。草むらは かくれられる
@@ -69,6 +75,7 @@ export function createGame(players, seed) {
     phase: 'ready', // ready → play → finished
     oni: 0,
     hurried: false,
+    oniLost: false, // 鬼から 見える 子が いない
     acorns: [], // { id, x, z, t }
     nextAcorn: 0,
     acornId: 0,
@@ -83,7 +90,7 @@ export function createGame(players, seed) {
     return {
       x: p.x, z: p.z, vx: 0, vz: 0, h: Math.atan2(-p.x, -p.z),
       score: 0, bonus: 0, caught: 0, tags: 0, picks: 0,
-      dash: 0, cool: 0, held: false, freeze: 0, noTag: null, noTagT: 0, hidden: false,
+      dash: 0, cool: 0, held: false, freeze: 0, noTag: null, noTagT: 0, hidden: false, spotted: false, rustle: false,
     };
   });
   s.nextAcorn = RULES.acornEvery[0] + nextRandom(s) * (RULES.acornEvery[1] - RULES.acornEvery[0]);
@@ -177,6 +184,9 @@ export function step(s, inputs) {
     // かくれ草むら
     const hid = inBush(r.x, r.z);
     if (hid !== r.hidden) { r.hidden = hid; if (play) ev.push({ type: hid ? 'hide' : 'unhide', slot }); }
+    const rus = hid && Math.hypot(r.vx, r.vz) > RULES.rustleSpeed;
+    if (rus && !r.rustle && play) ev.push({ type: 'rustle', slot });
+    r.rustle = rus;
   });
 
   // ── ぶつかる(にげる 子どうしは かるく おしあう) ──
@@ -198,6 +208,23 @@ export function step(s, inputs) {
   if (play) {
     // ── 点: 鬼で ない 子は 時間が たまる ──
     R.forEach((r, slot) => { if (slot !== s.oni) r.score += dt; });
+
+    // ── 見つかる・見うしなう(草むら)──
+    {
+      const o = R[s.oni];
+      let any = false;
+      R.forEach((r, slot) => {
+        if (slot === s.oni) { r.spotted = false; return; }
+        const d = Math.hypot(r.x - o.x, r.z - o.z);
+        const was = r.spotted;
+        r.spotted = r.hidden && d < (r.rustle ? RULES.noticeMove : RULES.notice);
+        if (r.spotted && !was) ev.push({ type: 'found', slot, by: s.oni });
+        if (slot !== o.noTag && (!r.hidden || r.spotted)) any = true;
+      });
+      const lost = !any && o.freeze <= 0;
+      if (lost && !s.oniLost) ev.push({ type: 'lost', oni: s.oni });
+      s.oniLost = lost;
+    }
 
     // ── タッチ ──
     const o = R[s.oni];

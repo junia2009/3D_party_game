@@ -256,8 +256,9 @@ export function buildStage(scene) {
       }
       // 草むら: だれかが 入って いると ゆれる
       for (const b of bushes) {
-        const inside = runners.some((r) => Math.hypot(r.x - b.b.x, r.z - b.b.z) < b.b.r);
-        b.wob = Math.max(0, b.wob - dt * 2) + (inside ? dt * 3 : 0);
+        // 中で 動いて いる 子が いると ゆれる(じっと して いれば ゆれない)
+        const inside = runners.some((r) => r.rustle && Math.hypot(r.x - b.b.x, r.z - b.b.z) < b.b.r);
+        b.wob = Math.max(0, b.wob - dt * 2) + (inside ? dt * 4 : 0);
         b.wob = Math.min(1, b.wob);
         b.grp.rotation.z = Math.sin(t * 9) * 0.04 * b.wob;
         b.grp.scale.setScalar(1 + Math.sin(t * 7) * 0.02 * b.wob);

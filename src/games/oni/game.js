@@ -78,6 +78,8 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     dash(vol = 1) { noise({ len: 0.28, gain: 0.08 * vol, freq: [700, 1600], q: 0.9 }); },
     // がさがさ: 草むら
     rustle(vol = 1) { noise({ len: 0.22, gain: 0.05 * vol, freq: [1500, 900], q: 0.6 }); noise({ len: 0.18, gain: 0.04 * vol, freq: [1200, 700], q: 0.6, at: 0.1 }); },
+    // ピコーン: 見つけた
+    found() { voice({ type: 'square', pts: [[0, 990], [0.06, 1480]], len: 0.14, gain: 0.05 }); voice({ type: 'square', pts: [[0, 1480]], len: 0.16, gain: 0.04, at: 0.12 }); },
     // きらりん: 金の どんぐり
     pick(vol = 1) { [988, 1318, 1568].forEach((f, i) => voice({ type: 'triangle', pts: [[0, f]], len: 0.16, gain: 0.07 * vol, at: i * 0.06 })); },
     // ぽとん: どんぐりが 落ちてくる
@@ -112,6 +114,38 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     }
     return g;
   }
+  // 鬼の 頭の 上の ふきだし: 「?」(見うしなった)・「!」(見つけた)
+  function markSprite(ch, color) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.strokeStyle = '#3b2a1a';
+    g.lineWidth = 8;
+    g.beginPath();
+    g.arc(64, 58, 46, 0, Math.PI * 2);
+    g.moveTo(50, 98); g.lineTo(64, 122); g.lineTo(78, 98);
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#fff';
+    g.fillRect(48, 90, 32, 12);
+    g.fillStyle = color;
+    g.font = '900 72px sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(ch, 64, 62);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false }));
+    sp.scale.setScalar(0.9);
+    sp.renderOrder = 10;
+    sp.visible = false;
+    scene.add(sp);
+    return sp;
+  }
+  const markQ = markSprite('?', '#3d8bff');
+  const markE = markSprite('!', '#e8402f');
+  let markET = 0;
   const horns = makeHorns();
   horns.scale.setScalar(1.6);
   scene.add(horns);
@@ -237,21 +271,6 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     }
   }
 
-  // かくれて いる 子は うすく(自分は そのまま)
-  function setAlpha(u, a) {
-    if (u.alpha === a) return;
-    u.alpha = a;
-    u.model.root.traverse((o) => {
-      if (!o.isMesh) return;
-      for (const m of [].concat(o.material)) {
-        if (m.userData.baseTransparent === undefined) m.userData.baseTransparent = m.transparent;
-        m.transparent = a < 1 || m.userData.baseTransparent;
-        m.opacity = a;
-        m.depthWrite = a >= 1;
-      }
-    });
-  }
-
   // ── ゲームの進行 ────────────────────────────────────
   let mode = 'idle';
   let picked = CHARACTERS[0].key;
@@ -287,7 +306,7 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       ring.position.y = 0.02;
       holder.add(ring);
       scene.add(holder);
-      return { model, holder, ring, size, alpha: 1, run: 0, dustT: 0, hop: 0, h: 0 };
+      return { model, holder, ring, size, run: 0, dustT: 0, hop: 0, h: 0, sink: 0 };
     }));
     const marker = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.36, 4), new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[me].hex }));
     marker.rotation.x = Math.PI;
@@ -452,6 +471,14 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     dashEl.classList.toggle('wait', me.cool > 0);
     $('hudOk').classList.toggle('oni', s.oni === game.me && s.phase === 'play');
     $('hudOk').classList.toggle('hurry', s.hurried && s.phase === 'play');
+    // 草むらに かくれて いる あいだ: 「かくれ中」(見つかったら「みつかった!」)
+    const hid = me.hidden && s.phase === 'play' && s.oni !== game.me;
+    $('hideOk').hidden = !hid;
+    if (hid) {
+      $('hideOk').classList.toggle('found', me.spotted);
+      $('hideOk').classList.toggle('rustle', me.rustle && !me.spotted);
+      $('hideOk').lastChild.textContent = me.spotted ? 'みつかった!' : me.rustle ? 'ガサガサ…' : 'かくれ中';
+    }
   }
   const tmpV = new THREE.Vector3();
   function pop(text, x, y, z, cls = '', life = 800) {
@@ -506,6 +533,29 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
           leaves(r.x, r.z, 3);
           break;
         }
+        // 草むらの 中で 動いた: ガサガサ(見えない 子の 手がかり)
+        case 'rustle': {
+          const r = s.runners[e.slot];
+          leaves(r.x, r.z, 5);
+          sfx.rustle(volFor(r.x, r.z));
+          if (e.slot !== game.me && !r.spotted) pop('ガサガサ', r.x, FLOOR_Y + 1.1, r.z, 'green', 700);
+          break;
+        }
+        // 鬼が 草むらの 子を 見つけた
+        case 'found': {
+          const r = s.runners[e.slot];
+          markE.visible = true;
+          markET = 0.9;
+          markQ.visible = false;
+          pop('みーつけた!', r.x, FLOOR_Y + 1.7, r.z, 'red', 1000);
+          sfx.found();
+          leaves(r.x, r.z, 6);
+          if (e.slot === game.me) { splash('みつかった!', 'red small'); game.shake = 0.15; }
+          break;
+        }
+        case 'lost':
+          if (e.oni === game.me) pop('みんな どこ?', s.runners[e.oni].x, FLOOR_Y + 2.4, s.runners[e.oni].z, 'blue', 1000);
+          break;
         case 'acorn': {
           const m = makeAcorn();
           m.position.set(e.x, 6, e.z);
@@ -578,8 +628,12 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       if (sp > 0.3) u.h += Math.atan2(Math.sin(r.h - u.h), Math.cos(r.h - u.h)) * Math.min(1, dt * 14);
       u.hop = Math.max(0, u.hop - dt);
       const hopY = u.hop > 0 ? Math.sin((u.hop / 0.5) * Math.PI) * 0.5 : 0;
-      u.holder.position.set(r.x, FLOOR_Y + hopY, r.z);
-      u.holder.rotation.y = u.h;
+      // 草むらの 中では 体が しずんで、頭だけ 出る
+      u.sink += ((r.hidden && s.phase === 'play' ? 0.55 : 0) - u.sink) * Math.min(1, dt * 8);
+      u.holder.position.set(r.x, FLOOR_Y + hopY - u.sink, r.z);
+      // 見うしなった 鬼は キョロキョロ
+      const look = slot === s.oni && s.oniLost && s.phase === 'play' ? Math.sin(time * 3.2) * 0.9 : 0;
+      u.holder.rotation.y = u.h + look;
       // ダッシュ中は まえのめり
       u.model.root.rotation.x = r.dash > 0 ? 0.25 : 0;
       let clip = u.run > 0.5 ? 'run' : 'idle', face = 'normal';
@@ -599,9 +653,10 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
       u.model.play(clip);
       u.model.setFace(face);
       u.model.update(dt);
-      // かくれて いる: 自分は すこし だけ、ほかの 子は うすく
-      setAlpha(u, r.hidden && s.phase === 'play' ? (slot === game.me ? 0.75 : 0.28) : 1);
-      u.ring.visible = !(r.hidden && slot !== game.me && s.phase === 'play');
+      // かくれて いる 子は 見えない(自分と、鬼に 見つかった 子は 見える)
+      const unseen = r.hidden && !r.spotted && slot !== game.me && slot !== s.oni && s.phase === 'play';
+      u.holder.visible = !unseen;
+      u.ring.visible = !r.hidden || s.phase !== 'play';
       // 走ると 土けむり
       u.dustT -= dt;
       if (u.dustT <= 0 && sp > (r.dash > 0 ? 2 : 3.2) && !r.hidden) { u.dustT = r.dash > 0 ? 0.05 : 0.14; dust(r.x - Math.sin(r.h) * 0.3, r.z - Math.cos(r.h) * 0.3); }
@@ -613,12 +668,20 @@ export async function createOni({ renderer, settings, getAudio, onExit }) {
     // 鬼の しるし: 頭の 上の つの、足もとの 赤い 輪
     const o = s.runners[s.oni];
     const ou = game.runners[s.oni];
-    horns.position.set(o.x, FLOOR_Y + 1.5 * (0.85 / ou.size ** 0.3) + (ou.hop > 0 ? Math.sin((ou.hop / 0.5) * Math.PI) * 0.5 : 0), o.z);
+    horns.position.set(o.x, FLOOR_Y + 1.5 * (0.85 / ou.size ** 0.3) + (ou.hop > 0 ? Math.sin((ou.hop / 0.5) * Math.PI) * 0.5 : 0) - ou.sink, o.z);
     horns.rotation.y = ou.h;
     oniRing.position.set(o.x, FLOOR_Y + 0.03, o.z);
     oniRing.scale.setScalar(1 + Math.sin(time * 6) * 0.08);
     oniGlow.position.set(o.x, FLOOR_Y + 0.5, o.z);
     oniGlow.material.opacity = o.freeze > 0 ? 0.25 + Math.sin(time * 20) * 0.2 : 0.45;
+    // ふきだし: 見うしなって いる あいだは「?」、見つけた ときは「!」
+    const headY = horns.position.y + 0.9;
+    markET = Math.max(0, markET - dt);
+    markE.visible = markET > 0;
+    markE.position.set(o.x, headY + Math.sin(markET * 12) * 0.05, o.z);
+    markE.scale.setScalar(0.9 * (1 + Math.max(0, markET - 0.7) * 2));
+    markQ.visible = s.oniLost && s.phase === 'play' && !markE.visible;
+    markQ.position.set(o.x, headY + Math.sin(time * 4) * 0.08, o.z);
     // 金の どんぐり: 上から ふわっと 落ちて、地面で くるくる
     for (const a of acornMeshes.values()) {
       a.t += dt;

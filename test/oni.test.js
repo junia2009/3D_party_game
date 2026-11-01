@@ -123,7 +123,7 @@ test('木・切り株は とおれない。広場の ふちからは 出られ�
   assert.ok(Math.hypot(b.x, b.z) <= RULES.fieldR - RULES.bodyR + 1e-6, 'ふちから 出ない');
 });
 
-test('かくれ草むら: 中に いると かくれる。CPU の 鬼は 遠くの かくれた 子に 気づかない', () => {
+test('かくれ草むら: 中で じっと して いれば 見つからない。動くと ガサガサ して 見つかる', () => {
   const s = ready();
   const bush = BUSHES[0];
   place(s.runners[0], 6, 6); place(s.runners[1], bush.x, bush.z);
@@ -131,13 +131,23 @@ test('かくれ草むら: 中に いると かくれる。CPU の 鬼は 遠く�
   const ev = go(s, 0.1, () => [null, null]);
   assert.ok(s.runners[1].hidden);
   assert.ok(ev.some((e) => e.type === 'hide' && e.slot === 1));
-  // 鬼(席 0)は 遠くの かくれた 子を ねらわない。近くなら 気づく
+  // 鬼(席 0)は 遠くの かくれた 子を ねらわない。鬼から 見える 子が いないので 見うしなう
+  assert.ok(!s.runners[1].spotted);
+  assert.ok(s.oniLost, '見うしなう');
   const cpu = createCpu('normal', 1, 0);
   for (let i = 0; i < 20; i++) { cpuInput(cpu, s, 0); cpu.think = 0; }
   assert.equal(cpu.goal, null, '遠くの かくれた 子には 気づかない');
-  place(s.runners[0], bush.x + PERSONALITIES.normal.notice * 0.6, bush.z);
+  // じっと して いれば、notice より 遠い ところでは 見つからない
+  place(s.runners[0], bush.x + (RULES.notice + RULES.noticeMove) / 2, bush.z);
+  go(s, 0.1, () => [null, null]);
+  assert.ok(!s.runners[1].spotted, 'じっと して いれば 見つからない');
+  // 中で 動くと ガサガサ して 見つかる
+  const ev3 = go(s, 0.3, () => [null, { x: 0, z: s.t % 1 < 0.5 ? 1 : -1 }]);
+  assert.ok(ev3.some((e) => e.type === 'rustle' && e.slot === 1), 'ガサガサ');
+  assert.ok(ev3.some((e) => e.type === 'found' && e.slot === 1), '動くと 見つかる');
+  assert.ok(!s.oniLost);
   for (let i = 0; i < 5; i++) { cpuInput(cpu, s, 0); cpu.think = 0; }
-  assert.equal(cpu.goal, 1, '近くなら 気づく');
+  assert.equal(cpu.goal, 1, '見つけたら おう');
   // 草むらから 出ると 見える
   place(s.runners[1], bush.x + bush.r + 1, bush.z);
   const ev2 = go(s, 0.05, () => [null, null]);

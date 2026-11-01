@@ -2,7 +2,7 @@
 //
 // 人と同じく「スティックの 向き」と「ダッシュ」だけを出す。react 秒ごとに 考えなおす。
 // - 鬼のとき: いちばん つかまえやすい 子(近い・ふちに おいつめた)を おいかける。すこし 先を よんで 走る。
-//   草むらに かくれた 子は、近くでないと 気づかない(notice)。とどきそうなら ダッシュ。
+//   草むらに かくれた 子は、見つかる(rules の spotted)まで 見えない。とどきそうなら ダッシュ。
 // - にげるとき: 鬼が 遠ければ 金の どんぐりを ひろいに いく・草むらで 休む。
 //   近ければ 鬼から はなれる 向きへ(ふちに おいつめられない ように、ふちでは 横へ にげる)。
 //   鬼が すぐ そばに 来たら ダッシュ。
@@ -14,9 +14,9 @@ import { nextRandom, randRange, seedFrom } from '../../rng.js';
 import { BLOCKS, BUSHES, RULES, inBush } from './rules.js';
 
 export const PERSONALITIES = {
-  cautious: { label: 'しんちょう', react: [0.2, 0.3], aim: 0.26, safe: 5.6, greed: 0.45, bush: 0.5, notice: 2.0, dashAt: 1.7, chaseDash: 1.9 },
-  normal: { label: 'ふつう', react: [0.2, 0.3], aim: 0.26, safe: 5.0, greed: 0.6, bush: 0.4, notice: 2.2, dashAt: 1.65, chaseDash: 1.9 },
-  bold: { label: 'つよき', react: [0.2, 0.3], aim: 0.26, safe: 4.4, greed: 0.7, bush: 0.25, notice: 2.4, dashAt: 1.6, chaseDash: 2.0 },
+  cautious: { label: 'しんちょう', react: [0.2, 0.3], aim: 0.26, safe: 5.6, greed: 0.45, bush: 0.5, dashAt: 1.7, chaseDash: 1.9 },
+  normal: { label: 'ふつう', react: [0.2, 0.3], aim: 0.26, safe: 5.0, greed: 0.6, bush: 0.4, dashAt: 1.65, chaseDash: 1.9 },
+  bold: { label: 'つよき', react: [0.2, 0.3], aim: 0.26, safe: 4.4, greed: 0.7, bush: 0.25, dashAt: 1.6, chaseDash: 2.0 },
 };
 
 export function createCpu(personality, seed, slot) {
@@ -75,7 +75,7 @@ export function cpuInput(cpu, s, slot) {
     s.runners.forEach((r, i) => {
       if (i === slot || i === me.noTag) return;
       const d = Math.hypot(r.x - me.x, r.z - me.z);
-      if (r.hidden && d > p.notice) return; // かくれて いて 気づかない
+      if (r.hidden && !r.spotted) return; // かくれて いて 見えない
       const edge = Math.hypot(r.x, r.z) / RULES.fieldR; // ふちに いる 子は つかまえやすい
       const score = -d + edge * 1.6 - (r.dash > 0 ? 1 : 0) + nextRandom(cpu) * 0.8 + (i === cpu.goal ? 0.8 : 0);
       if (score > bs) { bs = score; best = i; }
