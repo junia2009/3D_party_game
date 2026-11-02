@@ -1367,6 +1367,8 @@ function drawPaper() {
   const W = book.clientWidth, H = book.clientHeight, key = `${W}x${H}`;
   let wrap = book.querySelector('.paperwrap');
   if (wrap?.dataset.key === key) return;
+  // 大きさが かわった: 新しい 紙が 焼きあがるまで、前の 紙を のばして 下じきに する(白く ぬけない ように)
+  const prev = wrap?.querySelector('canvas.paperbg');
   wrap?.remove();
   wrap = document.createElement('div');
   wrap.className = 'paperwrap';
@@ -1374,7 +1376,7 @@ function drawPaper() {
   const { bg, plain, fg } = paperSvg(W, H);
   if (paperCache?.key === key) wrap.append(paperCache.canvas);
   else {
-    wrap.insertAdjacentHTML('beforeend', plain);
+    if (prev) { prev.classList.add('paperold'); wrap.append(prev); } else wrap.insertAdjacentHTML('beforeend', plain);
     // 焼くのは 画面の 切りかえ(0.35 びょう)が おわってから。そのあいだは 下じきで 見せる
     const dpr = Math.min(2, devicePixelRatio || 1);
     const big = bg.replace(`width="${W}" height="${H}"`, `width="${Math.round(W * dpr)}" height="${Math.round(H * dpr)}"`);
@@ -1389,10 +1391,9 @@ function drawPaper() {
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       paperCache = { key, canvas: c };
       if (!wrap.isConnected) return;
-      c.classList.add('fresh');
+      // 下じき(フィルターなしの 紙 / 前の 紙)と 入れかえる
+      wrap.querySelector('.paperplain, .paperold')?.remove();
       wrap.prepend(c);
-      requestAnimationFrame(() => requestAnimationFrame(() => c.classList.remove('fresh')));
-      setTimeout(() => wrap.querySelector('.paperplain')?.remove(), 500);
     };
     img.onerror = () => URL.revokeObjectURL(url);
     setTimeout(() => { img.src = url; }, 400);
@@ -1401,6 +1402,11 @@ function drawPaper() {
   book.prepend(wrap);
 }
 addEventListener('resize', () => { if (screen === 'stages') drawPaper(); });
+// 地図の 大きさが かわったら(「つづきから」を けした ときなど)紙を 描きなおす
+if (typeof ResizeObserver !== 'undefined') {
+  const book = document.querySelector('#stages .mapbook');
+  if (book) new ResizeObserver(() => { if (screen === 'stages') requestAnimationFrame(drawPaper); }).observe(book);
+}
 
 // 宝の地図: 島を 上から 順に 大きく ならべて、点線の 航路で つなぐ。島は 左、説明は 右(どの 島も おなじ 形)。
 // 島を タップすると 旗が 立って えらばれる。下の「この 島へ!」で 進む
