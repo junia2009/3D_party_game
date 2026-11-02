@@ -235,7 +235,8 @@ const SCREENS = {
   online: { el: $('online'), view: [0.24, 0.17], sign: false },
   room: { el: $('room'), view: [0.24, 0.17], sign: false },
   // あそびかた(紙芝居)
-  howto: { el: $('howto'), view: [0.24, 0.17], sign: false },
+  // 横持ち(背が 低い)では 画面を 横いっぱいに 使うので、看板も しまう(wide)
+  howto: { el: $('howto'), view: [0.24, 0.17], sign: false, wide: true },
 };
 let screen = 'loading';
 const view = { x: 0, y: 0, sign: 1, r: 1 };
@@ -1507,7 +1508,8 @@ function frame() {
     view.y += ((portrait ? ty : 0) - view.y) * k;
     view.r += (tr - view.r) * k;
   }
-  view.sign += ((portrait && !target.sign ? 0 : 1) - view.sign) * k;
+  const wideNow = target.wide && !portrait && innerHeight <= 560;
+  view.sign += (((portrait || wideNow) && !target.sign ? 0 : 1) - view.sign) * k;
   // 大木へ飛びこむ(行きはだんだん速く、帰りはだんだんゆっくり)
   if (dive.dir) {
     dive.k = THREE.MathUtils.clamp(dive.k + (dive.dir * dt) / 1.1, 0, 1);

@@ -1191,11 +1191,23 @@
   .kaminext.last { animation: nextglow 1.2s ease-in-out infinite alternate; }
   @keyframes nextglow { to { filter: drop-shadow(0 0 10px #ffd24a); } }
   /* 札の 中の 島(ステージの しかけ) */
-  .kamiisles { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; padding: 8px; background: linear-gradient(#cfe9f3, #fdf6e6 60%, #f3e3bd); }
-  .hw-isle { display: grid; justify-items: center; gap: 4px; }
+  .kamiisles {
+    position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; padding: 8px 6px;
+    background: radial-gradient(ellipse at 50% 0%, #e9f7fb 0%, transparent 60%), linear-gradient(#bfe6f2, #8fcfe6 55%, #6ab8d8);
+  }
+  .kamiisles::before {
+    content: ''; position: absolute; left: 12%; right: 12%; top: 50%; height: 0; border-top: 3px dashed rgba(160,112,58,.8);
+  }
+  .hw-isle { position: relative; display: grid; justify-items: center; gap: 4px; }
+  .hw-isle:nth-child(2) { transform: translateY(-14px); }
+  .hw-isle span {
+    padding: 2px 8px 3px; border-radius: 8px; background: #fffaf0; border: 2px solid #4a2a12; box-shadow: 0 2px 0 rgba(58,34,14,.3); white-space: nowrap;
+  }
+  .hw-isle i { font-style: normal; font: 800 9px var(--font-body); color: #fff; background: #4a2a12; border-radius: 999px; padding: 1px 6px; }
   .kami.now .hw-isle { animation: islein .6s cubic-bezier(.3,1.5,.5,1) backwards; animation-delay: calc(var(--i) * .25s + .2s); }
   .hw-isle svg { width: 100%; height: auto; }
   .hw-isle span { font: 400 11px var(--font-display); color: #4a2a12; text-align: center; }
+  .hw-isle svg { filter: drop-shadow(0 4px 0 rgba(30,60,90,.25)); }
   /* 札の 中の 動き(いまの 札 だけ) */
   .kami svg * { transform-box: fill-box; }
   .kami .hw-in { transform-box: view-box; }
@@ -1266,8 +1278,29 @@
   .kami.now .hw-press > .hw-in { animation: hwtap 1.2s ease-in-out infinite; }
   .kami.now .hw-type { animation: hwtype 2.4s steps(1) infinite; }
   @keyframes hwtype { 0% { opacity: .2; } 30% { opacity: .5; } 60%, 100% { opacity: 1; } }
+  .kami.now .hw-flag { animation: hwflag .7s ease-in-out infinite alternate; transform-origin: 0 50%; }
+  @keyframes hwflag { from { transform: skewY(-4deg) scaleX(.94); } to { transform: skewY(4deg) scaleX(1); } }
+  .kami.now .hw-fire { animation: hwfire 2.4s ease-out infinite; animation-delay: calc(var(--i) * -.8s); transform-origin: 50% 50%; }
+  @keyframes hwfire { 0% { transform: scale(.1); opacity: 0; } 10% { opacity: 1; } 60% { transform: scale(1); opacity: .9; } 100% { transform: scale(1.2); opacity: 0; } }
+  .kami.now .hw-spin2 { animation: hwsway 3s ease-in-out infinite alternate; transform-origin: 50% 50%; }
+  /* 札の ふち: 紙芝居の 絵の ように すこし くらく */
+  .kami::before { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; box-shadow: inset 0 0 26px rgba(90,58,30,.28), inset 0 0 0 1px rgba(90,58,30,.25); }
   .kami.quiet * { animation-delay: -10s !important; }
   @media (prefers-reduced-motion: reduce) { .kami * { animation: none !important; } }
+  /* 横持ち(背が 低い): 左に 舞台、右に 先生の ことばと めくる ボタン */
+  @media (orientation: landscape) and (max-height: 560px) {
+    #howto.sub {
+      left: max(24px, env(safe-area-inset-left, 0px)); right: max(24px, env(safe-area-inset-right, 0px)); width: auto; max-width: 900px; margin: 0 auto;
+      grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; column-gap: 16px; row-gap: 8px;
+    }
+    #howto .head { grid-column: 1 / -1; }
+    #howto .kamitabs { grid-column: 1; grid-row: 2; }
+    #howto .butai { grid-column: 1; grid-row: 3 / 5; align-self: start; }
+    #howto .kamiwin { height: calc(100dvh - 176px); width: auto; aspect-ratio: 16 / 10; }
+    #howto .kamisay { grid-column: 2; grid-row: 2 / 4; align-self: center; }
+    #howto .kaminav { grid-column: 2; grid-row: 4; }
+    #howto .kamisay p { font-size: 14px; }
+  }
   /* はじめての すごろく */
   .firstask { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: rgba(40,24,8,.45); }
   .firstask .box {
