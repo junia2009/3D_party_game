@@ -1123,8 +1123,7 @@ function paperSvg(W, H) {
     <rect x="6" y="${y - R / 2 + (flip ? 6 : -6)}" width="${W - 12}" height="${R}" rx="${R / 2}" fill="url(#wood)" stroke="#3a1e08" stroke-width="1.6"/>
     <path d="M14 ${y + (flip ? 6 : -6) - 2} H${W - 14}" stroke="rgba(255,220,160,.45)" stroke-width="2" stroke-linecap="round"/>
     ${[R / 2 + 2, W - R / 2 - 2].map((x) => `<circle cx="${x}" cy="${y + (flip ? 6 : -6)}" r="${R / 2 + 3}" fill="url(#knob)" stroke="#3a1e08" stroke-width="1.6"/><circle cx="${x}" cy="${y + (flip ? 6 : -6)}" r="3" fill="#ffd24a" stroke="#3a1e08" stroke-width="1"/>`).join('')}`;
-  return `<svg class="paper" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">
-  <defs>
+  const defs = `<defs>
     <radialGradient id="pBase" cx="38%" cy="30%" r="80%"><stop offset="0" stop-color="#fff3d2"/><stop offset=".45" stop-color="#f4dfae"/><stop offset=".8" stop-color="#e4c286"/><stop offset="1" stop-color="#cfa060"/></radialGradient>
     <filter id="pStain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="4" seed="4"/><feColorMatrix values="0 0 0 0 .55  0 0 0 0 .34  0 0 0 0 .12  0 0 0 -2.6 1.75"/></filter>
     <filter id="pGrain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="9"/><feColorMatrix values="0 0 0 0 .35  0 0 0 0 .2  0 0 0 0 .08  0 0 0 -1.6 1.05"/></filter>
@@ -1138,7 +1137,10 @@ function paperSvg(W, H) {
     <linearGradient id="curl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c89a5a"/><stop offset=".5" stop-color="#f6e2b4"/><stop offset="1" stop-color="#b0824a"/></linearGradient>
     <linearGradient id="ribbon" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d84a32"/><stop offset="1" stop-color="#9a2a1a"/></linearGradient>
     <radialGradient id="wax" cx="40%" cy="35%" r="65%"><stop offset="0" stop-color="#e8503a"/><stop offset=".7" stop-color="#a82418"/><stop offset="1" stop-color="#6a1208"/></radialGradient>
-  </defs>
+  </defs>`;
+  const svg = (cls, body) => `<svg class="${cls}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${defs}${body}</svg>`;
+  // 紙そのもの(ノイズの フィルターが 重いので、一度だけ 絵に 焼きつける)
+  const bg = svg('paperbg', `
   <g filter="url(#pRough)"><path d="${paper}" fill="url(#pBase)"/></g>
   <g clip-path="url(#pClip)">
     <rect x="0" y="0" width="${W}" height="${H}" filter="url(#pStain)" opacity=".42"/>
@@ -1153,7 +1155,11 @@ function paperSvg(W, H) {
     ${blots}
     <path d="${paper}" fill="none" stroke="#5a2e0c" stroke-width="26" opacity=".55" filter="url(#pBurn)"/>
     <path d="${paper}" fill="none" stroke="#2e1606" stroke-width="5" opacity=".6" filter="url(#pBurn)"/>
-  </g>
+  </g>`);
+  // 焼きあがるまでの 下じき(フィルターなしの 紙の 形)
+  const plain = svg('paperplain', `<path d="${paper}" fill="url(#pBase)"/>`);
+  // 上に のる もの(文字は 焼きつけると フォントが 使えないので、ふつうの SVG のまま)
+  const fg = svg('paper', `
   ${compass}
   <g transform="translate(${L + 18} ${bot - 16})" font-family="Dela Gothic One" fill="#7a4a24">
     <path d="M0 0 h72" stroke="#7a4a24" stroke-width="1.4"/>${[0, 24, 48, 72].map((x, i) => `<path d="M${x} -4 v8" stroke="#7a4a24" stroke-width="1.2"/>${i < 3 ? `<rect x="${x}" y="-2" width="24" height="4" fill="${i % 2 ? '#f6e6bc' : '#7a4a24'}" stroke="#7a4a24" stroke-width=".8"/>` : ''}`).join('')}
@@ -1172,14 +1178,50 @@ function paperSvg(W, H) {
     <path d="M-12 -12 q4 -3 8 -2" stroke="rgba(255,200,180,.6)" stroke-width="2" fill="none" stroke-linecap="round"/>
   </g>
   ${rod(top, false)}
-  ${rod(bot, true)}
-</svg>`;
+  ${rod(bot, true)}`);
+  return { bg, plain, fg };
 }
+// 地図の 紙を かく。ノイズの フィルターは 毎フレーム 描きなおすと 重い(画面の 切りかえや 旗の ゆれが カクつく)ので、
+// 紙そのものは 一度だけ canvas に 焼きつけて、大きさが 変わるまで つかいまわす
+let paperCache = null; // { key, canvas }
 function drawPaper() {
   const book = document.querySelector('#stages .mapbook');
   if (!book || !book.clientWidth) return;
-  book.querySelector('svg.paper')?.remove();
-  book.insertAdjacentHTML('afterbegin', paperSvg(book.clientWidth, book.clientHeight));
+  const W = book.clientWidth, H = book.clientHeight, key = `${W}x${H}`;
+  let wrap = book.querySelector('.paperwrap');
+  if (wrap?.dataset.key === key) return;
+  wrap?.remove();
+  wrap = document.createElement('div');
+  wrap.className = 'paperwrap';
+  wrap.dataset.key = key;
+  const { bg, plain, fg } = paperSvg(W, H);
+  if (paperCache?.key === key) wrap.append(paperCache.canvas);
+  else {
+    wrap.insertAdjacentHTML('beforeend', plain);
+    // 焼くのは 画面の 切りかえ(0.35 びょう)が おわってから。そのあいだは 下じきで 見せる
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    const big = bg.replace(`width="${W}" height="${H}"`, `width="${Math.round(W * dpr)}" height="${Math.round(H * dpr)}"`);
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([big], { type: 'image/svg+xml' }));
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const c = document.createElement('canvas');
+      c.className = 'paperbg';
+      c.width = Math.round(W * dpr);
+      c.height = Math.round(H * dpr);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      paperCache = { key, canvas: c };
+      if (!wrap.isConnected) return;
+      c.classList.add('fresh');
+      wrap.prepend(c);
+      requestAnimationFrame(() => requestAnimationFrame(() => c.classList.remove('fresh')));
+      setTimeout(() => wrap.querySelector('.paperplain')?.remove(), 500);
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    setTimeout(() => { img.src = url; }, 400);
+  }
+  wrap.insertAdjacentHTML('beforeend', fg);
+  book.prepend(wrap);
 }
 addEventListener('resize', () => { if (screen === 'stages') drawPaper(); });
 
