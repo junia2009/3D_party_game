@@ -125,11 +125,17 @@
     align-content: end; gap: clamp(7px, 1.4dvh, 12px); max-width: 440px; margin: 0 auto;
     bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(10px, 2dvh, 18px));
   }
+  /* あそびかた・せってい は 2つ ならべて 半分の 板に(島を かくさない ように) */
+  #menu { grid-template-columns: 1fr 1fr; }
+  #menu .plank { grid-column: span 2; }
+  #menu .plank[data-go="howto"], #menu .plank[data-go="settings"] { grid-column: span 1; gap: 8px; padding: 6px 10px 8px; }
+  #menu .plank[data-go="howto"] small, #menu .plank[data-go="settings"] small { display: none; }
+  #menu .plank[data-go="howto"] b, #menu .plank[data-go="settings"] b { font-size: clamp(17px, 4.6vw, 21px); }
   /* 背の低い画面では、ひとことの説明を消して板をうすくする */
   @media (max-height: 600px) { #menu .plank small { display: none; } }
   #menu .plank { animation: pop .45s cubic-bezier(.3, 1.6, .5, 1) backwards; }
   #menu .plank:nth-child(2) { animation-delay: .05s; } #menu .plank:nth-child(3) { animation-delay: .1s; }
-  #menu .plank:nth-child(4) { animation-delay: .15s; } #menu .plank:nth-child(5) { animation-delay: .2s; }
+  #menu .plank:nth-child(4) { animation-delay: .15s; } #menu .plank:nth-child(5) { animation-delay: .2s; } #menu .plank:nth-child(6) { animation-delay: .25s; }
   @keyframes pop { from { transform: translateY(30px) scale(.9); opacity: 0; } }
   .sub { top: calc(env(safe-area-inset-top, 0px) + 16px); max-width: 520px; margin: 0 auto; overflow-y: auto; }
   .head { display: flex; align-items: center; gap: 10px; }
@@ -1109,6 +1115,174 @@
   .band line { stroke: rgba(255,255,255,.7); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 9; }
   .band circle { fill: rgba(255,255,255,.35); stroke: rgba(255,255,255,.85); stroke-width: 3; }
 
+  /* ── あそびかた: 森の 紙芝居 ── */
+  #howto { align-content: stretch; grid-template-rows: auto auto auto minmax(0, 1fr) auto; gap: 10px; overflow: visible; }
+  /* 背の 低い 画面: 札を 16:10 に して 先生の ことばの 場所を あける */
+  @media (max-height: 740px) { #howto .kamiwin { aspect-ratio: 16 / 10; } }
+  .kamitabs { display: flex; gap: 4px; justify-content: center; margin-bottom: -14px; position: relative; z-index: 2; }
+  .kamitabs button {
+    border: 0; cursor: pointer; padding: 6px 10px 14px; border-radius: 10px 10px 0 0; font: 400 13px var(--font-display); color: #fff8e6;
+    background: #b88a5a; -webkit-text-stroke: 3px #4a2a12; paint-order: stroke fill; transform: translateY(4px); transition: transform .2s, background .2s;
+    box-shadow: inset 0 -6px 0 rgba(0,0,0,.12);
+  }
+  .kamitabs button:nth-child(1).on { background: #7cc35a; } .kamitabs button:nth-child(2).on { background: #e8762f; }
+  .kamitabs button:nth-child(3).on { background: #4a90e2; } .kamitabs button:nth-child(4).on { background: #9b6bd6; }
+  .kamitabs button.on { transform: translateY(-2px); }
+  .butai { position: relative; display: grid; grid-template-rows: 26px auto; padding: 0 0 14px; }
+  .butai .roof { width: 100%; height: 30px; display: block; position: relative; z-index: 3; filter: drop-shadow(0 3px 0 rgba(58,34,14,.3)); }
+  .butai .frame {
+    position: relative; margin: 0 8px; padding: 12px; border-radius: 6px; min-height: 0; perspective: 900px;
+    background: var(--wood) center / cover; box-shadow: inset 0 0 0 3px #3a1e08, inset 0 0 0 7px #c88a4a, inset 0 0 0 10px #5e3414, 0 6px 0 rgba(58,34,14,.35);
+  }
+  .butai .leg { position: absolute; bottom: 0; width: 14px; height: 22px; background: #5e3414; border: 3px solid #3a1e08; border-top: 0; border-radius: 0 0 4px 4px; }
+  .butai .leg.l { left: 30px; } .butai .leg.r { right: 30px; }
+  .kamiwin {
+    position: relative; aspect-ratio: 4 / 3; border-radius: 3px; overflow: hidden; background: #3a2412;
+    box-shadow: inset 0 0 0 2px #3a1e08; touch-action: pan-y;
+  }
+  .kami {
+    position: absolute; inset: 0; background: #fdf6e6; overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(58,34,14,.3), -4px 0 10px rgba(0,0,0,.25);
+  }
+  .kami::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--grain); opacity: .5; }
+  .kami > svg { width: 100%; height: 100%; display: block; }
+  .kami .kaminum { position: absolute; right: 8px; bottom: 6px; font: 400 11px var(--font-display); color: rgba(90,58,30,.55); }
+  .kami.pull { z-index: 2; animation: kamipull .55s cubic-bezier(.5,0,.75,.2) forwards; }
+  .kami.push { z-index: 2; animation: kamipull .5s cubic-bezier(.2,.8,.3,1) reverse both; }
+  @keyframes kamipull { to { transform: translateX(112%) rotate(2deg); } }
+  /* とびら: ひらいた とき だけ 左右へ ひらく */
+  .butai .door {
+    position: absolute; top: 12px; bottom: 12px; width: calc(50% - 12px); z-index: 2; pointer-events: none;
+    background: var(--wood) center / cover; box-shadow: inset 0 0 0 3px #3a1e08, inset 0 0 0 7px #c88a4a;
+    transition: transform .9s cubic-bezier(.3,.9,.3,1) .15s, opacity .2s .85s; backface-visibility: hidden;
+  }
+  .butai .door::after { content: ''; position: absolute; top: 50%; width: 8px; height: 22px; margin-top: -11px; border-radius: 4px; background: #ffd24a; border: 2px solid #3a1e08; }
+  .butai .door.l { left: 12px; transform-origin: 0 50%; } .butai .door.l::after { right: 8px; }
+  .butai .door.r { right: 12px; transform-origin: 100% 50%; } .butai .door.r::after { left: 8px; }
+  #howto.opened .door.l { transform: rotateY(-100deg); opacity: 0; }
+  #howto.opened .door.r { transform: rotateY(100deg); opacity: 0; }
+  .kamisay { display: flex; gap: 10px; align-items: flex-start; min-height: 0; }
+  .owlface { flex: none; width: 64px; height: 64px; border-radius: 50%; background: #fff3d2 center / 120% no-repeat; border: 3px solid #4a2a12; box-shadow: 0 3px 0 rgba(58,34,14,.3); }
+  .kamisay > div {
+    position: relative; flex: 1; min-width: 0; padding: 8px 12px 10px; border-radius: 16px; background: #fffaf0; border: 3px solid #4a2a12;
+    box-shadow: 0 4px 0 rgba(58,34,14,.3); color: #4a2a12; max-height: 100%; overflow-y: auto;
+  }
+  .kamisay > div::before { content: ''; position: absolute; left: -11px; top: 18px; border: 8px solid transparent; border-right: 10px solid #4a2a12; }
+  .kamisay > div::after { content: ''; position: absolute; left: -6px; top: 20px; border: 6px solid transparent; border-right: 7px solid #fffaf0; }
+  .kamisay b { display: block; font: 400 17px var(--font-display); color: #b8401e; }
+  .kamisay p { margin: 4px 0 0; font-size: 15px; font-weight: 700; line-height: 1.65; }
+  .kamisay p b { display: inline; font: inherit; font-weight: 900; color: #c0501e; }
+  .kamisay.talk p { animation: talkin .35s ease-out; }
+  @keyframes talkin { from { opacity: 0; transform: translateY(4px); } }
+  .kaminav { display: flex; align-items: center; gap: 10px; padding-bottom: 2px; }
+  .kamiprev {
+    flex: none; width: 52px; height: 52px; border: 0; border-radius: 50%; cursor: pointer; background: var(--wood) center / cover;
+    font: 400 26px var(--font-display); color: var(--cream); -webkit-text-stroke: 5px var(--ink); paint-order: stroke fill; box-shadow: 0 4px 0 rgba(58,34,14,.35);
+  }
+  .kamiprev:disabled { opacity: .35; }
+  .kamiprev:not(:disabled):active { transform: translateY(3px); }
+  .kamidots { flex: 1; min-width: 0; display: flex; justify-content: center; align-items: center; gap: 3px; }
+  .kamidots i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: rgba(74,42,18,.3); transition: transform .2s, background .2s; }
+  .kamidots i.ch { margin-left: 5px; }
+  .kamidots i.on { background: #ffd24a; box-shadow: 0 0 0 2px #4a2a12; transform: scale(1.3); }
+  .kaminext.plank { flex: none; width: auto; min-width: 130px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 18px; }
+  .kaminext b { font: 400 18px var(--font-display); }
+  .kaminext .arrow { font: 400 22px var(--font-display); color: var(--cream); -webkit-text-stroke: 5px var(--ink); paint-order: stroke fill; }
+  .kaminext.last { animation: nextglow 1.2s ease-in-out infinite alternate; }
+  @keyframes nextglow { to { filter: drop-shadow(0 0 10px #ffd24a); } }
+  /* 札の 中の 島(ステージの しかけ) */
+  .kamiisles { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; padding: 8px; background: linear-gradient(#cfe9f3, #fdf6e6 60%, #f3e3bd); }
+  .hw-isle { display: grid; justify-items: center; gap: 4px; }
+  .kami.now .hw-isle { animation: islein .6s cubic-bezier(.3,1.5,.5,1) backwards; animation-delay: calc(var(--i) * .25s + .2s); }
+  .hw-isle svg { width: 100%; height: auto; }
+  .hw-isle span { font: 400 11px var(--font-display); color: #4a2a12; text-align: center; }
+  /* 札の 中の 動き(いまの 札 だけ) */
+  .kami svg * { transform-box: fill-box; }
+  .kami .hw-in { transform-box: view-box; }
+  .kami.now .hw-hop > .hw-in { animation: hwhop 1.1s ease-in-out infinite; }
+  .kami.now .hw-hop.d2 > .hw-in { animation-delay: -.35s; } .kami.now .hw-hop.d3 > .hw-in { animation-delay: -.7s; }
+  @keyframes hwhop { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-9px); } }
+  .kami.now .hw-drift { animation: hwdrift 9s ease-in-out infinite alternate; } .kami.now .hw-drift2 { animation: hwdrift 12s ease-in-out infinite alternate-reverse; }
+  @keyframes hwdrift { to { transform: translateX(26px); } }
+  .kami.now .hw-sway { animation: hwsway 2.4s ease-in-out infinite alternate; transform-origin: 50% 100%; }
+  @keyframes hwsway { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+  .kami.now .hw-blink { animation: hwblink 3.2s infinite; transform-origin: 50% 50%; }
+  @keyframes hwblink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+  .kami.now .hw-swing { animation: hwsway 1.6s ease-in-out infinite alternate; transform-origin: 50% 0; }
+  .kami.now .hw-swing.d2 { animation-delay: -.5s; } .kami.now .hw-swing.d3 { animation-delay: -1s; }
+  .kami.now .hw-bob { animation: hwbob 1.8s ease-in-out infinite alternate; } .kami.now .hw-bob.d2 { animation-delay: -.6s; } .kami.now .hw-bob.d3 { animation-delay: -1.2s; }
+  @keyframes hwbob { to { transform: translateY(-6px); } }
+  .kami.now .hw-spin { animation: hwspin 14s linear infinite; transform-origin: 50% 50%; }
+  @keyframes hwspin { to { transform: rotate(360deg); } }
+  .kami.now .hw-twinkle path { animation: hwtw 1.4s ease-in-out infinite alternate; transform-origin: 50% 50%; }
+  .kami.now .hw-twinkle path:nth-child(2) { animation-delay: -.4s; } .kami.now .hw-twinkle path:nth-child(3) { animation-delay: -.8s; } .kami.now .hw-twinkle path:nth-child(4) { animation-delay: -1.1s; }
+  @keyframes hwtw { from { transform: scale(.5); opacity: .4; } to { transform: scale(1.15); opacity: 1; } }
+  .kami.now .hw-wave { animation: hwdrift 3s ease-in-out infinite alternate; }
+  .kami.now .hw-float { animation: hwbob 1.4s ease-in-out infinite alternate; }
+  .hw-roll .n { opacity: 0; }
+  .kami.now .hw-roll .n { animation: hwroll 2.4s steps(1) infinite; animation-delay: calc(var(--i) * .1s); }
+  .kami.now .hw-roll .n:nth-child(6) { animation: hwrollstop 2.4s steps(1) infinite; }
+  @keyframes hwroll { 0% { opacity: 1; } 4% { opacity: 0; } 25% { opacity: 1; } 29% { opacity: 0; } 100% { opacity: 0; } }
+  @keyframes hwrollstop { 0%, 60% { opacity: 0; } 61%, 100% { opacity: 1; } }
+  .kami.now .hw-tap > .hw-in { animation: hwtap 2.4s ease-in-out infinite; }
+  @keyframes hwtap { 0%, 50% { transform: translate(8px, 8px); } 58% { transform: translate(0, 0); } 66%, 100% { transform: translate(8px, 8px); } }
+  .kami.now .hw-ripple { animation: hwripple 2.4s ease-out infinite; transform-origin: 50% 50%; opacity: 0; }
+  @keyframes hwripple { 0%, 57% { transform: scale(.3); opacity: 0; } 60% { opacity: 1; } 85%, 100% { transform: scale(2.2); opacity: 0; } }
+  .kami.now .hw-walk > .hw-in { animation: hwwalk 5s ease-in-out infinite; }
+  @keyframes hwwalk { 0%, 8% { transform: translate(0, 0); } 18% { transform: translate(30px, -16px); } 26%, 30% { transform: translate(60px, -4px); } 40% { transform: translate(90px, -14px); } 48%, 52% { transform: translate(120px, 4px); } 62% { transform: translate(150px, -10px); } 70%, 74% { transform: translate(180px, 8px); } 84% { transform: translate(210px, -8px); } 92%, 100% { transform: translate(240px, 2px); } }
+  .hw-toss > .hw-in { opacity: 0; }
+  .kami.now .hw-toss > .hw-in { animation: hwtoss 2.2s linear infinite; animation-delay: calc(var(--i) * .36s); }
+  @keyframes hwtoss {
+    0% { transform: translate(0, 0); opacity: 0; } 8% { opacity: 1; } 25% { transform: translate(37px, -46px); } 50% { transform: translate(74px, -64px); }
+    75% { transform: translate(111px, -46px); } 92% { opacity: 1; } 100% { transform: translate(148px, -4px); opacity: 0; }
+  }
+  .kami.now .hw-item { animation: hwitem 2.4s ease-in-out infinite; animation-delay: calc(var(--i) * .3s); }
+  @keyframes hwitem { 0%, 30%, 100% { transform: translateY(0); } 15% { transform: translateY(-8px); } }
+  .kami.now .hw-run > .hw-in { animation: hwrun .45s ease-in-out infinite alternate; }
+  .kami.now .hw-run.d2 > .hw-in { animation-delay: -.15s; } .kami.now .hw-run.d3 > .hw-in { animation-delay: -.3s; }
+  @keyframes hwrun { from { transform: translate(-3px, 0) rotate(-4deg); } to { transform: translate(3px, -5px) rotate(4deg); } }
+  .kami.now .hw-dust circle { animation: hwdust .9s ease-out infinite; transform-origin: 50% 50%; }
+  @keyframes hwdust { from { transform: scale(.4); opacity: .8; } to { transform: translate(-10px, -4px) scale(1.8); opacity: 0; } }
+  .kami.now .hw-confetti .c { animation: hwconf 3s linear infinite; animation-delay: calc(var(--i) * -.17s); transform-origin: 50% 50%; }
+  @keyframes hwconf { from { transform: translateY(0) rotate(0); } to { transform: translateY(280px) rotate(540deg); } }
+  .kami.now .hw-pulse { animation: hwpulse 1s ease-in-out infinite alternate; transform-origin: 50% 50%; }
+  @keyframes hwpulse { to { transform: scale(1.08); } }
+  .kami.now .hw-tilt > .hw-in { animation: hwtilt 3s ease-in-out infinite alternate; transform-origin: 110px 104px; }
+  @keyframes hwtilt { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+  .kami.now .hw-stick { animation: hwstick 2.6s ease-in-out infinite; }
+  @keyframes hwstick { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(9px, -6px); } 50% { transform: translate(-8px, -7px); } 75% { transform: translate(-6px, 8px); } }
+  .kami.now .hw-swipe { animation: hwswipe 1.6s ease-out infinite; }
+  @keyframes hwswipe { from { stroke-dashoffset: 40; } 60%, to { stroke-dashoffset: 0; } }
+  .kami.now .hw-shake { animation: hwshake .5s ease-in-out infinite alternate; transform-origin: 50% 50%; }
+  @keyframes hwshake { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+  .kami.now .hw-card { animation: hwcard .5s cubic-bezier(.3,1.6,.5,1) backwards; animation-delay: calc(var(--i) * .06s); transform-origin: 50% 50%; }
+  @keyframes hwcard { from { transform: scale(.5); opacity: 0; } }
+  .kami.now .hw-point > .hw-in { animation: hwpoint 2.25s ease-in-out infinite; }
+  @keyframes hwpoint { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(-6px, 4px); } }
+  .kami.now .hw-plank > .hw-in { animation: hwplank 2.25s ease-in-out infinite; animation-delay: var(--d); }
+  @keyframes hwplank { 0%, 20%, 100% { transform: translateX(0); } 10% { transform: translateX(8px); } }
+  .kami.now .hw-send { animation: hwsend 1s linear infinite; }
+  @keyframes hwsend { to { stroke-dashoffset: -24; } }
+  .kami.now .hw-press > .hw-in { animation: hwtap 1.2s ease-in-out infinite; }
+  .kami.now .hw-type { animation: hwtype 2.4s steps(1) infinite; }
+  @keyframes hwtype { 0% { opacity: .2; } 30% { opacity: .5; } 60%, 100% { opacity: 1; } }
+  .kami.quiet * { animation-delay: -10s !important; }
+  @media (prefers-reduced-motion: reduce) { .kami * { animation: none !important; } }
+  /* はじめての すごろく */
+  .firstask { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 20px; background: rgba(40,24,8,.45); }
+  .firstask .box {
+    width: min(360px, 100%); display: grid; justify-items: center; gap: 10px; padding: 18px 16px 14px; border-radius: 20px; text-align: center;
+    background: #fffaf0; border: 4px solid #4a2a12; box-shadow: 0 8px 0 rgba(58,34,14,.35); color: #4a2a12; animation: pop .45s cubic-bezier(.3, 1.6, .5, 1);
+  }
+  .firstask .owlface { width: 76px; height: 76px; }
+  .firstask p { margin: 0; font-weight: 800; line-height: 1.6; word-break: keep-all; text-wrap: balance; }
+  .firstask p b { display: block; font: 400 20px var(--font-display); color: #b8401e; }
+  .firstask .row { display: flex; gap: 8px; width: 100%; }
+  .firstask .row .plank { flex: 1; justify-content: center; padding: 10px; }
+  .firstask .row .plank b { width: 100%; text-align: center; font: 400 18px var(--font-display); }
+  .firstask .plank.sub { filter: grayscale(.6) brightness(.95) drop-shadow(0 5px 0 rgba(58, 34, 14, .3)); }
+  .firstask small { font-size: 11.5px; opacity: .75; font-weight: 700; }
+
   /* 大会: 宝の地図(ステージ選択)。画面の 下まで 使って、島を 上から 順に ならべる */
   #stages { align-content: stretch; grid-template-rows: auto auto minmax(0, 1fr) auto; }
   #stages:has(#resumeBox[hidden]) { grid-template-rows: auto minmax(0, 1fr) auto; }
@@ -1629,6 +1803,10 @@
     <span class="ico"><svg viewBox="0 0 40 40"><path d="M6 9q7-3 14 1v24q-7-4-14-1z" fill="#fffaf0" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><path d="M34 9q-7-3-14 1v24q7-4 14-1z" fill="#ffe7b0" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><circle cx="27" cy="18" r="3" fill="#d9443a"/></svg></span>
     <span><b>キャラ図鑑</b><small id="zukanCount">7人の なかまを 見る</small></span>
   </button>
+  <button class="plank" type="button" data-go="howto">
+    <span class="ico"><svg viewBox="0 0 40 40"><path d="M5 9h30v22H5z" fill="#c99057" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><path d="M9 13h22v14H9z" fill="#fff6dc" stroke="#4a2a12" stroke-width="2"/><circle cx="16" cy="19" r="3" fill="#7cc35a"/><path d="M12 25l5-4 4 3 3-2 5 3" fill="none" stroke="#4a90e2" stroke-width="2" stroke-linejoin="round"/><path d="M3 9l17-6 17 6" fill="none" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/></svg></span>
+    <span><b>あそびかた</b><small>先生の 紙芝居</small></span>
+  </button>
   <button class="plank" type="button" data-go="settings">
     <span class="ico"><svg viewBox="0 0 40 40"><path d="M20 5l3 4 5-1 1 5 4 3-2 4 2 4-4 3-1 5-5-1-3 4-3-4-5 1-1-5-4-3 2-4-2-4 4-3 1-5 5 1z" fill="#c9cfd6" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><circle cx="20" cy="20" r="5" fill="#fffaf0" stroke="#4a2a12" stroke-width="3"/></svg></span>
     <span><b>せってい</b><small>おと・がしつ</small></span>
@@ -1800,6 +1978,36 @@
   </div>
   <button class="plank stagego" type="button" id="stageGo"><span class="ico">⚑</span><span><b>この島へ!</b><small>たんけんに 出発</small></span></button>
 </section>
+
+<!-- あそびかた: 森の 紙芝居(src/title/howto.js)。木の 舞台に 絵の 札。下で ホーホー先生が 読む -->
+<section class="screen sub" id="howto" hidden aria-label="あそびかた">
+  <div class="head"><button class="back" type="button" data-back>‹ もどる</button><h2>あそびかた</h2></div>
+  <div class="kamitabs" role="tablist"></div>
+  <div class="butai">
+    <svg class="roof" viewBox="0 0 300 40" preserveAspectRatio="none" aria-hidden="true"><path d="M4 38 L30 6 H270 L296 38 Z" fill="#8a5428" stroke="#3a1e08" stroke-width="3" stroke-linejoin="round"/><path d="M34 12 H266" stroke="#c88a4a" stroke-width="3" stroke-linecap="round"/><path d="M60 22 H240" stroke="#5e3414" stroke-width="2" opacity=".6"/><circle cx="150" cy="22" r="8" fill="#ffd24a" stroke="#3a1e08" stroke-width="2"/></svg>
+    <div class="frame">
+      <div class="kamiwin"></div>
+      <span class="door l"></span><span class="door r"></span>
+    </div>
+    <span class="leg l"></span><span class="leg r"></span>
+  </div>
+  <div class="kamisay"><span class="owlface" id="howtoOwl"></span><div><b></b><p></p></div></div>
+  <div class="kaminav">
+    <button class="kamiprev" type="button" aria-label="まえへ">‹</button>
+    <span class="kamidots"></span>
+    <button class="plank kaminext" type="button"><b>つぎへ</b><span class="arrow">›</span></button>
+  </div>
+</section>
+
+<!-- はじめての すごろく: あそびかたを 見るか きく -->
+<div class="firstask" id="firstAsk" hidden>
+  <div class="box">
+    <span class="owlface" id="firstOwl"></span>
+    <p><b>はじめてかな?</b>大会の まえに、<wbr>あそびかたを <wbr>見ておくかい?</p>
+    <div class="row"><button class="plank" type="button" id="firstYes"><b>見る</b></button><button class="plank sub" type="button" id="firstNo"><b>あとで</b></button></div>
+    <small>メニューの「あそびかた」で いつでも 見られるよ</small>
+  </div>
+</div>
 
 <section class="screen sub" id="settings" hidden aria-label="せってい">
   <div class="head"><button class="back" type="button" data-back>‹ もどる</button><h2>せってい</h2></div>

@@ -36,6 +36,7 @@ test('analytics: 集計画面には 日本語の「何をしたか」で 出る'
   assert.equal(describe('taikai-end', { stage: 'yuen' }).path, '🏁 大会を最後まで遊んだ ― どんぐり遊園地');
   assert.equal(describe('online-game', { key: 'sumo', name: '切り株ずもう' }).path, '🌐 オンラインで競技 ― 切り株ずもう');
   assert.equal(describe('room-join').path, '🌐 あいことばで部屋に入った');
+  assert.equal(describe('howto').path, '📖 あそびかたを見た');
   assert.equal(PAGEVIEW.path, '🌰 ゲームを開いた');
 });
 

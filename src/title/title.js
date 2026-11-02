@@ -23,6 +23,7 @@ import { woodPlank } from './wood.js';
 import { createLeafCurtain } from './leaves.js';
 import { makePortraits } from './portraits.js';
 import { createZukan } from './zukan.js';
+import { createHowto } from './howto.js';
 import { LIST as STAGE_LIST } from '../board/stages/index.js';
 import { setupOnline } from './online.js';
 import { initAnalytics, track } from '../analytics.js';
@@ -233,6 +234,8 @@ const SCREENS = {
   // オンライン(入口と 部屋)
   online: { el: $('online'), view: [0.24, 0.17], sign: false },
   room: { el: $('room'), view: [0.24, 0.17], sign: false },
+  // あそびかた(紙芝居)
+  howto: { el: $('howto'), view: [0.24, 0.17], sign: false },
 };
 let screen = 'loading';
 const view = { x: 0, y: 0, sign: 1, r: 1 };
@@ -263,6 +266,12 @@ function go(next) {
     zukan.open();
   }
   if (next === 'online' || next === 'room') ensureFaces();
+  if (next === 'howto') {
+    track('howto');
+    ensureFaces();
+    ensureOwl();
+    howto.open();
+  }
   if (next === 'room') online?.render();
 }
 
@@ -303,9 +312,88 @@ for (const b of document.querySelectorAll('#menu [data-go]')) {
   b.addEventListener('click', () => {
     unlockAudio();
     knock();
+    // はじめての すごろく: あそびかたを 見るか きく
+    if (b.dataset.go === 'stages' && !howtoSeen()) { askFirst(); return; }
     go(b.dataset.go);
   });
 }
+
+// ── あそびかた(紙芝居) ───────────────────────────
+const HOWTO_KEY = 'dongurinpic.howto';
+function howtoSeen() {
+  try { return !!localStorage.getItem(HOWTO_KEY); } catch { return true; }
+}
+function markHowto() {
+  try { localStorage.setItem(HOWTO_KEY, '1'); } catch { /* 保存できなくても 遊べる */ }
+}
+let howtoNext = 'menu'; // さいごの「あそぼう!」の 行き先
+// 紙の ざらつき(札の 上に うすく のせる)。演出だけなので Math.random でよい
+{
+  const c = Object.assign(document.createElement('canvas'), { width: 96, height: 96 });
+  const g = c.getContext('2d');
+  const img = g.createImageData(96, 96);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random();
+    img.data[i] = 90; img.data[i + 1] = 60; img.data[i + 2] = 30;
+    img.data[i + 3] = v < 0.5 ? v * 34 : 0;
+  }
+  g.putImageData(img, 0, 0);
+  $('howto').style.setProperty('--grain', `url(${c.toDataURL()})`);
+}
+// ホーホー先生の 顔(実物の モデルを 撮る)
+let owlFace = null;
+function ensureOwl() {
+  if (owlFace) return;
+  owlFace = 'pending';
+  makePortraits(renderer, ['hoho']).then((f) => {
+    owlFace = f.hoho;
+    for (const id of ['howtoOwl', 'firstOwl']) $(id).style.backgroundImage = `url(${owlFace})`;
+  });
+}
+// 紙の めくれる 音(「ぺらっ」: 雑音を 短く)
+function paperSwish() {
+  if (!audio || !settings.sound) return;
+  const len = 0.22;
+  const buf = audio.createBuffer(1, audio.sampleRate * len, audio.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const src = audio.createBufferSource();
+  src.buffer = buf;
+  const f = audio.createBiquadFilter();
+  f.type = 'bandpass';
+  f.Q.value = 0.9;
+  const t = audio.currentTime;
+  f.frequency.setValueAtTime(1800, t);
+  f.frequency.exponentialRampToValueAtTime(4200, t + len);
+  const g = audio.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.09, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  src.connect(f).connect(g).connect(audio.destination);
+  src.start();
+}
+const howto = createHowto({
+  el: $('howto'),
+  face: (key) => (faces && faces[key]) || null,
+  isle: (key) => isleSvg(true, key),
+  sfx: { page: paperSwish, tap: knock },
+  onDone: () => { markHowto(); jingle(); const n = howtoNext; howtoNext = 'menu'; go(n); },
+});
+function askFirst() {
+  ensureOwl();
+  $('firstAsk').hidden = false;
+}
+$('firstYes').addEventListener('click', () => {
+  unlockAudio(); knock(); markHowto();
+  $('firstAsk').hidden = true;
+  howtoNext = 'stages';
+  go('howto');
+});
+$('firstNo').addEventListener('click', () => {
+  unlockAudio(); knock(); markHowto();
+  $('firstAsk').hidden = true;
+  go('stages');
+});
 for (const b of document.querySelectorAll('[data-soon]')) {
   b.addEventListener('click', () => {
     unlockAudio();
@@ -336,6 +424,7 @@ function ensureFaces() {
     if (screen === 'zukan') zukan.refreshTabs();
     if (screen === 'stages') renderResume();
     if (screen === 'room') online.render();
+    if (screen === 'howto') howto.refresh();
   });
 }
 function renderChars() {
@@ -1505,7 +1594,7 @@ frame();
 
 // E2E 用の口
 window.title = {
-  camera, scene, go,
+  camera, scene, go, howto,
   get screen() { return screen; },
   get bgm() { return music.playing; },
   online: () => online,
