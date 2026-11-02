@@ -1219,9 +1219,9 @@ function inkTrace(ink, to, done) {
   ink.route.append(path);
   // 島と 島の あいだの カーブは みな 同じ 形(左右 反転)なので、i 番目の 島は 長さの i/(n-1)
   const last = ink.pts.length - 1;
-  // 島の 絵の 上には かかない: 島の 下がわ(平たい)は 0.16、上がわ(木や 旗が のる)は 0.3 区間ぶん あける
-  const seg = last / (ink.n - 1), down = to > from;
-  const a = (from + (down ? 0.16 : -0.3)) * seg, b = (to - (down ? 0.3 : -0.16)) * seg;
+  // 島の 中心から 中心まで(島の 絵の うしろを 通るので、点線を のこさず ぜんぶ なぞる)
+  const seg = last / (ink.n - 1);
+  const a = from * seg, b = to * seg;
   const at = (u) => { const j = Math.min(last - 1, Math.floor(u)), f = u - j, p = ink.pts[j], q = ink.pts[j + 1]; return [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]; };
   const dur = 380 + Math.abs(to - from) * 420;
   const t0 = performance.now();
