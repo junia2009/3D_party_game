@@ -192,7 +192,9 @@
     position: fixed; left: 50%; top: 40%; z-index: 20; transform: translate(-50%, -50%) scale(.6); opacity: 0;
     padding: 12px 20px; border-radius: 16px; background: var(--paper); border: 3px solid #8a6238;
     font: 800 16px var(--font-body); color: var(--ink); box-shadow: 0 6px 0 rgba(58,34,14,.3); pointer-events: none;
-    transition: transform .2s cubic-bezier(.3,1.6,.5,1), opacity .2s; white-space: nowrap;
+    transition: transform .2s cubic-bezier(.3,1.6,.5,1), opacity .2s;
+    /* 長い 文は 画面の はばで 折りかえす(ことばの 切れめで) */
+    width: max-content; max-width: calc(100vw - 40px); text-align: center; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; text-wrap: balance;
   }
   .toast.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
   /* ごほうびの おしらせ */

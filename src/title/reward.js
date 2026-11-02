@@ -208,7 +208,7 @@ export function createReward({ el, getProgress, onChange, getPicked, sfx, toast 
     const p = getProgress();
     if (p.acorns < GACHA.price) {
       sfx.boop();
-      toast(`どんぐりが ${GACHA.price - p.acorns}こ たりないよ。競技や 大会で ためよう!`);
+      toast(`どんぐりが あと ${GACHA.price - p.acorns}こ たりないよ。競技や 大会で ためよう!`);
       return;
     }
     turning = true;
