@@ -19,6 +19,7 @@ import { SEATS, buildStage, coursePoint, courseHeading, seatPoint } from './stag
 import { PADDLE_TIP, makePaddle, makeRaft, wakeTexture } from './raft.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 import { buildScenery } from './scenery.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -746,6 +747,7 @@ export async function createIkada({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    reportResult('ikada', ranking(s), game.me);
     if (tour) {
       const done = tour.onFinish;
       setMode('idle');

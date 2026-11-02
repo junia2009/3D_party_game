@@ -3,7 +3,7 @@
 // ここは「つなぐ・いつ だれに なにを おくるか・刻みを まわす」だけ。
 //
 // メッセージ(画面 → サーバー)
-//   hello { clientId, name, character }   すわる(つなぎなおしも おなじ)
+//   hello { clientId, name, character, look }   すわる(つなぎなおしも おなじ)
 //   chara { character }                   キャラを かえる
 //   settings { settings }                 あそびを えらぶ(ホストだけ)
 //   start                                 はじめる(ホストだけ)
@@ -118,7 +118,7 @@ export class RoomDO {
     const room = this.room;
     const clientId = this.sockets.get(ws);
     if (msg.t === 'hello') {
-      const res = room.join({ clientId: msg.clientId, name: msg.name, character: msg.character });
+      const res = room.join({ clientId: msg.clientId, name: msg.name, character: msg.character, look: msg.look });
       if (res.error) return this.send(ws, { t: 'error', msg: res.error, fatal: true });
       for (const [sock, id] of this.sockets) {
         if (id === msg.clientId && sock !== ws) { this.sockets.delete(sock); try { sock.close(1000, 'べつの 接続に おきかえました'); } catch { /* 済 */ } }

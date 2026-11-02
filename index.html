@@ -128,14 +128,14 @@
   /* あそびかた・せってい は 2つ ならべて 半分の 板に(島を かくさない ように) */
   #menu { grid-template-columns: 1fr 1fr; }
   #menu .plank { grid-column: span 2; }
-  #menu .plank[data-go="howto"], #menu .plank[data-go="settings"] { grid-column: span 1; gap: 8px; padding: 6px 10px 8px; }
-  #menu .plank[data-go="howto"] small, #menu .plank[data-go="settings"] small { display: none; }
-  #menu .plank[data-go="howto"] b, #menu .plank[data-go="settings"] b { font-size: clamp(17px, 4.6vw, 21px); }
+  #menu .plank:is([data-go="howto"], [data-go="settings"], [data-go="zukan"], [data-go="reward"]) { grid-column: span 1; gap: 8px; padding: 6px 10px 8px; }
+  #menu .plank:is([data-go="howto"], [data-go="settings"], [data-go="zukan"], [data-go="reward"]) small { display: none; }
+  #menu .plank:is([data-go="howto"], [data-go="settings"], [data-go="zukan"], [data-go="reward"]) b { font-size: clamp(17px, 4.6vw, 21px); }
   /* 背の低い画面では、ひとことの説明を消して板をうすくする */
   @media (max-height: 600px) { #menu .plank small { display: none; } }
   #menu .plank { animation: pop .45s cubic-bezier(.3, 1.6, .5, 1) backwards; }
   #menu .plank:nth-child(2) { animation-delay: .05s; } #menu .plank:nth-child(3) { animation-delay: .1s; }
-  #menu .plank:nth-child(4) { animation-delay: .15s; } #menu .plank:nth-child(5) { animation-delay: .2s; } #menu .plank:nth-child(6) { animation-delay: .25s; }
+  #menu .plank:nth-child(4) { animation-delay: .15s; } #menu .plank:nth-child(5) { animation-delay: .2s; } #menu .plank:nth-child(6) { animation-delay: .25s; } #menu .plank:nth-child(7) { animation-delay: .3s; }
   @keyframes pop { from { transform: translateY(30px) scale(.9); opacity: 0; } }
   .sub { top: calc(env(safe-area-inset-top, 0px) + 16px); max-width: 520px; margin: 0 auto; overflow-y: auto; }
   .head { display: flex; align-items: center; gap: 10px; }
@@ -195,6 +195,19 @@
     transition: transform .2s cubic-bezier(.3,1.6,.5,1), opacity .2s; white-space: nowrap;
   }
   .toast.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  /* ごほうびの おしらせ */
+  .rewardfx { position: fixed; z-index: 60; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 10px); transform: translateX(-50%); display: grid; gap: 6px; justify-items: center; pointer-events: none; }
+  .rewardfx .r {
+    display: flex; align-items: center; gap: 8px; padding: 6px 16px 6px 8px; border-radius: 999px; background: #fffaf0; border: 3px solid #4a2a12;
+    box-shadow: 0 4px 0 rgba(58,34,14,.35); font: 400 15px var(--font-display); color: #4a2a12; white-space: nowrap;
+    animation: rewin .5s cubic-bezier(.3,1.6,.5,1) both, rewout .4s ease-in both; animation-delay: var(--d, 0s), calc(var(--d, 0s) + 3.6s);
+  }
+  .rewardfx .r svg { width: 26px; height: 28px; flex: none; }
+  .rewardfx .r small { font: 800 12px var(--font-body); color: #8a6a4a; }
+  .rewardfx .r.stamp { background: #fff3c0; } .rewardfx .r.title { background: #ffe0d0; }
+  .rewardfx .r b { color: #c0501e; font-weight: 400; }
+  @keyframes rewin { from { transform: translateY(-30px) scale(.8); opacity: 0; } }
+  @keyframes rewout { to { transform: translateY(-20px); opacity: 0; } }
 
   /* ── 競技の入口(ルールとキャラえらび)。島の上の「下の段」に出す ── */
   #play {
@@ -254,6 +267,7 @@
   .opt h3 small { font: 800 12px var(--font-body); color: #6b4424; margin-left: 6px; }
   .seats { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
   .seats li { display: grid; grid-template-columns: 14px 40px 1fr auto auto; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 12px; background: #fff7e6; border: 2px solid #ead2a8; font: 800 15px var(--font-body); color: var(--ink); }
+  .seats li .ttl { display: block; font: 800 10.5px var(--font-body); color: #c0501e; }
   .seats li .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--c); border: 2px solid rgba(0,0,0,.2); }
   .seats li .face { width: 40px; height: 40px; border-radius: 50%; background: #e9dcc4; display: block; }
   .seats li.cpu { opacity: .55; font-weight: 600; }
@@ -1115,6 +1129,91 @@
   .band line { stroke: rgba(255,255,255,.7); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 1 9; }
   .band circle { fill: rgba(255,255,255,.35); stroke: rgba(255,255,255,.85); stroke-width: 3; }
 
+  /* ── ごほうび ── */
+  #reward { align-content: stretch; grid-template-rows: auto auto minmax(180px, 1fr) minmax(0, 1.15fr); gap: 8px; overflow: hidden; }
+  .rwtop { display: flex; align-items: center; gap: 8px; }
+  .rwacorns {
+    flex: none; display: flex; align-items: center; gap: 4px; padding: 4px 12px 4px 6px; border-radius: 999px; background: #fffaf0; border: 3px solid #4a2a12;
+    box-shadow: 0 3px 0 rgba(58,34,14,.3); font: 400 18px var(--font-display); color: #4a2a12;
+  }
+  .rwacorns svg { width: 22px; height: 24px; } .rwacorns small { font: 800 12px var(--font-body); }
+  .rwtabs { flex: 1; display: flex; gap: 4px; min-width: 0; }
+  .rwtabs button {
+    flex: 1; min-width: 0; border: 0; cursor: pointer; padding: 8px 0; border-radius: 12px; background: #b88a5a; font: 400 12px var(--font-display); color: #fff8e6; white-space: nowrap; letter-spacing: -.04em;
+    -webkit-text-stroke: 3px #4a2a12; paint-order: stroke fill; box-shadow: inset 0 -4px 0 rgba(0,0,0,.15), 0 3px 0 rgba(58,34,14,.3);
+  }
+  .rwtabs button.on { background: #ffb02e; transform: translateY(-2px); }
+  .rwstage {
+    position: relative; min-height: 0; border-radius: 22px; overflow: hidden; border: 4px solid #4a2a12; box-shadow: 0 5px 0 rgba(58,34,14,.35);
+    background: radial-gradient(ellipse at 50% 30%, #fff8e0, #ffe2a8 60%, #f0c27a);
+  }
+  .rwstage::before { content: ''; position: absolute; inset: 0; background: repeating-conic-gradient(from 0deg at 50% 70%, rgba(255,255,255,.28) 0 8deg, transparent 8deg 20deg); pointer-events: none; }
+  #rewardCv { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  .rwbadge { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); padding: 4px 14px; border-radius: 999px; background: #e8402f; color: #fff; font: 400 14px var(--font-display); white-space: nowrap; border: 3px solid #4a2a12; box-shadow: 0 3px 0 rgba(58,34,14,.3); }
+  .rwbadge small { font: 800 10px var(--font-body); margin-right: 6px; opacity: .85; }
+  .rwhint { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: rgba(255,250,240,.92); font: 800 13px var(--font-body); color: #4a2a12; white-space: nowrap; animation: pulse 1.2s ease-in-out infinite; }
+  .rwprize {
+    position: absolute; left: 10px; right: 10px; bottom: 10px; display: grid; justify-items: center; gap: 2px; padding: 10px 12px 12px; border-radius: 18px;
+    background: #fffaf0; border: 3px solid #4a2a12; box-shadow: 0 4px 0 rgba(58,34,14,.3); color: #4a2a12; animation: pop .45s cubic-bezier(.3,1.6,.5,1);
+  }
+  .rwprize .rare { padding: 1px 10px; border-radius: 999px; font: 400 12px var(--font-display); color: #fff; background: #5cc0ff; }
+  .rwprize.r .rare { background: #b06ae0; } .rwprize.s .rare { background: linear-gradient(90deg, #ffb02e, #ffd24a, #ffb02e); color: #4a2a12; }
+  .rwprize.s { box-shadow: 0 0 0 4px #ffd24a, 0 4px 0 6px rgba(58,34,14,.3); }
+  .rwprize b { font: 400 21px var(--font-display); }
+  .rwprize small { font: 800 11px var(--font-body); opacity: .7; }
+  .rwprize em { font-style: normal; font: 800 13px var(--font-body); color: #8a6a4a; }
+  .rwprize em.new { font: 400 15px var(--font-display); color: #e8402f; }
+  .rwprize .row { display: flex; gap: 8px; width: 100%; margin-top: 4px; }
+  .rwprize .row .plank { flex: 1; justify-content: center; padding: 8px; --plank-h: 46px; }
+  .rwprize .row .plank b { width: 100%; text-align: center; font-size: 17px; color: var(--cream); }
+  .rwprize .row .again { filter: hue-rotate(-20deg) saturate(1.2) drop-shadow(0 5px 0 rgba(58, 34, 14, .35)); }
+  .rwbody {
+    min-height: 0; overflow-y: auto; padding: 10px 10px 14px; border-radius: 18px; background: rgba(255,250,240,.94); border: 3px solid #4a2a12;
+    box-shadow: 0 4px 0 rgba(58,34,14,.3); color: #4a2a12; -webkit-overflow-scrolling: touch;
+  }
+  .rwbody h3 { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 2px 8px; font: 400 16px var(--font-display); }
+  .rwbody h3 small { font: 800 12px var(--font-body); color: #8a6a4a; }
+  .rwbody h3:not(:first-child) { margin-top: 14px; }
+  .rwnote { margin: 8px 2px; font-size: 12.5px; font-weight: 700; line-height: 1.6; color: #6b4424; }
+  .rwturn.plank { --plank-h: 70px; justify-content: center; }
+  .rwturn .ico svg { width: 100%; height: 100%; }
+  .rwodds { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+  .rwodds span { padding: 2px 10px; border-radius: 999px; font: 800 11.5px var(--font-body); color: #fff; background: #5cc0ff; }
+  .rwodds .r { background: #b06ae0; } .rwodds .s { background: #ffb02e; }
+  .rwgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
+  .rwitem {
+    position: relative; display: grid; justify-items: center; gap: 2px; padding: 6px 2px 5px; border-radius: 14px; border: 2px solid rgba(74,42,18,.35); background: #fff;
+    font: 800 10.5px var(--font-body); color: #4a2a12; cursor: pointer; line-height: 1.2; min-height: 84px;
+  }
+  .rwitem img { width: 50px; height: 50px; object-fit: contain; }
+  .rwitem .none, .rwitem .lock { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; background: #f1e6cc; font: 400 13px var(--font-display); color: #b8a27a; }
+  .rwitem .lock { font-size: 24px; }
+  .rwitem.r { border-color: #b06ae0; } .rwitem.s { border-color: #ffb02e; background: #fff8e0; }
+  .rwitem.on { box-shadow: 0 0 0 3px #ffb02e; background: #fff3c0; }
+  .rwitem.on::after { content: '✓'; position: absolute; top: -6px; right: -4px; width: 20px; height: 20px; border-radius: 50%; background: #e8402f; color: #fff; font: 900 12px/20px var(--font-body); }
+  .rwitem.locked { opacity: .6; cursor: default; }
+  .rwtitles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .rwtitle { display: grid; gap: 2px; padding: 8px 8px 7px; border-radius: 12px; border: 2px solid rgba(74,42,18,.3); background: #fff; text-align: left; cursor: pointer; color: #4a2a12; }
+  .rwtitle b { font: 400 14px var(--font-display); }
+  .rwtitle small { font: 700 10.5px var(--font-body); color: #8a6a4a; }
+  .rwtitle.on { background: #ffe0d0; border-color: #e8402f; box-shadow: 0 0 0 2px #e8402f; }
+  .rwtitle.locked { opacity: .55; cursor: default; background: #f6efe0; }
+  .rwstamps { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px 6px; }
+  .rwstamp { display: grid; justify-items: center; gap: 2px; text-align: center; }
+  .rwstamp i { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; border: 2px dashed rgba(74,42,18,.3); color: #d9443a; }
+  .rwstamp.got i { border: 0; transform: rotate(var(--r)); background: radial-gradient(circle, rgba(217,68,58,.08), transparent 70%); }
+  .rwstamp i svg { width: 52px; height: 52px; }
+  .rwstamp b { font: 400 11px/1.2 var(--font-display); }
+  .rwstamp small { font: 700 9.5px/1.3 var(--font-body); color: #8a6a4a; }
+  .rwstamp:not(.got) b { color: #b8a27a; }
+  @media (orientation: landscape) and (max-height: 560px) {
+    #reward.sub { left: max(24px, env(safe-area-inset-left, 0px)); right: max(24px, env(safe-area-inset-right, 0px)); width: auto; max-width: 900px; margin: 0 auto; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); grid-template-rows: auto auto minmax(0, 1fr); column-gap: 14px; }
+    #reward .head { grid-column: 1 / -1; }
+    #reward .rwtop { grid-column: 2; grid-row: 2; }
+    #reward .rwstage { grid-column: 1; grid-row: 2 / 4; }
+    #reward .rwbody { grid-column: 2; grid-row: 3; }
+  }
+
   /* ── あそびかた: 森の 紙芝居 ── */
   #howto { align-content: stretch; grid-template-rows: auto auto auto minmax(0, 1fr) auto; gap: 10px; overflow: visible; }
   /* 背の 低い 画面: 札を 16:10 に して 先生の ことばの 場所を あける */
@@ -1836,6 +1935,10 @@
     <span class="ico"><svg viewBox="0 0 40 40"><path d="M6 9q7-3 14 1v24q-7-4-14-1z" fill="#fffaf0" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><path d="M34 9q-7-3-14 1v24q7-4 14-1z" fill="#ffe7b0" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><circle cx="27" cy="18" r="3" fill="#d9443a"/></svg></span>
     <span><b>キャラ図鑑</b><small id="zukanCount">7人の なかまを 見る</small></span>
   </button>
+  <button class="plank" type="button" data-go="reward">
+    <span class="ico"><svg viewBox="0 0 40 44"><path d="M8 20a12 12 0 0 1 24 0z" fill="#8a5a32" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><circle cx="20" cy="26" r="11" fill="#e8f8ff" stroke="#4a2a12" stroke-width="3"/><circle cx="16" cy="27" r="3.4" fill="#ff6a8a"/><circle cx="24" cy="25" r="3.4" fill="#ffd24a"/><circle cx="20" cy="31" r="3.4" fill="#5cc0ff"/><path d="M11 36h18v5H11z" fill="#c8602f" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><path d="M20 8V3" stroke="#4a2a12" stroke-width="3" stroke-linecap="round"/></svg></span>
+    <span><b>ごほうび</b></span><span class="badge" id="rewardBadge" hidden>!</span>
+  </button>
   <button class="plank" type="button" data-go="howto">
     <span class="ico"><svg viewBox="0 0 40 40"><path d="M5 9h30v22H5z" fill="#c99057" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/><path d="M9 13h22v14H9z" fill="#fff6dc" stroke="#4a2a12" stroke-width="2"/><circle cx="16" cy="19" r="3" fill="#7cc35a"/><path d="M12 25l5-4 4 3 3-2 5 3" fill="none" stroke="#4a90e2" stroke-width="2" stroke-linejoin="round"/><path d="M3 9l17-6 17 6" fill="none" stroke="#4a2a12" stroke-width="3" stroke-linejoin="round"/></svg></span>
     <span><b>あそびかた</b><small>先生の 紙芝居</small></span>
@@ -2010,6 +2113,22 @@
 
   </div>
   <button class="plank stagego" type="button" id="stageGo"><span class="ico">⚑</span><span><b>この島へ!</b><small>たんけんに 出発</small></span></button>
+</section>
+
+<!-- ごほうび: どんぐりガチャ・きせかえ・称号・スタンプ帳(src/title/reward.js)。上の 舞台は 3D -->
+<section class="screen sub" id="reward" hidden aria-label="ごほうび">
+  <div class="head"><button class="back" type="button" data-back>‹ もどる</button><h2>ごほうび</h2></div>
+  <div class="rwtop">
+    <span class="rwacorns" id="rwAcorns"></span>
+    <div class="rwtabs" role="tablist"><button type="button" data-tab="gacha" class="on">ガチャ</button><button type="button" data-tab="dress">きせかえ</button><button type="button" data-tab="title">称号</button><button type="button" data-tab="stamp">スタンプ</button></div>
+  </div>
+  <div class="rwstage">
+    <canvas id="rewardCv" aria-label="ガチャと きせかえの 3D"></canvas>
+    <span class="rwbadge" id="rwBadge" hidden></span>
+    <span class="rwhint" id="rwHint" hidden></span>
+    <div class="rwprize" id="rwPrize" hidden></div>
+  </div>
+  <div class="rwbody" id="rwBody"></div>
 </section>
 
 <!-- あそびかた: 森の 紙芝居(src/title/howto.js)。木の 舞台に 絵の 札。下で ホーホー先生が 読む -->
@@ -2619,6 +2738,8 @@
 </section>
 
 <div class="toast" id="toast" role="status"></div>
+<!-- ごほうびの おしらせ(どんぐり貯金・スタンプ・称号)。上から すべりこむ -->
+<div class="rewardfx" id="rewardFx" role="status" aria-live="polite"></div>
 
 <script type="module" src="./src/title/title.js"></script>
 </body>

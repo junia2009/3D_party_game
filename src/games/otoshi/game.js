@@ -15,6 +15,7 @@ import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { BASE_Y, BLOCK_H, BLOCK_R, HIT_X, SEATS, blockMesh, buildStage, headMesh, malletMesh } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -469,6 +470,7 @@ export async function createOtoshi({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    reportResult('otoshi', ranking(s), game.me);
     if (tour) {
       const done = tour.onFinish;
       setMode('idle');

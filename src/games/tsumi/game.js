@@ -14,6 +14,7 @@ import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { BRANCH_Y, SEATS, STUMP_H, STUMP_R, buildStage, waitSpot } from './stage.js';
 import { pieceMeshes } from './pieces.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -573,6 +574,7 @@ export async function createTsumi({ renderer, settings, getAudio, onExit }) {
   function showResult() {
     const s = game.state;
     const order = ranking(s);
+    reportResult('tsumi', order, game.me);
     if (tour) {
       const done = tour.onFinish;
       setMode('idle');

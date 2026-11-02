@@ -17,6 +17,7 @@ import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { BARREL_TOP, CAN_Z, OWL_ROCK, RAIL_Y, SEATS, buildStage, laneX } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 import { acornGeometry } from '../daruma/trees.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -888,6 +889,7 @@ export async function createHayauchi({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    reportResult('hayauchi', ranking(s), game.me);
     if (tour) {
       const done = tour.onFinish;
       setMode('idle');

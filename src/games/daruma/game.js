@@ -20,6 +20,7 @@ import { PERCH, buildStage, laneX } from './stage.js';
 import { createAudience } from './audience.js';
 import { createAtmosphere, windify } from './atmosphere.js';
 import { CRITTERS } from '../../npcs.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -383,6 +384,7 @@ export async function createDaruma({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    reportResult('daruma', ranking(s), game.me);
     if (tour) {
       // 大会: 結果画面は出さずに、順位(と拾ったどんぐり)を返す
       const done = tour.onFinish;

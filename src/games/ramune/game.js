@@ -15,6 +15,7 @@ import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEAT_X, buildStage, ramuneBottle } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -472,6 +473,7 @@ export async function createRamune({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    reportResult('ramune', ranking(s), game.me);
     if (tour) {
       const done = tour.onFinish;
       setMode('idle');

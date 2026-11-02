@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeSkinned } from './merge.js';
 import { lineColor } from '../model-kit.js';
+import { applyLook, lookFor, scarfTexture } from '../collect/look3d.js';
 
 const BASE = new URL('../../models/', import.meta.url);
 
@@ -59,7 +60,11 @@ export async function createModel(key) {
   const animated = new Set();
   for (const clip of gltf.animations) for (const t of clip.tracks) animated.add(t.name.split('.')[0]);
   mergeSkinned(root, (o) => animated.has(o.name) || o.name.startsWith('face_') || o.name === 'stars');
-  return new Model(root, gltf.animations);
+  const model = new Model(root, gltf.animations);
+  // きせかえ(だれが 何を つけるかは setLooks で きまる。src/collect/look3d.js)
+  const look = lookFor(key);
+  if (look) applyLook(model, look, key);
+  return model;
 }
 
 export class Model {
@@ -75,6 +80,8 @@ export class Model {
       if (o.isMesh && o.material.name.startsWith('player')) this.mats[o.material.name] = o.material;
     });
     this.face = null;
+    this.playerHex = this.mats.player_color?.color.getHex() ?? 0xffffff;
+    this.scarfPattern = null;
   }
 
   node(name) {
@@ -103,7 +110,14 @@ export class Model {
   }
 
   setPlayerColor(hex) {
-    this.mats.player_color?.color.setHex(hex);
+    this.playerHex = hex;
+    const m = this.mats.player_color;
+    if (m) {
+      // スカーフの 柄: プレイヤーの 色の 上に 模様を 描いた 絵を はる(色は 白にして 絵の 色のまま)
+      m.map = this.scarfPattern ? scarfTexture(this.scarfPattern, hex) : null;
+      m.color.setHex(m.map ? 0xffffff : hex);
+      m.needsUpdate = true;
+    }
     this.mats.player_outline?.color.copy(lineColor(hex));
   }
 

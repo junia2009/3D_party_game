@@ -21,6 +21,7 @@ import { simulate } from './simulate.js';
 import { clearTaikai, saveTaikai } from './save.js';
 import { replaceState } from '../net/drive.js';
 import { track } from '../analytics.js';
+import { reportTaikai } from '../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -1145,6 +1146,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       n.seen(msg.seq);
     }
     if (live()) track('online-taikai-end', { stage: opts.stage });
+    if (live()) reportTaikai(opts.stage ?? game.s.stage, ranking(game.s), game.me, game.s.turns);
     if (live()) await ceremony(live);
     // おわったら 部屋へ もどる(サーバーも 部屋に もどって いる)
     if (live()) { await sleep(3); n.onFinish?.(); }
@@ -1182,6 +1184,7 @@ export async function createBoard({ renderer, settings, getAudio, onExit, playMi
       await show(ev);
     }
     if (live()) track('taikai-end', { stage: opts.stage });
+    if (live()) reportTaikai(game.s.stage, ranking(game.s), game.me, game.s.turns);
     if (live()) await ceremony(live);
     if (live()) showResult();
   }

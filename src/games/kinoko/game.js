@@ -15,6 +15,7 @@ import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { OWL_AT, PALETTE, SINK_Y, WATER_Y, buildFlag, buildMushrooms, buildStage, css as colorCss } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -577,6 +578,7 @@ export async function createKinoko({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    reportResult('kinoko', ranking(s), game.me);
     if (tour) {
       const done = tour.onFinish;
       setMode('idle');

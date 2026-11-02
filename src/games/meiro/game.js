@@ -14,6 +14,7 @@ import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { WALL_H, acornMesh, buildMaze, buildStage, chestMesh, ghostMesh, glowTex, toWorld } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -571,6 +572,7 @@ export async function createMeiro({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    reportResult('meiro', ranking(s), game.me);
     if (tour) {
       const done = tour.onFinish;
       setMode('idle');

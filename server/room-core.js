@@ -4,9 +4,11 @@
 // - さいしょに 入った 人が ホスト(あそびを えらんで はじめる)。ホストが ぬけたら 次の 人へ。
 // - キャラは 人どうしで かぶらない。
 // - あそび: 'game'(競技を 1つずつ)/ 'taikai'(すごろく)。
+// - きせかえ(ぼうし・スカーフ)と 称号は look。知らない key は すてる(cleanLook)。
 // - ロビーで ぬけた 人の 席は すぐ あける。あそんで いる とちゅうに 切れた 人は 席を のこす(CPU が かわりに うごく。もどれる)。
 
 import { nextRandom, seedFrom } from '../src/rng.js';
+import { cleanLook } from '../src/collect/catalog.js';
 
 export const SEATS = 5;
 export const CODE_LENGTH = 4;
@@ -61,13 +63,13 @@ export class RoomCore {
   // だれとでも(自動マッチ)の 部屋で、まだ 入れるか
   isOpen() { return this.isPublic && this.phase === 'lobby' && !this.isFull(); }
 
-  join({ clientId, name, character }) {
+  join({ clientId, name, character, look }) {
     if (!clientId) return { error: 'clientId が ありません' };
     this.touch();
     const old = this.seatOf(clientId);
     if (old >= 0) {
       // もどって きた(つなぎなおし)
-      Object.assign(this.seats[old], { connected: true, name: cleanName(name) || this.seats[old].name });
+      Object.assign(this.seats[old], { connected: true, name: cleanName(name) || this.seats[old].name, look: look === undefined ? this.seats[old].look : cleanLook(look) });
       if (!this.host || this.seatOf(this.host) < 0) this.host = clientId;
       return { seat: old, back: true };
     }
@@ -76,7 +78,7 @@ export class RoomCore {
     if (seat < 0) return { error: '部屋が いっぱいです' };
     const taken = new Set(this.humans().map((s) => s.character));
     const want = CHARACTER_KEYS.includes(character) && !taken.has(character) ? character : CHARACTER_KEYS.find((k) => !taken.has(k));
-    this.seats[seat] = { clientId, name: cleanName(name) || NAMES[want], character: want, connected: true };
+    this.seats[seat] = { clientId, name: cleanName(name) || NAMES[want], character: want, connected: true, look: cleanLook(look) };
     if (!this.host || this.seatOf(this.host) < 0) this.host = clientId;
     return { seat };
   }
@@ -141,7 +143,7 @@ export class RoomCore {
     const pick = { rng: seedFrom(`${seed}:lineup`) };
     const free = CPU_KEYS.filter((k) => !this.seats.some((s) => s?.character === k));
     const lineup = this.seats.map((s) => {
-      if (s) return { character: s.character, cpu: null, name: s.name, human: true };
+      if (s) return { character: s.character, cpu: null, name: s.name, human: true, look: s.look || {} };
       const character = free.splice(Math.floor(nextRandom(pick) * free.length), 1)[0];
       return { character, cpu: PERSONALITY[Math.floor(nextRandom(pick) * PERSONALITY.length)], name: NAMES[character] };
     });
@@ -174,7 +176,7 @@ export class RoomCore {
       phase: this.phase,
       settings: this.settings,
       hostSeat: this.seatOf(this.host),
-      seats: this.seats.map((s) => (s ? { name: s.name, character: s.character, connected: s.connected, wins: this.wins[s.clientId] ?? 0 } : null)),
+      seats: this.seats.map((s) => (s ? { name: s.name, character: s.character, connected: s.connected, wins: this.wins[s.clientId] ?? 0, look: s.look || {} } : null)),
       cpuWins: this.cpuWins,
       lastWin: this.lastWin,
     };

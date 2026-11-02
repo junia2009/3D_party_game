@@ -7,6 +7,7 @@
 import { track } from '../analytics.js';
 import { NetClient, createRoom, matchRoom, saveName, savedName } from '../net/client.js';
 import { ONLINE_GAMES } from '../net/games.js';
+import { titleByKey } from '../collect/catalog.js';
 
 const COLORS = ['#ff5a4e', '#3d8bff', '#ffc23c', '#34c47c', '#9b6bff'];
 
@@ -60,7 +61,7 @@ export function setupOnline(ctx) {
         if (fatal) { client = null; if (!ctx.inGame()) ctx.go('online'); }
       },
     });
-    client.connect(code, { name: nameOf(), character: ctx.picked() });
+    client.connect(code, { name: nameOf(), character: ctx.picked(), look: ctx.look?.() });
   }
 
   async function withServer(fn, label, ev) {
@@ -136,6 +137,8 @@ export function setupOnline(ctx) {
       const badge = `<b class="wins${wins && wins === top ? ' lead' : ''}${i === pop ? ' up' : ''}">${CROWN}${wins}<small>勝</small>${i === pop ? '<i class="plus">+1</i>' : ''}</b>`;
       li.innerHTML = `<i class="dot"></i>${face}<span></span>${badge}${tag}`;
       li.children[2].textContent = `${s.name || nameOfChar(s.character)}${i === seat ? '(あなた)' : ''}`;
+      const ttl = titleByKey(s.look?.title);
+      if (ttl) li.children[2].insertAdjacentHTML('beforeend', `<small class="ttl">${ttl.name}</small>`);
       if (i === pop) { li.classList.add('won'); if (i === seat) ctx.toast('1位! +1勝'); }
       return li;
     }));

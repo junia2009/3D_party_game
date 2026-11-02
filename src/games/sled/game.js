@@ -18,6 +18,7 @@ import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { SEATS, buildStage, coursePoint, courseHeading } from './stage.js';
 import { createAtmosphere } from '../daruma/atmosphere.js';
 import { acornGeometry } from '../daruma/trees.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -650,6 +651,7 @@ export async function createSled({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    reportResult('sled', ranking(s), game.me);
     if (tour) {
       // 大会: 結果画面は出さずに、順位(と拾ったどんぐり)を返す
       const done = tour.onFinish;

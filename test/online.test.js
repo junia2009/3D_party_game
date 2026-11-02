@@ -40,6 +40,25 @@ test('5人で いっぱい。ホストが ぬけたら つぎの 人が ホス�
   assert.equal(r.join({ clientId: 'x' }).seat, 0);
 });
 
+test('きせかえと 称号(look)は 名簿と 顔ぶれに のる。知らない key は すてる', () => {
+  const r = room();
+  r.join({ clientId: 'a', character: 'ponta', look: { hat: 'crown', scarf: 'star', title: 'sea' } });
+  r.join({ clientId: 'b', character: 'kirin', look: { hat: '<img onerror>', scarf: 'nope', title: 'legend', x: 1 } });
+  r.join({ clientId: 'c', character: 'mimi' });
+  const lobby = r.lobbyInfo();
+  assert.deepEqual(lobby.seats[0].look, { hat: 'crown', scarf: 'star', title: 'sea' });
+  assert.deepEqual(lobby.seats[1].look, { title: 'legend' });
+  assert.deepEqual(lobby.seats[2].look, {});
+  // つなぎなおしで かえられる。look が なければ 前の まま
+  r.join({ clientId: 'a', look: { hat: 'halo' } });
+  assert.deepEqual(r.seats[0].look, { hat: 'halo' });
+  r.join({ clientId: 'a' });
+  assert.deepEqual(r.seats[0].look, { hat: 'halo' });
+  const g = r.start('a');
+  assert.deepEqual(g.lineup[0].look, { hat: 'halo' });
+  assert.ok(g.lineup.filter((l) => !l.human).every((l) => !('look' in l)), 'CPU には look が ない');
+});
+
 test('はじめると あいた 席を CPU で うめる。とちゅうで 切れても 席は のこり、もどれる', () => {
   const r = room();
   r.join({ clientId: 'a', character: 'ponta' });

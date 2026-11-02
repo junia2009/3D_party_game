@@ -14,6 +14,7 @@ import { createNetDriver, replaceState } from '../../net/drive.js';
 import { PERSONALITIES, cpuInput, createCpu } from './cpu.js';
 import { FRONT, GAP, HOST, SEATS, STREAM_W, STUMP_TOP, WATER_Y, buildStage, groundY } from './stage.js';
 import { createAtmosphere, windify } from '../daruma/atmosphere.js';
+import { reportResult } from '../../collect/report.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (hex) => '#' + hex.toString(16).padStart(6, '0');
@@ -506,6 +507,7 @@ export async function createTsuna({ renderer, settings, getAudio, onExit }) {
 
   function showResult() {
     const s = game.state;
+    reportResult('tsuna', ranking(s), game.me);
     if (tour) {
       const done = tour.onFinish;
       setMode('idle');

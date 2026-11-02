@@ -56,10 +56,11 @@ export class NetClient {
     this.retry = 0;
   }
 
-  connect(code, { name, character }) {
+  connect(code, { name, character, look }) {
     this.code = code;
     this.name = name;
     this.character = character;
+    this.look = look; // きせかえと 称号({ hat, scarf, title })
     this.closedByUs = false;
     this.open();
   }
@@ -70,7 +71,7 @@ export class NetClient {
     this.ws = ws;
     ws.onopen = () => {
       this.retry = 0;
-      this.send({ t: 'hello', clientId: clientId(), name: this.name, character: this.character });
+      this.send({ t: 'hello', clientId: clientId(), name: this.name, character: this.character, look: this.look });
       clearInterval(this.pinger);
       this.pinger = setInterval(() => this.send({ t: 'ping' }), PING_MS);
     };

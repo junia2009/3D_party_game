@@ -24,6 +24,10 @@ import { createLeafCurtain } from './leaves.js';
 import { makePortraits } from './portraits.js';
 import { createZukan } from './zukan.js';
 import { createHowto } from './howto.js';
+import { createReward } from './reward.js';
+import { loadProgress, saveProgress, recordGame, recordTaikai } from '../collect/progress.js';
+import { stampByKey, titleByKey } from '../collect/catalog.js';
+import { applyLook, setLooks } from '../collect/look3d.js';
 import { LIST as STAGE_LIST } from '../board/stages/index.js';
 import { setupOnline } from './online.js';
 import { initAnalytics, track } from '../analytics.js';
@@ -237,6 +241,8 @@ const SCREENS = {
   // あそびかた(紙芝居)
   // 横持ち(背が 低い)では 画面を 横いっぱいに 使うので、看板も しまう(wide)
   howto: { el: $('howto'), view: [0.24, 0.17], sign: false, wide: true },
+  // ごほうび(ガチャ・きせかえ)
+  reward: { el: $('reward'), view: [0.24, 0.17], sign: false, wide: true },
 };
 let screen = 'loading';
 const view = { x: 0, y: 0, sign: 1, r: 1 };
@@ -267,6 +273,10 @@ function go(next) {
     zukan.open();
   }
   if (next === 'online' || next === 'room') ensureFaces();
+  if (next === 'reward') {
+    track('reward');
+    reward.open((k) => GAMES[k]?.name ?? k);
+  }
   if (next === 'howto') {
     track('howto');
     ensureFaces();
@@ -318,6 +328,71 @@ for (const b of document.querySelectorAll('#menu [data-go]')) {
     go(b.dataset.go);
   });
 }
+
+// ── ごほうび: 遊んだら どんぐり貯金 ───────────────────────
+// 競技・大会は 結果を window へ しらせる(src/collect/report.js)。ここで 遊びかたを 見て 記録する。
+// 大会の 中の 競技は 数えない(大会の おわりで まとめて)
+let collect = loadProgress();
+const STAMP_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="#d9443a" stroke-width="2.4"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#d9443a" stroke-width="1.4"/><path d="M8.5 12.5l2.5 2.5 4.5-5" fill="none" stroke="#d9443a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const TITLE_ICON = '<svg viewBox="0 0 24 26" aria-hidden="true"><path d="M7 1h10l-2 9H9z" fill="#4a90e2" stroke="#4a2a12" stroke-width="1.3"/><circle cx="12" cy="16" r="7.5" fill="#ffd24a" stroke="#4a2a12" stroke-width="1.6"/><path d="M12 11.5l1.4 2.9 3.1.4-2.3 2.1.6 3.1-2.8-1.5-2.8 1.5.6-3.1-2.3-2.1 3.1-.4z" fill="#fff6c8"/></svg>';
+const ACORN_ICON = '<svg viewBox="0 0 20 22" aria-hidden="true"><ellipse cx="10" cy="13" rx="6.5" ry="7.5" fill="#c27a35" stroke="#4a2a12" stroke-width="1.4"/><path d="M2.5 9.5a7.5 5 0 0 1 15 0z" fill="#7a4f2c" stroke="#4a2a12" stroke-width="1.4"/><rect x="9" y="2" width="2" height="4" rx="1" fill="#4a2a12"/></svg>';
+function stampName(k) {
+  const st = stampByKey(k);
+  return st?.name ?? `${GAMES[st?.game]?.name ?? ''} 1位`;
+}
+function showReward(res) {
+  const box = $('rewardFx');
+  const rows = [];
+  if (res.acorns) rows.push(`<div class="r">${ACORN_ICON}<span>どんぐり <b>+${res.acorns}</b> <small>貯金 ${collect.acorns}こ</small></span></div>`);
+  for (const k of res.stamps || []) rows.push(`<div class="r stamp">${STAMP_ICON}<span>スタンプ <b>${stampName(k)}</b></span></div>`);
+  for (const k of res.titles || []) rows.push(`<div class="r title">${TITLE_ICON}<span>称号 <b>${titleByKey(k)?.name}</b></span></div>`);
+  if (!rows.length) return;
+  box.innerHTML = rows.map((r, i) => r.replace('class="r', `style="--d:${(i * 0.35).toFixed(2)}s" class="r`)).join('');
+  clearTimeout(showReward.t);
+  showReward.t = setTimeout(() => { box.innerHTML = ''; }, 4600 + rows.length * 350);
+}
+// 自分の キャラの きせかえ: どの 競技でも 見える ように 登録して、島の 上の 子にも つける
+function syncLooks() {
+  setLooks({ [picked]: collect.look });
+  for (const a of actors) applyLook(a.model, a.role.key === picked ? collect.look : null, a.role.key);
+}
+addEventListener('dg:result', (e) => {
+  if (taikaiBoard) return; // 大会の 中の 競技
+  const { game, place, count } = e.detail;
+  if (place < 0) return;
+  const res = recordGame(collect, { game, place, count, online: onlineGame });
+  saveProgress(collect);
+  setTimeout(() => showReward(res), 900);
+});
+addEventListener('dg:taikai', (e) => {
+  const { stage, place, turns } = e.detail;
+  if (place < 0) return;
+  const res = recordTaikai(collect, { stage, place, turns, online: onlineGame });
+  saveProgress(collect);
+  setTimeout(() => showReward(res), 600);
+});
+
+// ごほうびの 画面
+function click1() { tone(1400, 0, 0.04, 'square', 0.03); }
+function popSfx() { tone(520, 0, 0.08, 'sine', 0.12); tone(780, 0.06, 0.1, 'sine', 0.1); }
+function openSfx(rare) {
+  const n = rare === 's' ? [784, 988, 1175, 1568, 1976] : rare === 'r' ? [659, 880, 1047, 1319] : [587, 784, 988];
+  n.forEach((f, i) => tone(f, i * 0.09, 0.3, 'triangle', 0.12));
+  if (rare === 's') [2093, 2637, 3136].forEach((f, i) => tone(f, 0.5 + i * 0.06, 0.4, 'sine', 0.05));
+}
+const reward = createReward({
+  el: $('reward'),
+  getProgress: () => collect,
+  getPicked: () => picked,
+  sfx: { knock, boop, click: click1, pop: popSfx, open: openSfx },
+  toast,
+  onChange: (res) => {
+    saveProgress(collect);
+    syncLooks();
+    if (res?.stamps?.length || res?.titles?.length) showReward({ stamps: res.stamps, titles: res.titles });
+  },
+});
+addEventListener('resize', () => { if (screen === 'reward') reward.resize(); });
 
 // ── あそびかた(紙芝居) ───────────────────────────
 const HOWTO_KEY = 'dongurinpic.howto';
@@ -415,6 +490,7 @@ for (const b of document.querySelectorAll('[data-back]')) {
 
 // ── 競技の入口(ルールとキャラえらび) ───────────────────────
 let picked = shownCharacters().some((c) => c.key === settings.character) ? settings.character : CHARACTERS[0].key;
+syncLooks();
 let faces = null; // キャラの顔の絵(はじめて入口・図鑑をひらいたときに撮る)
 function ensureFaces() {
   if (faces) return;
@@ -444,6 +520,7 @@ function renderChars() {
       picked = c.key;
       settings.character = picked;
       saveSettings(settings);
+      syncLooks();
       renderChars();
     });
     return b;
@@ -852,6 +929,7 @@ async function enterGame() {
   await wait(250);
   await curtain.cover();
   playing = await ready;
+  syncLooks(); // オンラインの あとでも 自分の きせかえに もどす
   const resume = current === 'taikai' && taikai.resume ? loadTaikai() : null;
   taikai.resume = false;
   if (current !== 'taikai') track('game-start', { key: current, name: GAMES[current].name });
@@ -899,6 +977,10 @@ async function leaveGame(to) {
   busy = false;
 }
 
+// オンラインの 試合: 人の 席は それぞれの きせかえ(lineup の look)を つける
+function netLooks(lineup) {
+  setLooks(Object.fromEntries((lineup || []).filter((l) => l.human && l.look).map((l) => [l.character, l.look])));
+}
 // ── オンライン: 部屋から 競技へ 入って、おわったら 部屋へ もどる ─────────────
 const online = setupOnline({
   $, go, toast, knock, unlockAudio,
@@ -906,7 +988,8 @@ const online = setupOnline({
   faces: () => faces,
   games: GAMES,
   picked: () => picked,
-  setPicked: (k) => { picked = k; settings.character = k; saveSettings(settings); },
+  look: () => collect.look,
+  setPicked: (k) => { picked = k; settings.character = k; saveSettings(settings); syncLooks(); },
   playOnline: (m, client) => (onlineTaikai ? playOnlineInTaikai(m, client) : playOnline(m, client)),
   playOnlineTaikai: (m, client) => playOnlineTaikai(m, client),
   inGame: () => onlineGame,
@@ -918,6 +1001,7 @@ let onlineTaikai = false; // オンラインの 大会の とちゅう
 async function playOnlineTaikai(m, client) {
   while (busy) await wait(100);
   busy = true;
+  netLooks(m.lineup);
   onlineGame = true;
   onlineTaikai = true;
   taikai.stage = m.stage; // 曲は ステージで きまる
@@ -945,6 +1029,7 @@ async function playOnlineTaikai(m, client) {
 // オンラインの 大会の 競技: 盤から 競技へ 入って、おわったら 盤へ もどる
 async function playOnlineInTaikai(m, client) {
   while (busy) await wait(100);
+  netLooks(m.lineup);
   const home = taikaiBoard;
   busy = true;
   whoosh(1.1, true);
@@ -979,6 +1064,7 @@ async function playOnlineInTaikai(m, client) {
 async function playOnline(m, client) {
   while (busy) await wait(100);
   busy = true;
+  netLooks(m.lineup);
   onlineGame = true;
   track('online-game', { key: m.key, name: GAMES[m.key]?.name });
   unlockAudio();
@@ -1015,6 +1101,7 @@ async function backToRoom(key) {
   active = 'title';
   updateMusic();
   applyQuality();
+  syncLooks();
   go(online.client ? 'room' : 'online');
   dive.k = 1;
   dive.dir = -1;
@@ -1576,6 +1663,7 @@ function frame() {
   atmosphere.update(dt);
   renderer.render(scene, camera);
   if (screen === 'zukan') zukan.frame(dt);
+  if (screen === 'reward') reward.frame(dt);
 }
 
 // 読み込みおわり
@@ -1596,7 +1684,9 @@ frame();
 
 // E2E 用の口
 window.title = {
-  camera, scene, go, howto,
+  camera, scene, go, howto, reward,
+  get collect() { return collect; },
+  syncLooks,
   get screen() { return screen; },
   get bgm() { return music.playing; },
   online: () => online,
@@ -1604,7 +1694,7 @@ window.title = {
   get busy() { return busy; },
   setTime: (k) => atmosphere.apply(k),
   redrop: () => { signDrop = 0; },
-  pick: (key) => { picked = key; renderChars(); },
+  pick: (key) => { picked = key; syncLooks(); renderChars(); },
   start: () => enterGame(),
   ready: () => ensureGame(current),
   open: (key) => openGame(key),
