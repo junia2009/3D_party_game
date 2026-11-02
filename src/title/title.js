@@ -1502,7 +1502,7 @@ function renderStageMap() {
     b.className = 'isle' + (i % 2 ? ' shift' : '') + (s.ready ? '' : ' soon') + (s.key === taikai.stage ? ' on' : '');
     b.style.setProperty('--i', String(i));
     b.innerHTML = `<span class="pic">${isleSvg(s.ready, s.key)}<svg class="flag" viewBox="0 0 30 40" aria-hidden="true"><path d="M5 38 L5 4" stroke="#4a2a12" stroke-width="3" stroke-linecap="round"/><path d="M6 5 L27 11 L6 18 Z" fill="#e8402f" stroke="#4a2a12" stroke-width="2" stroke-linejoin="round"/></svg></span>
-      <span class="txt"><b>${s.name}</b><small>${s.desc}</small><span class="tags">${(s.tags || []).map((t) => `<i>${t}</i>`).join('')}</span></span>`;
+      <span class="txt"><b>${s.name}</b><span class="tags">${(s.tags || []).map((t) => `<i>${t}</i>`).join('')}</span></span>`;
     b.addEventListener('click', () => {
       unlockAudio();
       if (!s.ready) { boop(); toast('このステージは もうすこし まっててね!'); return; }
