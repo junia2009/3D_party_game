@@ -21,8 +21,10 @@ const R = 0.48; // 頭の 半径(characters.js と 同じ)
 const FIT = {
   mimi: { y: -0.02, s: 0.96 }, // 長い 耳の あいだ
   kirin: { y: 0.0, s: 0.95 },
-  kerosuke: { y: 0.06, s: 1.1 }, // 平たい 頭(目が 上に 出て いるので すこし 上へ)
+  kerosuke: { y: 0.15, s: 1.1, z: -0.06 }, // 平たい 頭(目が 上に 出て いるので すこし 上へ)
   penne: { y: 0, s: 1 },
+  // ゲストの とり: 頭が 大きく、回る 点(首)が 頭の 下の ほうに ある
+  ray: { y: 0.29, s: 1.2, z: 0.05 },
 };
 
 // ── ぼうしの 形 ─────────────────────────────
@@ -47,9 +49,10 @@ const HAT = {
   },
   leaf: () => {
     const g = new THREE.Group();
-    g.add(rot(at(blob(0x6cbf58, 0.2, 0.035, 0.11), 0.06, 0.06, 0), 0, 0.3, -0.35));
-    g.add(rot(at(blob(0x8ad46a, 0.15, 0.03, 0.08), -0.1, 0.04, 0.04), 0, -0.4, 0.4));
-    g.add(at(scaled(cyl(0x6a4a2a), 0.02, 0.1, 0.02), -0.02, 0.08, 0));
+    // 頭の てっぺんから 立つ ように(低いと 頭に うまる)
+    g.add(rot(at(blob(0x6cbf58, 0.2, 0.04, 0.11), 0.1, 0.2, 0), 0, 0.3, -0.5));
+    g.add(rot(at(blob(0x8ad46a, 0.15, 0.035, 0.08), -0.1, 0.16, 0.04), 0, -0.4, 0.5));
+    g.add(at(scaled(cyl(0x6a4a2a), 0.025, 0.16, 0.025), 0, 0.1, 0));
     return g;
   },
   flower: () => {
@@ -247,7 +250,7 @@ export function applyLook(model, look, key) {
       const def = CHARACTERS.find((c) => c.key === key) || {};
       const hs = def.headScale || [1, 1, 1];
       const fit = FIT[key] || {};
-      hat.position.y = R * hs[1] * 0.78 + (fit.y || 0);
+      hat.position.set(fit.x || 0, R * hs[1] * 0.78 + (fit.y || 0), fit.z || 0);
       hat.scale.setScalar(1.12 * (fit.s || 1) * Math.max(hs[0], hs[2]));
       hat.rotation.x = -0.12; // すこし うしろへ かぶる
       head.add(hat);
