@@ -1185,6 +1185,67 @@ addEventListener('resize', () => { if (screen === 'stages') drawPaper(); });
 
 // 宝の地図: 島を 上から 順に 大きく ならべて、点線の 航路で つなぐ。島は 左、説明は 右(どの 島も おなじ 形)。
 // 島を タップすると 旗が 立って えらばれる。下の「この 島へ!」で 進む
+// 羽ペン: ペン先が 左下(0, 40)。
+const QUILL_SVG = `<svg viewBox="0 0 40 40" aria-hidden="true">
+  <path d="M3 37 L9 27" stroke="#2b1a0e" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M8 29 C11 18 20 8 36 2 C33 9 30 13 25 16 C29 16 31 15 33 14 C28 22 20 27 10 29 Z" fill="#fbf3df" stroke="#4a2a12" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M9 28 C16 20 24 12 34 4" stroke="#b38a5a" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+  <path d="M15 22 l3 2 M19 18 l3 2 M23 14 l3 2" stroke="#d9c6a0" stroke-width="1" stroke-linecap="round"/>
+</svg>`;
+
+// 航路を インクで なぞる。from 番目の 島から to 番目の 島まで。着いたら done()。
+// 前に なぞった インクは うすく なって 消える。横持ち(航路が 出ない)や 動きを へらす 設定では すぐ done()。
+function inkTrace(ink, to, done) {
+  const from = ink.at;
+  ink.at = to;
+  cancelAnimationFrame(ink.raf);
+  ink.quill.classList.remove('writing');
+  for (const old of ink.route.querySelectorAll('.ink:not(.fade)')) {
+    old.classList.add('fade');
+    setTimeout(() => old.remove(), 700);
+  }
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches || getComputedStyle(ink.route).display === 'none';
+  if (from < 0 || from === to || still) { done(); return; }
+  // 航路の 上の 点を こまかく とって おき、なぞった ところまでを 折れ線で かく
+  // (航路の svg は 縦横で のびかたが ちがうので、点線の しくみ(dasharray)だと 途切れて 見える)
+  if (!ink.pts) {
+    const probe = ink.route.querySelector('path');
+    const total = probe.getTotalLength();
+    ink.pts = Array.from({ length: 241 }, (_, j) => { const p = probe.getPointAtLength((j / 240) * total); return [p.x, p.y]; });
+  }
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('class', 'ink');
+  path.setAttribute('vector-effect', 'non-scaling-stroke');
+  ink.route.append(path);
+  // 島と 島の あいだの カーブは みな 同じ 形(左右 反転)なので、i 番目の 島は 長さの i/(n-1)
+  const last = ink.pts.length - 1;
+  // 島の 絵の 上には かかない: 島の 下がわ(平たい)は 0.16、上がわ(木や 旗が のる)は 0.3 区間ぶん あける
+  const seg = last / (ink.n - 1), down = to > from;
+  const a = (from + (down ? 0.16 : -0.3)) * seg, b = (to - (down ? 0.3 : -0.16)) * seg;
+  const at = (u) => { const j = Math.min(last - 1, Math.floor(u)), f = u - j, p = ink.pts[j], q = ink.pts[j + 1]; return [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f]; };
+  const dur = 380 + Math.abs(to - from) * 420;
+  const t0 = performance.now();
+  ink.quill.classList.add('writing');
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / dur);
+    const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+    const tip = a + (b - a) * e;
+    const dir = b > a ? 1 : -1;
+    const line = [at(a)];
+    for (let j = dir > 0 ? Math.floor(a) + 1 : Math.ceil(a) - 1; dir > 0 ? j < tip : j > tip; j += dir) line.push(ink.pts[j]);
+    const p = at(tip);
+    line.push(p);
+    path.setAttribute('d', 'M' + line.map(([x, y]) => `${x.toFixed(2)} ${y.toFixed(2)}`).join(' L'));
+    const r = ink.route.getBoundingClientRect();
+    ink.quill.style.left = `${(p[0] / 100) * r.width}px`;
+    ink.quill.style.top = `${(p[1] / 100) * r.height}px`;
+    if (k < 1) { ink.raf = requestAnimationFrame(step); return; }
+    ink.quill.classList.remove('writing');
+    done();
+  };
+  ink.raf = requestAnimationFrame(step);
+}
+
 function renderStageMap() {
   const page = $('stageMap');
   page.replaceChildren();
@@ -1203,6 +1264,13 @@ function renderStageMap() {
   }
   route.innerHTML = `<path d="${d}" fill="none" stroke="#a0703a" stroke-width="1.1" stroke-dasharray="2.2 2.2" vector-effect="non-scaling-stroke" style="stroke-width:3px"/>`;
   page.append(route);
+  // 羽ペン(島を えらぶと、航路を インクで なぞって いく)
+  const quill = document.createElement('span');
+  quill.className = 'quill';
+  quill.innerHTML = QUILL_SVG;
+  page.append(quill);
+  const ink = { route, quill, d, n, raf: 0, at: STAGE_LIST.findIndex((s) => s.key === taikai.stage) };
+  page._ink = ink;
   STAGE_LIST.forEach((s, i) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -1214,8 +1282,11 @@ function renderStageMap() {
       unlockAudio();
       if (!s.ready) { boop(); toast('このステージは もうすこし まっててね!'); return; }
       knock();
+      if (taikai.stage === s.key) return;
       taikai.stage = s.key;
-      for (const o of page.querySelectorAll('.isle')) o.classList.toggle('on', o === b);
+      inkTrace(page._ink, i, () => {
+        for (const o of page.querySelectorAll('.isle')) o.classList.toggle('on', o === b);
+      });
       $('stageGo').querySelector('b').textContent = `${s.name}へ!`;
     });
     page.append(b);

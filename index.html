@@ -1125,6 +1125,18 @@
   .mapdoodle.d3 { left: 9%; bottom: 33%; width: 34px; transform: rotate(8deg); }
   .mappage svg.route { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; filter: drop-shadow(0 1px 0 rgba(255,246,220,.7)); }
   .mapdoodle { mix-blend-mode: multiply; }
+  /* インクで なぞった 航路と 羽ペン */
+  .mappage svg.route .ink { fill: none; stroke: #2e1a0c; stroke-width: 3.4px; stroke-linecap: round; stroke-linejoin: round; opacity: .9; transition: opacity .6s; }
+  .mappage svg.route .ink.fade { opacity: 0; }
+  .mappage .quill {
+    position: absolute; z-index: 5; width: 46px; height: 46px; margin: -46px 0 0 -2px; pointer-events: none;
+    opacity: 0; transform: translate(6px, -6px) rotate(8deg); transform-origin: 0 100%;
+    transition: opacity .25s, transform .25s; filter: drop-shadow(2px 4px 0 rgba(74,42,18,.25));
+  }
+  .mappage .quill svg { width: 100%; height: 100%; display: block; }
+  .mappage .quill.writing { opacity: 1; transform: none; }
+  .mappage .quill.writing svg { animation: quillscratch .18s ease-in-out infinite alternate; transform-origin: 0 100%; }
+  @keyframes quillscratch { from { transform: rotate(-4deg); } to { transform: rotate(5deg); } }
   /* 方位じしん: 右の 1つめと 2つめの 説明の あいだ(島・説明・札と かさならない ところ)*/
   .isle {
     position: relative; z-index: 3; display: flex; align-items: center; gap: 8px; min-height: 0; border: 0; background: none; padding: 0 4px;
